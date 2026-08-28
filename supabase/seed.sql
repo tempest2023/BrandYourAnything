@@ -1,0 +1,3 @@
+-- Auction catalogue and initial state are part of the initial migration so a
+-- remote `supabase db push` is immediately usable. Local-only seed data is not
+-- required yet.

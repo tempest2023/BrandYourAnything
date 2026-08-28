@@ -1,47 +1,20 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-type Currency = "EUR" | "USD";
+import {
+  EUR_TO_USD,
+  FALLBACK_HISTORY,
+  FALLBACK_SPOTS,
+  type AuctionSnapshot,
+  type Currency,
+  type PlaceBidResult,
+  type Spot,
+} from "@/lib/auction";
+
 type LidView = "live" | "final";
 type TableView = "spots" | "history";
-
-type Spot = {
-  id: number;
-  name: string;
-  size: "S" | "M" | "L";
-  dimensions: string;
-  holder: string;
-  bid: number;
-  bids: number;
-  logo?: string;
-  website?: string;
-};
-
-const SPOTS: Spot[] = [
-  { id: 2, name: "Marquee — above the logo", size: "L", dimensions: "9.5 × 5.5 cm", holder: "See.io", bid: 1715, bids: 3, logo: "/logos/see.png", website: "https://see.io" },
-  { id: 1, name: "Top left banner", size: "L", dimensions: "9.5 × 5.5 cm", holder: "Postiz", bid: 1200, bids: 6, logo: "/logos/postiz.png", website: "https://postiz.io" },
-  { id: 3, name: "Top right banner", size: "L", dimensions: "9.5 × 5.5 cm", holder: "PrivateAlps", bid: 1010, bids: 19, logo: "/logos/privatealps.png", website: "https://privatealps.net" },
-  { id: 9, name: "Bottom center — under the logo", size: "M", dimensions: "9.5 × 4 cm", holder: "Felyn GO", bid: 710, bids: 16, logo: "/logos/felyn.jpg" },
-  { id: 8, name: "Bottom left strip", size: "M", dimensions: "9.5 × 4 cm", holder: "VedicAstrology.com", bid: 666, bids: 13, logo: "/logos/vedic.png", website: "https://vedicastrology.com" },
-  { id: 10, name: "Bottom right strip", size: "M", dimensions: "9.5 × 4 cm", holder: "Clipory", bid: 500, bids: 14, logo: "/logos/clipory.svg", website: "https://clipory.app" },
-  { id: 5, name: "Inner left — beside the logo", size: "S", dimensions: "4.5 × 4.5 cm", holder: "Surf Office", bid: 410, bids: 12, logo: "/logos/surfoffice.png", website: "https://www.surfoffice.com" },
-  { id: 6, name: "Inner right — beside the logo", size: "S", dimensions: "4.5 × 4.5 cm", holder: "emma.pet", bid: 377, bids: 12, logo: "/logos/emma.png", website: "https://emma.pet" },
-  { id: 4, name: "Middle left", size: "S", dimensions: "4.5 × 4.5 cm", holder: "Draftline Fantasy", bid: 375, bids: 17, logo: "/logos/draftline.svg", website: "https://www.draftlinefantasy.com" },
-  { id: 7, name: "Middle right", size: "S", dimensions: "4.5 × 4.5 cm", holder: "Moyai", bid: 370, bids: 11, logo: "/logos/moyai.png", website: "https://moyai.ai" },
-];
-
-const HISTORY = [
-  { brand: "See.io", spot: 2, amount: 1715, time: "18 minutes ago" },
-  { brand: "PrivateAlps", spot: 3, amount: 1010, time: "34 minutes ago" },
-  { brand: "Postiz", spot: 1, amount: 1200, time: "1 hour ago" },
-  { brand: "Felyn GO", spot: 9, amount: 710, time: "2 hours ago" },
-  { brand: "VedicAstrology.com", spot: 8, amount: 666, time: "3 hours ago" },
-  { brand: "Clipory", spot: 10, amount: 500, time: "4 hours ago" },
-  { brand: "Surf Office", spot: 5, amount: 410, time: "5 hours ago" },
-  { brand: "emma.pet", spot: 6, amount: 377, time: "6 hours ago" },
-];
 
 const FAQS = [
   {
@@ -99,8 +72,12 @@ const FAQS = [
   },
 ];
 
+function displayAmount(amount: number, currency: Currency) {
+  return currency === "EUR" ? amount : Math.round(amount * EUR_TO_USD);
+}
+
 function formatMoney(amount: number, currency: Currency) {
-  const converted = currency === "EUR" ? amount : Math.round(amount * 1.17);
+  const converted = displayAmount(amount, currency);
   return `${new Intl.NumberFormat("fr-FR").format(converted)} ${currency === "EUR" ? "€" : "$"}`;
 }
 
@@ -133,13 +110,13 @@ function Logo({ spot, compact = false }: { spot: Spot; compact?: boolean }) {
   );
 }
 
-function MacLid({ currency, onSelect }: { currency: Currency; onSelect: (spot: Spot) => void }) {
+function MacLid({ spots, currency, onSelect }: { spots: Spot[]; currency: Currency; onSelect: (spot: Spot) => void }) {
   return (
     <div className="lid-stage" aria-label="MacBook sticker auction layout">
       <div className="mac-lid">
         <div className="lid-camera" />
         <span className="apple-mark" aria-label="Apple logo"></span>
-        {SPOTS.map((spot) => (
+        {spots.map((spot) => (
           <button
             className={`lid-spot lid-spot--${spot.id}`}
             key={spot.id}
@@ -166,11 +143,34 @@ function CurrencySwitch({ currency, onChange }: { currency: Currency; onChange: 
   );
 }
 
-function BidDialog({ spot, currency, onClose }: { spot: Spot | null; currency: Currency; onClose: () => void }) {
+type BidApiResponse = {
+  error?: string;
+  result?: PlaceBidResult;
+  snapshot?: AuctionSnapshot;
+};
+
+function BidDialog({
+  spot,
+  currency,
+  onClose,
+  onSnapshot,
+}: {
+  spot: Spot | null;
+  currency: Currency;
+  onClose: () => void;
+  onSnapshot: (snapshot: AuctionSnapshot) => void;
+}) {
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const [bid, setBid] = useState(() => spot ? String(spot.bid + 10) : "");
+  const minimumDisplayBid = spot ? Math.ceil(displayAmount(spot.minBid, currency)) : 0;
+  const bidContext = `${spot?.id ?? "closed"}-${spot?.minBid ?? 0}-${currency}`;
+  const [bidInput, setBidInput] = useState(() => ({ context: bidContext, value: String(minimumDisplayBid) }));
+  const bid = bidInput.context === bidContext ? bidInput.value : String(minimumDisplayBid);
   const [logoName, setLogoName] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+  const [acceptedBid, setAcceptedBid] = useState<{ brand: string; amountEur: number } | null>(null);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -182,6 +182,45 @@ function BidDialog({ spot, currency, onClose }: { spot: Spot | null; currency: C
   const amount = Number(bid) || 0;
   const deposit = Math.ceil(amount * 0.2);
 
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!spot || submitting) return;
+
+    setSubmitting(true);
+    setErrorMessage("");
+
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const amountCents = currency === "EUR"
+      ? Math.round(amount * 100)
+      : Math.ceil((amount * 100) / EUR_TO_USD);
+    formData.set("spotId", String(spot.id));
+    formData.set("amountCents", String(amountCents));
+    formData.set("idempotencyKey", idempotencyKey);
+
+    try {
+      const response = await fetch("/api/bids", { method: "POST", body: formData });
+      const payload = await response.json() as BidApiResponse;
+      if (payload.snapshot) onSnapshot(payload.snapshot);
+
+      if (!response.ok || !payload.result?.accepted) {
+        setErrorMessage(payload.error || "The bid could not be saved. Please try again.");
+        if (response.status === 409) setIdempotencyKey(crypto.randomUUID());
+        return;
+      }
+
+      setAcceptedBid({
+        brand: String(formData.get("brandName")),
+        amountEur: amountCents / 100,
+      });
+      setSubmitted(true);
+    } catch {
+      setErrorMessage("The network did not confirm your bid. Retrying will safely reuse the same request.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <dialog ref={dialogRef} className="bid-dialog" onClose={onClose} onClick={(event) => {
       if (event.target === dialogRef.current) onClose();
@@ -190,7 +229,7 @@ function BidDialog({ spot, currency, onClose }: { spot: Spot | null; currency: C
         <div className="bid-panel">
           <button className="dialog-close" onClick={onClose} aria-label="Close">×</button>
           {!submitted ? (
-            <form onSubmit={(event) => { event.preventDefault(); setSubmitted(true); }}>
+            <form onSubmit={handleSubmit}>
               <div className="bid-heading">
                 <p className="eyebrow">Spot {spot.id}</p>
                 <h3>{spot.name}</h3>
@@ -200,40 +239,43 @@ function BidDialog({ spot, currency, onClose }: { spot: Spot | null; currency: C
 
               <label htmlFor="bid">Your bid ({currency})</label>
               <div className="money-input">
-                <input id="bid" type="number" min={spot.bid + 10} step="10" value={bid} onChange={(event) => setBid(event.target.value)} required />
+                <input id="bid" type="number" min={minimumDisplayBid} step="1" value={bid} onChange={(event) => setBidInput({ context: bidContext, value: event.target.value })} required />
                 <span>{currency === "EUR" ? "€" : "$"}</span>
               </div>
-              <p className="field-note">Minimum {formatMoney(spot.bid + 10, currency)}</p>
+              <p className="field-note">Minimum {formatMoney(spot.minBid, currency)} · bids are settled in euros</p>
 
               <div className="deposit-box">
-                <p><span>Deposit, 20% of {formatMoney(amount, currency)}</span><span>{formatMoney(deposit, currency)}</span></p>
-                <p className="due"><span>Due now</span><strong>{formatMoney(deposit, currency)}</strong></p>
-                <small>Refunded in full if you don&apos;t win. If you do, the remaining {formatMoney(Math.max(0, amount - deposit), currency)} is due when the auction closes.</small>
+                <p><span>Expected deposit, 20% of {formatMoney(amount, currency)}</span><span>{formatMoney(deposit, currency)}</span></p>
+                <p className="due"><span>Payment integration</span><strong>Not charged yet</strong></p>
+                <small>This backend records the bid atomically. Card authorization is a separate step and no payment is taken by this form yet.</small>
               </div>
 
               <div className="form-grid">
-                <label>Brand name<input type="text" placeholder="Microsoft" required /></label>
-                <label>Email<input type="email" placeholder="you@microsoft.com" required /></label>
-                <label>Website <span>(optional)</span><input type="url" placeholder="https://microsoft.com" /></label>
-                <label>X handle <span>(optional)</span><input type="text" placeholder="@microsoft" /></label>
+                <label>Brand name<input name="brandName" type="text" maxLength={80} placeholder="Microsoft" required /></label>
+                <label>Email<input name="email" type="email" maxLength={254} placeholder="you@microsoft.com" required /></label>
+                <label>Website <span>(optional)</span><input name="website" type="url" maxLength={2048} placeholder="https://microsoft.com" /></label>
+                <label>X handle <span>(optional)</span><input name="xHandle" type="text" maxLength={50} placeholder="@microsoft" /></label>
               </div>
 
               <label className="upload-label" htmlFor="logo-upload">Logo</label>
               <label className="upload-zone" htmlFor="logo-upload">
-                <input id="logo-upload" type="file" accept=".png,.jpg,.jpeg,.svg" onChange={(event) => setLogoName(event.target.files?.[0]?.name ?? "")} />
+                <input id="logo-upload" name="logo" type="file" accept=".png,.jpg,.jpeg,.webp,.svg" onChange={(event) => setLogoName(event.target.files?.[0]?.name ?? "")} />
                 <span className="upload-icon">⇧</span>
                 <strong>{logoName || "Upload your logo"}</strong>
-                <small>{logoName ? "Ready to preview" : "PNG · JPG · SVG"}</small>
+                <small>{logoName ? "Ready for private review" : "PNG · JPG · WEBP · SVG · 2 MB max"}</small>
               </label>
 
-              <button className="primary-button bid-submit" type="submit">Outbid {spot.holder}</button>
+              {errorMessage && <p className="bid-error" role="alert">{errorMessage}</p>}
+              <button className="primary-button bid-submit" type="submit" disabled={submitting}>
+                {submitting ? "Saving bid…" : `Outbid ${spot.holder}`}
+              </button>
               <p className="hand-check">I check every logo by hand before it goes on the lid.</p>
             </form>
           ) : (
             <div className="bid-success" role="status">
               <span>✓</span>
-              <h3>Your bid preview is ready.</h3>
-              <p>This replica keeps checkout in demo mode, so no card was charged. The complete bid flow and form state are working locally.</p>
+              <h3>Your bid is live.</h3>
+              <p>{acceptedBid?.brand} is now leading with {formatMoney(acceptedBid?.amountEur ?? spot.bid, currency)}. The database accepted it atomically and the public auction has been refreshed. No card was charged.</p>
               <button className="primary-button" onClick={onClose}>Back to the auction</button>
             </div>
           )}
@@ -247,9 +289,38 @@ export default function Home() {
   const [currency, setCurrency] = useState<Currency>("EUR");
   const [lidView, setLidView] = useState<LidView>("live");
   const [tableView, setTableView] = useState<TableView>("spots");
-  const [selectedSpot, setSelectedSpot] = useState<Spot | null>(null);
+  const [spots, setSpots] = useState<Spot[]>(FALLBACK_SPOTS);
+  const [history, setHistory] = useState(FALLBACK_HISTORY);
+  const [backendStatus, setBackendStatus] = useState<"connecting" | "live" | "offline">("connecting");
+  const [selectedSpotId, setSelectedSpotId] = useState<number | null>(null);
   const countdown = useCountdown();
-  const totalRaised = useMemo(() => SPOTS.reduce((sum, spot) => sum + spot.bid, 0), []);
+  const selectedSpot = spots.find((spot) => spot.id === selectedSpotId) ?? null;
+  const totalRaised = useMemo(() => spots.reduce((sum, spot) => sum + spot.bid, 0), [spots]);
+
+  const applySnapshot = useCallback((snapshot: AuctionSnapshot) => {
+    setSpots(snapshot.spots);
+    setHistory(snapshot.history);
+    setBackendStatus("live");
+  }, []);
+
+  const refreshAuction = useCallback(async () => {
+    try {
+      const response = await fetch("/api/auction", { cache: "no-store" });
+      if (!response.ok) throw new Error("Auction API unavailable");
+      applySnapshot(await response.json() as AuctionSnapshot);
+    } catch {
+      setBackendStatus("offline");
+    }
+  }, [applySnapshot]);
+
+  useEffect(() => {
+    const initialTimer = window.setTimeout(() => void refreshAuction(), 0);
+    const timer = window.setInterval(() => void refreshAuction(), 5_000);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(timer);
+    };
+  }, [refreshAuction]);
 
   return (
     <>
@@ -287,15 +358,18 @@ export default function Home() {
             </div>
             <div className="progress-track"><span /></div>
             <p className="auction-time">Auction ends in {countdown} · you can still outbid any spot</p>
+            <p className={`data-status data-status--${backendStatus}`} aria-live="polite">
+              <span />{backendStatus === "live" ? "Live database connected" : backendStatus === "connecting" ? "Connecting live bids…" : "Showing fallback data — bids are temporarily unavailable"}
+            </p>
           </div>
 
           <div className={`lid-view ${lidView === "final" ? "lid-view--final" : ""}`}>
             {lidView === "live" ? (
-              <MacLid currency={currency} onSelect={setSelectedSpot} />
+              <MacLid spots={spots} currency={currency} onSelect={(spot) => setSelectedSpotId(spot.id)} />
             ) : (
               <div className="final-mac">
                 <Image src="/macbook.webp" alt="A MacBook Pro seen from behind, its lid carrying the reserved stickers" width={1536} height={1024} priority sizes="(max-width: 768px) 96vw, 900px" />
-                {SPOTS.map((spot) => (
+                {spots.map((spot) => (
                   <span className={`final-sticker final-sticker--${spot.id}`} key={spot.id} aria-hidden="true">
                     {spot.logo && <Image src={spot.logo} alt="" width={180} height={100} sizes="120px" />}
                   </span>
@@ -343,7 +417,7 @@ export default function Home() {
 
             <div className="segmented table-tabs" role="tablist" aria-label="Table view">
               <button role="tab" className={tableView === "spots" ? "active" : ""} aria-selected={tableView === "spots"} onClick={() => setTableView("spots")}>Spots</button>
-              <button role="tab" className={tableView === "history" ? "active" : ""} aria-selected={tableView === "history"} onClick={() => setTableView("history")}>History (123)</button>
+              <button role="tab" className={tableView === "history" ? "active" : ""} aria-selected={tableView === "history"} onClick={() => setTableView("history")}>History ({history.length})</button>
             </div>
 
             {tableView === "spots" ? (
@@ -351,13 +425,13 @@ export default function Home() {
                 <table className="spots-table">
                   <thead><tr><th>Spot</th><th>Size</th><th>Held by</th><th>Current bid</th><th><span className="sr-only">Action</span></th></tr></thead>
                   <tbody>
-                    {SPOTS.map((spot) => (
+                    {spots.map((spot) => (
                       <tr key={spot.id}>
                         <td data-label="Spot"><span className="spot-number">{spot.id}</span><strong>{spot.name}</strong></td>
                         <td data-label="Size"><span className={`size-tag size-tag--${spot.size.toLowerCase()}`}>{spot.size}</span>{spot.dimensions}</td>
                         <td data-label="Held by">{spot.website ? <a href={spot.website} target="_blank" rel="noreferrer"><Logo spot={spot} compact /></a> : <Logo spot={spot} compact />}</td>
                         <td data-label="Current bid"><strong>{formatMoney(spot.bid, currency)}</strong><small>{spot.bids} bids</small></td>
-                        <td data-label="Action"><button className="outbid-button" onClick={() => setSelectedSpot(spot)}>Outbid</button></td>
+                        <td data-label="Action"><button className="outbid-button" onClick={() => setSelectedSpotId(spot.id)}>Outbid</button></td>
                       </tr>
                     ))}
                   </tbody>
@@ -365,8 +439,8 @@ export default function Home() {
               </div>
             ) : (
               <div className="history-list" role="tabpanel">
-                {HISTORY.map((item, index) => (
-                  <div className="history-row" key={`${item.brand}-${index}`}>
+                {history.map((item) => (
+                  <div className="history-row" key={item.id}>
                     <span className="history-avatar">{item.brand.charAt(0)}</span>
                     <p><strong>{item.brand}</strong> bid on spot {item.spot}<small>{item.time}</small></p>
                     <strong>{formatMoney(item.amount, currency)}</strong>
@@ -456,7 +530,13 @@ export default function Home() {
       </footer>
 
       <a className="floating-cta" href="https://brandmylaptop.com/?ref=brandmymac">Brand your laptop →</a>
-      <BidDialog key={selectedSpot?.id ?? "closed"} spot={selectedSpot} currency={currency} onClose={() => setSelectedSpot(null)} />
+      <BidDialog
+        key={selectedSpot?.id ?? "closed"}
+        spot={selectedSpot}
+        currency={currency}
+        onClose={() => setSelectedSpotId(null)}
+        onSnapshot={applySnapshot}
+      />
     </>
   );
 }

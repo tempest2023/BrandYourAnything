@@ -334,6 +334,35 @@ p {
   font-variant-numeric: tabular-nums;
 }
 
+.data-status {
+  display: inline-flex;
+  margin: 0.35rem 0 0;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--ink-3);
+  font-size: 0.65rem;
+}
+
+.data-status > span {
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 50%;
+  background: var(--ink-3);
+}
+
+.data-status--live > span {
+  background: var(--green);
+  box-shadow: 0 0 0 0.2rem color-mix(in oklch, var(--green) 16%, transparent);
+}
+
+.data-status--offline {
+  color: oklch(55% 0.12 65);
+}
+
+.data-status--offline > span {
+  background: oklch(66% 0.15 65);
+}
+
 .lid-view {
   position: relative;
   width: min(100%, 55rem);
@@ -1418,6 +1447,21 @@ p {
 .bid-submit {
   width: 100%;
   margin-top: 1rem;
+}
+
+.bid-submit:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
+
+.bid-error {
+  margin: 0.9rem 0 0;
+  border-radius: 0.7rem;
+  background: color-mix(in oklch, var(--danger) 9%, transparent);
+  color: var(--danger);
+  padding: 0.7rem 0.8rem;
+  font-size: 0.72rem;
+  line-height: 1.45;
 }
 
 .hand-check {
