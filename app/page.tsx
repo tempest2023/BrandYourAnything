@@ -5,8 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   EUR_TO_USD,
-  FALLBACK_HISTORY,
-  FALLBACK_SPOTS,
+  STARTER_HISTORY,
+  STARTER_SPOTS,
   type AuctionSnapshot,
   type Currency,
   type PlaceBidResult,
@@ -16,20 +16,22 @@ import {
 type LidView = "live" | "final";
 type TableView = "spots" | "history";
 
+const CAMPAIGN_GOAL_USD = 3200;
+const SOURCE_URL = "https://github.com/tempest2023/BrandYourAnything";
+
 const FAQS = [
   {
     question: "Is this real?",
     answer: (
-      <p>Completely. The MacBook is real (well, imminent), the stickers are real vinyl, and I will travel with it and work with it in public spaces. The only fictional thing is the idea that a laptop lid isn&apos;t premium ad inventory.</p>
+      <p>Yes. This starter includes a working auction flow, persistent bids, and room for real sponsor logos. It intentionally ships with every spot open so your launch starts from a truthful blank slate.</p>
     ),
   },
   {
-    question: "Why this MacBook?",
+    question: "Why a MacBook lid?",
     answer: (
       <>
-        <p>In short: I need a new laptop + I&apos;m building for iOS = MacBook.</p>
-        <p>I&apos;ve been indie hacking for a year and a half now, pretty limited by my old dying laptop whenever I wanted to go somewhere.</p>
-        <p>I&apos;ve also started building mobile apps, and building for iOS without a Mac is just the worst. I&apos;d like to finally be able to build in Swift too.</p>
+        <p>It is portable, recognisable, and visible wherever its owner works. The ten-zone layout turns that everyday surface into clear, limited inventory.</p>
+        <p>Brand Anything is open source, so you can replace the MacBook, story, pricing, and campaign goal with an object that fits your own audience.</p>
       </>
     ),
   },
@@ -49,36 +51,40 @@ const FAQS = [
   {
     question: "How does payment work?",
     answer: (
-      <p>Bidding takes a 20% deposit (minimum 10 €), paid by card when you place the bid. If you don&apos;t win, it comes back in full, automatically. If you do, it counts toward the price and I send a payment link for the remainder. Bids are settled in euros; the dollar prices shown are indicative.</p>
+      <p>The included backend records bids atomically in US dollars, but it does not charge a card. Connect your preferred payment provider before launch if you want deposits or automatic settlement.</p>
     ),
   },
   {
     question: "What if someone outbids me?",
-    answer: <p>You get an honorable mention in the bid history and the chance to swing back. Outbids need to beat the current bid by at least 10 €.</p>,
+    answer: <p>You stay in the public bid history and can bid again. After the opening bid, each new bid must beat the current leader by at least $10.</p>,
   },
   {
     question: "Can any brand join?",
-    answer: <p>Almost. Every sponsor is approved by hand before anything appears, and I keep the final say on what goes on the lid — it travels with me, after all. If your bid is refused, your deposit comes back in full.</p>,
+    answer: <p>The starter assumes every sponsor and logo is reviewed before it appears. Define your own acceptance policy, then connect that approval step to whichever payment flow you choose.</p>,
   },
   {
-    question: "Why not just buy the MacBook?",
-    answer: <p>I&apos;ve been needing one for months. MRR is increasing but I&apos;m still far from being able to afford it at the moment. If this flops, I&apos;ll keep waiting until the day I can get one — but you won&apos;t be on it then.</p>,
+    question: "Can I change the campaign?",
+    answer: <p>Absolutely. The default copy, prices, auction date, object image, and ten spot positions are meant to be adapted. Keep only the parts that make sense for what you want to brand.</p>,
   },
   {
-    question: "Can I do this with my own laptop?",
+    question: "Can I use this for my own project?",
     answer: (
-      <p>That was the most asked question, so I built it: BrandMyLaptop.com. You set your machine and your prices — Mac or PC — and brands buy the spots at the price you named. <a href="https://brandmylaptop.com/?ref=brandmymac-faq">List your laptop →</a></p>
+      <p>That is exactly why Tempest open-sourced <a href={SOURCE_URL} target="_blank" rel="noreferrer">Brand Anything</a>. Fork the repository, add your details, and make the template yours.</p>
     ),
   },
 ];
 
 function displayAmount(amount: number, currency: Currency) {
-  return currency === "EUR" ? amount : Math.round(amount * EUR_TO_USD);
+  return currency === "USD" ? amount : Math.round(amount / EUR_TO_USD);
 }
 
 function formatMoney(amount: number, currency: Currency) {
   const converted = displayAmount(amount, currency);
-  return `${new Intl.NumberFormat("fr-FR").format(converted)} ${currency === "EUR" ? "€" : "$"}`;
+  return new Intl.NumberFormat(currency === "USD" ? "en-US" : "en-IE", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 2,
+  }).format(converted);
 }
 
 function useCountdown() {
@@ -102,7 +108,7 @@ function useCountdown() {
 }
 
 function Logo({ spot, compact = false }: { spot: Spot; compact?: boolean }) {
-  if (!spot.logo) return <span>{spot.holder}</span>;
+  if (!spot.logo) return <span>{spot.holder || "Available"}</span>;
   return (
     <span className={`brand-logo ${compact ? "brand-logo--compact" : ""}`}>
       <Image src={spot.logo} alt={spot.holder} width={180} height={100} sizes="180px" />
@@ -116,19 +122,25 @@ function MacLid({ spots, currency, onSelect }: { spots: Spot[]; currency: Curren
       <div className="mac-lid">
         <div className="lid-camera" />
         <span className="apple-mark" aria-label="Apple logo"></span>
-        {spots.map((spot) => (
-          <button
-            className={`lid-spot lid-spot--${spot.id}`}
-            key={spot.id}
-            onClick={() => onSelect(spot)}
-            aria-label={`Spot ${spot.id}, ${spot.name}, ${spot.size}. Reserved by ${spot.holder} at ${formatMoney(spot.bid, currency)}. Outbid.`}
-          >
-            <Logo spot={spot} />
-            <span className="lid-holder">{spot.holder}</span>
-            <span className="lid-price">{formatMoney(spot.bid, currency)}</span>
-            <span className="lid-outbid">Outbid</span>
-          </button>
-        ))}
+        {spots.map((spot) => {
+          const hasBid = spot.bids > 0 && Boolean(spot.holder);
+
+          return (
+            <button
+              className={`lid-spot lid-spot--${spot.id} ${hasBid ? "" : "lid-spot--available"}`}
+              key={spot.id}
+              onClick={() => onSelect(spot)}
+              aria-label={hasBid
+                ? `Spot ${spot.id}, ${spot.name}, ${spot.size}. Held by ${spot.holder} at ${formatMoney(spot.bid, currency)}. Outbid.`
+                : `Spot ${spot.id}, ${spot.name}, ${spot.size}. Available from ${formatMoney(spot.minBid, currency)}. Place the first bid.`}
+            >
+              {hasBid ? <Logo spot={spot} /> : <span className="lid-spot-number">{spot.id}</span>}
+              {(!hasBid || spot.logo) && <span className="lid-holder">{hasBid ? spot.holder : "Available"}</span>}
+              <span className="lid-price">{hasBid ? formatMoney(spot.bid, currency) : `Starts ${formatMoney(spot.minBid, currency)}`}</span>
+              <span className="lid-outbid">{hasBid ? "Outbid" : "Place bid"}</span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -137,8 +149,8 @@ function MacLid({ spots, currency, onSelect }: { spots: Spot[]; currency: Curren
 function CurrencySwitch({ currency, onChange }: { currency: Currency; onChange: (currency: Currency) => void }) {
   return (
     <div className="currency-switch" role="group" aria-label="Display currency">
-      <button className={currency === "EUR" ? "active" : ""} aria-pressed={currency === "EUR"} onClick={() => onChange("EUR")}>€</button>
       <button className={currency === "USD" ? "active" : ""} aria-pressed={currency === "USD"} onClick={() => onChange("USD")}>$</button>
+      <button className={currency === "EUR" ? "active" : ""} aria-pressed={currency === "EUR"} onClick={() => onChange("EUR")}>€</button>
     </div>
   );
 }
@@ -170,7 +182,7 @@ function BidDialog({
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
-  const [acceptedBid, setAcceptedBid] = useState<{ brand: string; amountEur: number } | null>(null);
+  const [acceptedBid, setAcceptedBid] = useState<{ brand: string; amountUsd: number } | null>(null);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -191,9 +203,9 @@ function BidDialog({
 
     const form = event.currentTarget;
     const formData = new FormData(form);
-    const amountCents = currency === "EUR"
+    const amountCents = currency === "USD"
       ? Math.round(amount * 100)
-      : Math.ceil((amount * 100) / EUR_TO_USD);
+      : Math.ceil(amount * 100 * EUR_TO_USD);
     formData.set("spotId", String(spot.id));
     formData.set("amountCents", String(amountCents));
     formData.set("idempotencyKey", idempotencyKey);
@@ -211,7 +223,7 @@ function BidDialog({
 
       setAcceptedBid({
         brand: String(formData.get("brandName")),
-        amountEur: amountCents / 100,
+        amountUsd: amountCents / 100,
       });
       setSubmitted(true);
     } catch {
@@ -234,7 +246,11 @@ function BidDialog({
                 <p className="eyebrow">Spot {spot.id}</p>
                 <h3>{spot.name}</h3>
                 <p>{spot.size === "L" ? "Large" : spot.size === "M" ? "Medium" : "Small"} sticker · {spot.dimensions}</p>
-                <p className="current-bid">Current bid <strong>{formatMoney(spot.bid, currency)}</strong> by {spot.holder} · {spot.bids} bids</p>
+                {spot.bids > 0 ? (
+                  <p className="current-bid">Current bid <strong>{formatMoney(spot.bid, currency)}</strong> by {spot.holder} · {spot.bids} {spot.bids === 1 ? "bid" : "bids"}</p>
+                ) : (
+                  <p className="current-bid">Opening bid <strong>{formatMoney(spot.minBid, currency)}</strong> · no bids yet</p>
+                )}
               </div>
 
               <label htmlFor="bid">Your bid ({currency})</label>
@@ -242,7 +258,7 @@ function BidDialog({
                 <input id="bid" type="number" min={minimumDisplayBid} step="1" value={bid} onChange={(event) => setBidInput({ context: bidContext, value: event.target.value })} required />
                 <span>{currency === "EUR" ? "€" : "$"}</span>
               </div>
-              <p className="field-note">Minimum {formatMoney(spot.minBid, currency)} · bids are settled in euros</p>
+              <p className="field-note">Minimum {formatMoney(spot.minBid, currency)} · bids are settled in US dollars</p>
 
               <div className="deposit-box">
                 <p><span>Expected deposit, 20% of {formatMoney(amount, currency)}</span><span>{formatMoney(deposit, currency)}</span></p>
@@ -267,7 +283,7 @@ function BidDialog({
 
               {errorMessage && <p className="bid-error" role="alert">{errorMessage}</p>}
               <button className="primary-button bid-submit" type="submit" disabled={submitting}>
-                {submitting ? "Saving bid…" : `Outbid ${spot.holder}`}
+                {submitting ? "Saving bid…" : spot.bids > 0 ? `Outbid ${spot.holder}` : "Place the first bid"}
               </button>
               <p className="hand-check">I check every logo by hand before it goes on the lid.</p>
             </form>
@@ -275,7 +291,7 @@ function BidDialog({
             <div className="bid-success" role="status">
               <span>✓</span>
               <h3>Your bid is live.</h3>
-              <p>{acceptedBid?.brand} is now leading with {formatMoney(acceptedBid?.amountEur ?? spot.bid, currency)}. The database accepted it atomically and the public auction has been refreshed. No card was charged.</p>
+              <p>{acceptedBid?.brand} is now leading with {formatMoney(acceptedBid?.amountUsd ?? spot.bid, currency)}. The database accepted it atomically and the public auction has been refreshed. No card was charged.</p>
               <button className="primary-button" onClick={onClose}>Back to the auction</button>
             </div>
           )}
@@ -286,16 +302,51 @@ function BidDialog({
 }
 
 export default function Home() {
-  const [currency, setCurrency] = useState<Currency>("EUR");
+  const [currency, setCurrency] = useState<Currency>("USD");
   const [lidView, setLidView] = useState<LidView>("live");
   const [tableView, setTableView] = useState<TableView>("spots");
-  const [spots, setSpots] = useState<Spot[]>(FALLBACK_SPOTS);
-  const [history, setHistory] = useState(FALLBACK_HISTORY);
+  const [spots, setSpots] = useState<Spot[]>(STARTER_SPOTS);
+  const [history, setHistory] = useState(STARTER_HISTORY);
   const [backendStatus, setBackendStatus] = useState<"connecting" | "live" | "offline">("connecting");
   const [selectedSpotId, setSelectedSpotId] = useState<number | null>(null);
+  const [loadedFinalAssets, setLoadedFinalAssets] = useState<Set<string>>(() => new Set());
+  const [failedFinalAssets, setFailedFinalAssets] = useState<Set<string>>(() => new Set());
   const countdown = useCountdown();
   const selectedSpot = spots.find((spot) => spot.id === selectedSpotId) ?? null;
-  const totalRaised = useMemo(() => spots.reduce((sum, spot) => sum + spot.bid, 0), [spots]);
+  const totalRaised = useMemo(() => spots.reduce((sum, spot) => sum + (spot.bids > 0 ? spot.bid : 0), 0), [spots]);
+  const filledSpotCount = useMemo(() => spots.filter((spot) => spot.bids > 0).length, [spots]);
+  const availableSpotCount = spots.length - filledSpotCount;
+  const goalProgress = Math.min(100, Math.round((totalRaised / CAMPAIGN_GOAL_USD) * 100));
+  const finalAssetKeys = useMemo(() => [
+    "macbook:/macbook.webp",
+    ...spots.filter((spot) => spot.logo).map((spot) => `logo:${spot.id}:${spot.logo}`),
+  ], [spots]);
+  const finalLookReady = finalAssetKeys.every((key) => loadedFinalAssets.has(key));
+  const finalLookFailed = finalAssetKeys.some((key) => failedFinalAssets.has(key));
+
+  const markFinalAssetReady = useCallback((key: string) => {
+    setLoadedFinalAssets((current) => {
+      if (current.has(key)) return current;
+      const next = new Set(current);
+      next.add(key);
+      return next;
+    });
+    setFailedFinalAssets((current) => {
+      if (!current.has(key)) return current;
+      const next = new Set(current);
+      next.delete(key);
+      return next;
+    });
+  }, []);
+
+  const markFinalAssetFailed = useCallback((key: string) => {
+    setFailedFinalAssets((current) => {
+      if (current.has(key)) return current;
+      const next = new Set(current);
+      next.add(key);
+      return next;
+    });
+  }, []);
 
   const applySnapshot = useCallback((snapshot: AuctionSnapshot) => {
     setSpots(snapshot.spots);
@@ -327,9 +378,9 @@ export default function Home() {
       <a className="skip-link" href="#main-content">Skip to main content</a>
       <nav className="site-nav">
         <div className="nav-inner">
-          <a className="wordmark" href="#top" aria-label="Brand My Mac home">
-            <Image src="/logo-small.png" alt="" width={41} height={27} priority />
-            <span>Brand My Mac</span>
+          <a className="wordmark" href="#top" aria-label="Brand Anything home">
+            <Image src="/logo-small.png" alt="" width={41} height={27} preload />
+            <span>Brand Anything</span>
           </a>
           <div className="nav-links">
             <a href="#spots">Live auction</a>
@@ -346,34 +397,64 @@ export default function Home() {
 
       <main id="main-content">
         <header className="hero" id="top">
-          <div className="live-visitors"><span />181 people visiting this site now</div>
-          <p className="total-visits"><span>·</span><strong>90,910</strong> total</p>
-          <h1>Your brand, on my Mac.</h1>
-          <p className="hero-subtitle">Your logo travels with me on a founder&apos;s best friend: the MacBook.</p>
+          <div className="live-visitors"><span />Auction open for first bids</div>
+          <p className="total-visits"><span>·</span><strong>{availableSpotCount}</strong> spots available</p>
+          <h1>Your brand, on this Mac.</h1>
+          <p className="hero-subtitle">Start with a blank lid. The winning logos turn it into something no one else carries.</p>
 
           <div className="funding">
             <div className="funding-row">
               <p><strong>{formatMoney(totalRaised, currency)}</strong><span>raised</span></p>
-              <p>goal passed · <strong>290%</strong></p>
+              <p>{formatMoney(CAMPAIGN_GOAL_USD, currency)} goal · <strong>{goalProgress}%</strong></p>
             </div>
-            <div className="progress-track"><span /></div>
-            <p className="auction-time">Auction ends in {countdown} · you can still outbid any spot</p>
+            <div className="progress-track"><span style={{ width: `${goalProgress}%` }} /></div>
+            <p className="auction-time">Auction ends in {countdown} · {filledSpotCount === 0 ? "be the first brand on the lid" : "you can still outbid any spot"}</p>
             <p className={`data-status data-status--${backendStatus}`} aria-live="polite">
-              <span />{backendStatus === "live" ? "Live database connected" : backendStatus === "connecting" ? "Connecting live bids…" : "Showing fallback data — bids are temporarily unavailable"}
+              <span />{backendStatus === "live" ? "Live database connected" : backendStatus === "connecting" ? "Connecting live bids…" : "Showing the empty starter state — bids are temporarily unavailable"}
             </p>
           </div>
 
-          <div className={`lid-view ${lidView === "final" ? "lid-view--final" : ""}`}>
-            {lidView === "live" ? (
+          <div className="lid-view">
+            <div className={`lid-layer lid-layer--live ${lidView === "live" ? "is-active" : ""}`} aria-hidden={lidView !== "live"}>
               <MacLid spots={spots} currency={currency} onSelect={(spot) => setSelectedSpotId(spot.id)} />
-            ) : (
+            </div>
+            <div className={`lid-layer lid-layer--final ${lidView === "final" && finalLookReady ? "is-active" : ""}`} aria-hidden={lidView !== "final" || !finalLookReady}>
               <div className="final-mac">
-                <Image src="/macbook.webp" alt="A MacBook Pro seen from behind, its lid carrying the reserved stickers" width={1536} height={1024} priority sizes="(max-width: 768px) 96vw, 900px" />
+                <Image
+                  src="/macbook.webp"
+                  alt="A MacBook Pro seen from behind, ready for the winning brand stickers"
+                  width={1536}
+                  height={1024}
+                  loading="eager"
+                  fetchPriority="high"
+                  sizes="(max-width: 768px) 96vw, 900px"
+                  onLoad={() => markFinalAssetReady("macbook:/macbook.webp")}
+                  onError={() => markFinalAssetFailed("macbook:/macbook.webp")}
+                />
                 {spots.map((spot) => (
                   <span className={`final-sticker final-sticker--${spot.id}`} key={spot.id} aria-hidden="true">
-                    {spot.logo && <Image src={spot.logo} alt="" width={180} height={100} sizes="120px" />}
+                    {spot.logo && (
+                      <Image
+                        src={spot.logo}
+                        alt=""
+                        width={180}
+                        height={100}
+                        loading="eager"
+                        sizes="120px"
+                        onLoad={() => markFinalAssetReady(`logo:${spot.id}:${spot.logo}`)}
+                        onError={() => markFinalAssetFailed(`logo:${spot.id}:${spot.logo}`)}
+                      />
+                    )}
                   </span>
                 ))}
+              </div>
+            </div>
+            {lidView === "final" && !finalLookReady && (
+              <div className={`final-loading ${finalLookFailed ? "final-loading--error" : ""}`} role="status" aria-live="polite">
+                <span aria-hidden="true">{finalLookFailed ? "!" : ""}</span>
+                <strong>{finalLookFailed ? "The final look could not load completely" : "Preparing the final look"}</strong>
+                <small>{finalLookFailed ? "No partial composition was shown. Reload to try the missing asset again." : "Loading the MacBook and every brand together…"}</small>
+                {finalLookFailed && <button type="button" onClick={() => window.location.reload()}>Reload assets</button>}
               </div>
             )}
           </div>
@@ -382,11 +463,11 @@ export default function Home() {
             <button className={lidView === "live" ? "active" : ""} aria-pressed={lidView === "live"} onClick={() => setLidView("live")}>Live auction</button>
             <button className={lidView === "final" ? "active" : ""} aria-pressed={lidView === "final"} onClick={() => setLidView("final")}>Final look</button>
           </div>
-          <p className="lid-caption">{lidView === "live" ? "Tap any spot to place a bid." : "A glimpse at what the MacBook could look like."}</p>
+          <p className="lid-caption">{lidView === "live" ? "Tap any spot to place a bid." : finalLookFailed ? "The incomplete composition stays hidden." : !finalLookReady ? "The complete composition will appear when every asset is ready." : filledSpotCount === 0 ? "A clean slate — winning logos will appear here." : "Every winning brand, composed on the finished lid."}</p>
 
           <div className="hero-close">
-            <p>I&apos;m financing my first MacBook by selling the one surface everyone sees: the lid.</p>
-            <p>Cafés, coworking spaces, events… get your brand in the outside world</p>
+            <p>Ten placements. Zero placeholder sponsors. The lid begins with the brands that actually bid.</p>
+            <p>Cafés, coworking spaces, events… take your brand into the outside world.</p>
             <div>
               <a className="primary-button" href="#spots">Get a spot</a>
               <a className="text-link" href="#how">How it works ›</a>
@@ -410,9 +491,9 @@ export default function Home() {
 
         <section className="auction-section" id="spots">
           <div className="section-inner auction-inner">
-            <p className="auction-status"><span />ends in {countdown} <b>·</b> 10 of 10 sticker spots taken</p>
+            <p className="auction-status"><span />ends in {countdown} <b>·</b> {availableSpotCount} of {spots.length} sticker spots available</p>
             <h2>The auction, live.</h2>
-            <p className="section-lead">Every spot shows its current top bid.</p>
+            <p className="section-lead">Every open spot shows its starting bid. No demo brands, no borrowed history.</p>
             <p className="section-copy">Spots from {formatMoney(125, currency)} Small · {formatMoney(200, currency)} Medium · {formatMoney(400, currency)} Large, with a premium next to and around the Apple logo.</p>
 
             <div className="segmented table-tabs" role="tablist" aria-label="Table view">
@@ -423,15 +504,15 @@ export default function Home() {
             {tableView === "spots" ? (
               <div className="spots-table-wrap" role="region" aria-label="Sticker spot bids" tabIndex={0}>
                 <table className="spots-table">
-                  <thead><tr><th>Spot</th><th>Size</th><th>Held by</th><th>Current bid</th><th><span className="sr-only">Action</span></th></tr></thead>
+                  <thead><tr><th>Spot</th><th>Size</th><th>Brand</th><th>Bid</th><th><span className="sr-only">Action</span></th></tr></thead>
                   <tbody>
                     {spots.map((spot) => (
                       <tr key={spot.id}>
                         <td data-label="Spot"><span className="spot-number">{spot.id}</span><strong>{spot.name}</strong></td>
                         <td data-label="Size"><span className={`size-tag size-tag--${spot.size.toLowerCase()}`}>{spot.size}</span>{spot.dimensions}</td>
-                        <td data-label="Held by">{spot.website ? <a href={spot.website} target="_blank" rel="noreferrer"><Logo spot={spot} compact /></a> : <Logo spot={spot} compact />}</td>
-                        <td data-label="Current bid"><strong>{formatMoney(spot.bid, currency)}</strong><small>{spot.bids} bids</small></td>
-                        <td data-label="Action"><button className="outbid-button" onClick={() => setSelectedSpotId(spot.id)}>Outbid</button></td>
+                        <td data-label="Brand">{spot.bids === 0 ? <span className="availability-pill">Available</span> : spot.website ? <a href={spot.website} target="_blank" rel="noreferrer"><Logo spot={spot} compact /></a> : <Logo spot={spot} compact />}</td>
+                        <td data-label={spot.bids === 0 ? "Starting bid" : "Current bid"}><strong>{formatMoney(spot.bids === 0 ? spot.minBid : spot.bid, currency)}</strong><small>{spot.bids === 0 ? "No bids yet" : `${spot.bids} ${spot.bids === 1 ? "bid" : "bids"}`}</small></td>
+                        <td data-label="Action"><button className="outbid-button" onClick={() => setSelectedSpotId(spot.id)}>{spot.bids === 0 ? "Place bid" : "Outbid"}</button></td>
                       </tr>
                     ))}
                   </tbody>
@@ -439,13 +520,19 @@ export default function Home() {
               </div>
             ) : (
               <div className="history-list" role="tabpanel">
-                {history.map((item) => (
-                  <div className="history-row" key={item.id}>
-                    <span className="history-avatar">{item.brand.charAt(0)}</span>
-                    <p><strong>{item.brand}</strong> bid on spot {item.spot}<small>{item.time}</small></p>
-                    <strong>{formatMoney(item.amount, currency)}</strong>
-                  </div>
-                ))}
+                {history.length > 0 ? history.map((item) => (
+                    <div className="history-row" key={item.id}>
+                      <span className="history-avatar">{item.brand.charAt(0)}</span>
+                      <p><strong>{item.brand}</strong> bid on spot {item.spot}<small>{item.time}</small></p>
+                      <strong>{formatMoney(item.amount, currency)}</strong>
+                    </div>
+                  )) : (
+                    <div className="history-empty">
+                      <span aria-hidden="true">01</span>
+                      <strong>The first bid writes the first line.</strong>
+                      <p>No imported winners or placeholder activity — this history starts with your launch.</p>
+                    </div>
+                  )}
               </div>
             )}
           </div>
@@ -465,7 +552,7 @@ export default function Home() {
         <section className="specs-section" id="specs">
           <div className="section-inner specs-inner">
             <h2>What the money buys.</h2>
-            <p className="specs-intro">Here are the exact specs. About 21% of everything raised goes to French taxes before I buy anything lol, so the {formatMoney(2529, currency)} is really covered around {formatMoney(3200, currency)}. Anything above that supports my indie journey and the future trips the laptop and I will go on!</p>
+            <p className="specs-intro">This starter campaign uses a {formatMoney(CAMPAIGN_GOAL_USD, currency)} goal for the machine, taxes, production, and the trips that make the placements visible. Forking the template? Replace these figures with your real costs before launch.</p>
             <div className="spec-card">
               <div className="spec-card-head"><h3>MacBook Pro 14”, Silver</h3><strong>{formatMoney(2529, currency)}</strong></div>
               <dl>
@@ -477,7 +564,7 @@ export default function Home() {
                 <div><dt>In the box</dt><dd>No power adapter</dd></div>
               </dl>
             </div>
-            <p className="spec-note">Priced in euros at Apple France, which is where I&apos;m buying it. Dollar figures on this page are converted. Anything raised past the goal pays for the trips the Mac goes on. <a href="https://www.apple.com/fr/shop/buy-mac/macbook-pro" target="_blank" rel="noreferrer">Check the price at Apple.</a></p>
+            <p className="spec-note">Prices and bids are stored in US dollars. Euro figures are an indicative display conversion. Anything raised past the goal can fund production and the places the Mac goes. <a href="https://www.apple.com/shop/buy-mac/macbook-pro" target="_blank" rel="noreferrer">Check the current price at Apple.</a></p>
           </div>
         </section>
 
@@ -497,39 +584,29 @@ export default function Home() {
 
         <section className="waitlist-section" id="waitlist">
           <div className="waitlist-card">
-            <p className="eyebrow">The idea grew up</p>
-            <h2>Want to do this with your own laptop?</h2>
-            <p>You can, now: this auction grew into <strong>BrandMyLaptop.</strong> Set your machine and your prices — Mac or PC — and brands buy the spots at the price you named.</p>
-            <a className="dark-button" href="https://brandmylaptop.com/?ref=brandmymac">List your laptop →</a>
-            <small>This auction stays here — it is the listing that started it.</small>
-          </div>
-        </section>
-
-        <section className="traffic-section" id="traffic" aria-labelledby="traffic-title">
-          <div className="traffic-heading">
-            <div><p className="eyebrow">A little proof of travel</p><h2 id="traffic-title">The launch, live around the world.</h2></div>
-            <span><i /> Live traffic</span>
-          </div>
-          <div className="traffic-frame">
-            <iframe src="https://datafa.st/share/6a8def30d1b34adfb3979864?realtime=1" title="Live traffic for brandmymac.com" loading="lazy" />
+            <p className="eyebrow">Open source, yours to remix</p>
+            <h2>What would you brand?</h2>
+            <p><strong>Brand Anything</strong> turns this idea into a reusable auction template. Change the object, inventory, prices, story, and owner details — then launch it as your own.</p>
+            <a className="dark-button" href={SOURCE_URL} target="_blank" rel="noreferrer">Use the template →</a>
+            <small>Built in public and shared for anyone who wants to try the format.</small>
           </div>
         </section>
       </main>
 
       <footer className="site-footer">
         <div className="footer-inner">
-          <Image src="/vincent.webp" alt="Vincent" width={72} height={72} />
+          <div className="footer-avatar" aria-hidden="true">T</div>
           <div>
-            <p className="footer-title">Hey, I&apos;m Vincent 👋</p>
-            <p>Solo founder, indie hacking for a year and a half. I build in public, ship SaaS, mobile apps, and even do some game dev. I&apos;m funding my first MacBook by renting out its lid. Questions, or want a spot? <a href="https://x.com/vynsedev">Find me on X</a> or <a href="mailto:contact@vynse.dev">email me</a>.</p>
-            <p>Want to do this with your own laptop? <a href="#waitlist">Join the waitlist.</a></p>
-            <div className="footer-meta"><a href="#">Privacy</a><a href="#">Terms</a></div>
-            <p className="legal">Brand My Mac is not affiliated with, endorsed by, or sponsored by Apple Inc. MacBook Pro and Mac are trademarks of Apple Inc.</p>
+            <p className="footer-title">Hey, I&apos;m Tempest 👋</p>
+            <p>I open-sourced this project so the idea would not belong to one finished MacBook. <a href={SOURCE_URL} target="_blank" rel="noreferrer">Brand Anything</a> is a starting point anyone can fork, reshape, and launch around their own story.</p>
+            <p>Found a bug, built your own version, or want to improve the template? <a href={`${SOURCE_URL}/issues`} target="_blank" rel="noreferrer">Open an issue on GitHub.</a></p>
+            <div className="footer-meta"><a href={SOURCE_URL} target="_blank" rel="noreferrer">Source on GitHub</a><a href={`${SOURCE_URL}/fork`} target="_blank" rel="noreferrer">Fork the template</a></div>
+            <p className="legal">Brand Anything is not affiliated with, endorsed by, or sponsored by Apple Inc. MacBook Pro and Mac are trademarks of Apple Inc.</p>
           </div>
         </div>
       </footer>
 
-      <a className="floating-cta" href="https://brandmylaptop.com/?ref=brandmymac">Brand your laptop →</a>
+      <a className="floating-cta" href={SOURCE_URL} target="_blank" rel="noreferrer">Use this template →</a>
       <BidDialog
         key={selectedSpot?.id ?? "closed"}
         spot={selectedSpot}

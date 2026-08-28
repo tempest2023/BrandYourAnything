@@ -74,18 +74,23 @@ export async function getAuctionSnapshot(): Promise<AuctionSnapshot> {
   if (spotsResult.error) throw spotsResult.error;
   if (bidsResult.error) throw bidsResult.error;
 
-  const spots = (spotsResult.data as SpotRow[]).map((spot) => ({
-    id: spot.id,
-    name: spot.name,
-    size: spot.size,
-    dimensions: spot.dimensions,
-    holder: spot.current_bidder_name,
-    bid: spot.current_bid_cents / 100,
-    minBid: (spot.current_bid_cents + spot.min_increment_cents) / 100,
-    bids: spot.bid_count,
-    ...(spot.current_logo_url ? { logo: spot.current_logo_url } : {}),
-    ...(spot.current_website ? { website: spot.current_website } : {}),
-  }));
+  const spots = (spotsResult.data as SpotRow[]).map((spot) => {
+    const hasBid = spot.bid_count > 0;
+    const openingBidCents = spot.current_bid_cents + spot.min_increment_cents;
+
+    return {
+      id: spot.id,
+      name: spot.name,
+      size: spot.size,
+      dimensions: spot.dimensions,
+      holder: hasBid ? spot.current_bidder_name : "",
+      bid: (hasBid ? spot.current_bid_cents : openingBidCents) / 100,
+      minBid: openingBidCents / 100,
+      bids: spot.bid_count,
+      ...(hasBid && spot.current_logo_url ? { logo: spot.current_logo_url } : {}),
+      ...(hasBid && spot.current_website ? { website: spot.current_website } : {}),
+    };
+  });
 
   const history = (bidsResult.data as BidRow[]).map((bid) => ({
     id: bid.id,
