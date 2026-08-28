@@ -389,12 +389,12 @@ p {
 .apple-mark {
   position: absolute;
   z-index: 1;
-  top: 40.5%;
+  top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
   color: oklch(33% 0.009 255);
   font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: clamp(3.7rem, 14vw, 8.5rem);
+  font-size: clamp(3rem, 14vw, 8.5rem);
   line-height: 1;
   text-shadow: 0 1px 0 oklch(99% 0 0 / 0.35);
 }
