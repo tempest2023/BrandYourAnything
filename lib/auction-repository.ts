@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { AuctionSnapshot, PlaceBidResult, SpotSize } from "@/lib/auction";
+import { getAuctionTable, getPlaceBidFunction } from "@/lib/database-names";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 type SpotRow = {
@@ -60,11 +61,11 @@ export async function getAuctionSnapshot(): Promise<AuctionSnapshot> {
   const supabase = getSupabaseAdmin();
   const [spotsResult, bidsResult] = await Promise.all([
     supabase
-      .from("spots")
+      .from(getAuctionTable("spots"))
       .select("id,name,size,dimensions,current_bidder_name,current_bid_cents,min_increment_cents,bid_count,current_logo_url,current_website")
       .order("current_bid_cents", { ascending: false }),
     supabase
-      .from("bids")
+      .from(getAuctionTable("bids"))
       .select("id,spot_id,amount_cents,bidder_name,created_at")
       .order("created_at", { ascending: false })
       .limit(20),
@@ -99,7 +100,7 @@ export async function getAuctionSnapshot(): Promise<AuctionSnapshot> {
 
 export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.rpc("place_bid", {
+  const { data, error } = await supabase.rpc(getPlaceBidFunction(), {
     p_spot_id: input.spotId,
     p_amount_cents: input.amountCents,
     p_bidder_name: input.brandName,

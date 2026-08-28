@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const url = process.env.SUPABASE_URL;
 const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+const databasePrefix = process.env.SUPABASE_DATABASE_PREFIX || "ba_dev";
 
 if (!url || !key) {
   throw new Error("Set SUPABASE_URL and SUPABASE_SECRET_KEY (or SUPABASE_SERVICE_ROLE_KEY).");
@@ -12,6 +13,13 @@ if (!url || !key) {
 if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:|\/)/.test(url) && process.env.ALLOW_REMOTE_CONCURRENCY_TEST !== "1") {
   throw new Error("Concurrency tests only run against local Supabase unless ALLOW_REMOTE_CONCURRENCY_TEST=1.");
 }
+if (!["ba_dev", "ba_prod"].includes(databasePrefix)) {
+  throw new Error("SUPABASE_DATABASE_PREFIX must be ba_dev or ba_prod.");
+}
+
+const spotsTable = `${databasePrefix}_spots`;
+const bidsTable = `${databasePrefix}_bids`;
+const placeBidFunction = `${databasePrefix}_place_bid`;
 
 const supabase = createClient(url, key, {
   auth: { autoRefreshToken: false, persistSession: false },
@@ -19,7 +27,7 @@ const supabase = createClient(url, key, {
 
 async function spot(id) {
   const { data, error } = await supabase
-    .from("spots")
+    .from(spotsTable)
     .select("current_bid_cents,min_increment_cents,bid_count")
     .eq("id", id)
     .single();
@@ -28,7 +36,7 @@ async function spot(id) {
 }
 
 function bid(args) {
-  return supabase.rpc("place_bid", {
+  return supabase.rpc(placeBidFunction, {
     p_spot_id: args.spotId,
     p_amount_cents: args.amountCents,
     p_bidder_name: args.name,
@@ -73,7 +81,7 @@ for (const response of retryResponses) {
 }
 
 const { count, error: countError } = await supabase
-  .from("bids")
+  .from(bidsTable)
   .select("id", { count: "exact", head: true })
   .eq("idempotency_key", retryKey);
 if (countError) throw countError;
@@ -99,7 +107,7 @@ assert.equal(crossSpotResults.filter((result) => result.accepted).length, 1, "a 
 assert.equal(crossSpotResults.filter((result) => result.reason === "idempotency_conflict").length, 1, "cross-spot key reuse returns a conflict");
 
 const { count: crossSpotCount, error: crossSpotCountError } = await supabase
-  .from("bids")
+  .from(bidsTable)
   .select("id", { count: "exact", head: true })
   .eq("idempotency_key", crossSpotKey);
 if (crossSpotCountError) throw crossSpotCountError;

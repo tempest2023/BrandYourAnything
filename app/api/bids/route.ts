@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { getAuctionSnapshot, placeBid } from "@/lib/auction-repository";
 import { BidValidationError, parseBidForm } from "@/lib/bid-validation";
+import { getLogoBucket } from "@/lib/database-names";
 import { getSupabaseAdmin, isSupabaseConfigured } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
@@ -19,7 +20,7 @@ async function uploadLogo(logo: File, spotId: number, idempotencyKey: string) {
   const digest = createHash("sha256").update(bytes).digest("hex").slice(0, 16);
   const extension = EXTENSIONS_BY_TYPE[logo.type];
   const path = `${spotId}/${idempotencyKey}-${digest}.${extension}`;
-  const { error } = await supabase.storage.from("bid-logos").upload(path, bytes, {
+  const { error } = await supabase.storage.from(getLogoBucket()).upload(path, bytes, {
     cacheControl: "3600",
     contentType: logo.type,
     upsert: false,
@@ -32,7 +33,7 @@ async function uploadLogo(logo: File, spotId: number, idempotencyKey: string) {
 async function removeLogo(path: string | null) {
   if (!path) return;
   const supabase = getSupabaseAdmin();
-  const { error } = await supabase.storage.from("bid-logos").remove([path]);
+  const { error } = await supabase.storage.from(getLogoBucket()).remove([path]);
   if (error) console.error("Failed to clean up rejected bid logo", error);
 }
 
