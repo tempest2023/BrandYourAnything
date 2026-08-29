@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { LaptopAuction } from "@/app/laptop/[slug]/laptop-auction";
 import { getLaptopSnapshot } from "@/lib/laptop-repository";
 import { laptopPath } from "@/lib/site";
-
-import { LaptopAuction } from "./laptop-auction";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +28,7 @@ export async function generateMetadata({
   };
 }
 
-export default async function LaptopPage({
+export default async function PublicLaptopPage({
   params,
 }: {
   params: Promise<{ slug: string }>;

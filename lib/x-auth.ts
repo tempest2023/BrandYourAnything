@@ -1,5 +1,7 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
+
 import type { User } from "@supabase/supabase-js";
 
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -13,6 +15,8 @@ export class XAuthenticationError extends Error {
     this.status = status;
   }
 }
+
+const MANAGER_KEY_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function getBearerToken(request: Request) {
   const authorization = request.headers.get("authorization");
@@ -62,7 +66,27 @@ export function getXOwnerIdentity(user: User) {
     ? candidateName.slice(0, 80)
     : `X user ${user.id.slice(0, 8)}`;
   const ownerEmail = user.email?.trim().toLowerCase()
-    || `x-${user.id}@auth.brandmylaptop.com`;
+    || `x-${user.id}@auth.brand-anything.vercel.app`;
 
   return { ownerEmail, ownerName };
+}
+
+export async function getPublishingOwner(request: Request) {
+  if (request.headers.has("authorization")) {
+    return getXOwnerIdentity(await requireXUser(request));
+  }
+
+  const managerKey = request.headers.get("x-lid-manager-key")?.trim() ?? "";
+  if (!MANAGER_KEY_PATTERN.test(managerKey)) {
+    throw new XAuthenticationError(
+      "Publish from the browser where you created this lid, or sign in with X.",
+      401,
+    );
+  }
+
+  const fingerprint = createHash("sha256").update(managerKey).digest("hex").slice(0, 32);
+  return {
+    ownerName: "Lid owner",
+    ownerEmail: `lid-${fingerprint}@auth.brand-anything.vercel.app`,
+  };
 }

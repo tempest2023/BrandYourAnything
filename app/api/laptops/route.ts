@@ -4,7 +4,7 @@ import { getLaptopMediaBucket } from "@/lib/database-names";
 import { createLaptop, getLaptopSnapshot } from "@/lib/laptop-repository";
 import { LaptopValidationError, parseLaptopForm } from "@/lib/laptop-validation";
 import { getSupabaseAdmin, isSupabaseConfigured } from "@/lib/supabase-admin";
-import { getXOwnerIdentity, requireXUser, XAuthenticationError } from "@/lib/x-auth";
+import { getPublishingOwner, XAuthenticationError } from "@/lib/x-auth";
 
 export const runtime = "nodejs";
 
@@ -45,8 +45,7 @@ export async function POST(request: Request) {
   let databaseAccepted = false;
 
   try {
-    const user = await requireXUser(request);
-    const owner = getXOwnerIdentity(user);
+    const owner = await getPublishingOwner(request);
     const formData = await request.formData();
     formData.set("ownerName", owner.ownerName);
     formData.set("ownerEmail", owner.ownerEmail);
@@ -91,7 +90,7 @@ export async function POST(request: Request) {
     });
 
     return Response.json(
-      { result, snapshot, location: `/laptop/${result.slug}` },
+      { result, snapshot, location: `/${result.slug}` },
       { status: result.reason === "created" ? 201 : 200 },
     );
   } catch (error) {

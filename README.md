@@ -4,7 +4,7 @@ An open-source Next.js 16 platform for auctioning brand placements, backed by Su
 
 <a href="https://www.buymeacoffee.com/tempes666" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/yellow_img.png" alt="Buy Me A Coffee"></a>
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/clone?repository-url=https%3A%2F%2Fgithub.com%2Ftempest2023%2FBrandYourAnything&env=SUPABASE_URL%2CSUPABASE_SECRET_KEY%2CNEXT_PUBLIC_SUPABASE_URL%2CNEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY&envDescription=Enter%20the%20Supabase%20server%20and%20browser%20credentials.%20Apply%20the%20database%20migrations%20and%20configure%20X%20OAuth%202.0%20before%20using%20the%20app.&envLink=https%3A%2F%2Fgithub.com%2Ftempest2023%2FBrandYourAnything%2Fblob%2Fmain%2FREADME.md%23production-deployment&project-name=brand-anything&repository-name=brand-anything)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/clone?repository-url=https%3A%2F%2Fgithub.com%2Ftempest2023%2FBrandYourAnything&env=SUPABASE_URL%2CSUPABASE_SECRET_KEY%2CNEXT_PUBLIC_SUPABASE_URL%2CNEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY%2CNEXT_PUBLIC_SITE_URL&envDescription=Enter%20the%20Supabase%20credentials%20and%20the%20public%20site%20URL.%20Apply%20the%20database%20migrations%20before%20using%20the%20app.&envLink=https%3A%2F%2Fgithub.com%2Ftempest2023%2FBrandYourAnything%2Fblob%2Fmain%2FREADME.md%23production-deployment&project-name=brand-anything&repository-name=brand-anything)
 
 ## Production deployment
 
@@ -29,6 +29,7 @@ Open the project's **Connect** dialog or go to **Project Settings > API Keys**. 
 | `SUPABASE_SECRET_KEY` | A server-side Secret key | `sb_secret_...` |
 | `NEXT_PUBLIC_SUPABASE_URL` | Project URL | `https://your-project-ref.supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | A browser-safe Publishable key | `sb_publishable_...` |
+| `NEXT_PUBLIC_SITE_URL` | Public site origin | `https://brand-anything.vercel.app` |
 
 The Publishable key is intended for browser Auth. The Secret key has elevated access and bypasses Row Level Security, so never commit it, expose it to browser code, or prefix it with `NEXT_PUBLIC_`. If a legacy project has only a `service_role` and `anon` key, set them as `SUPABASE_SERVICE_ROLE_KEY` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`; the application supports both fallbacks.
 
@@ -74,7 +75,7 @@ Do not create these tables or buckets manually, and do not run `supabase db rese
 
 ### 4. Configure X sign in
 
-Publishing is protected by Supabase Auth and accepts only the X / Twitter OAuth 2.0 provider. A browser session alone is not trusted: `POST /api/laptops` sends the access token back to Supabase, verifies the user, and derives the public owner identity on the server.
+When X / Twitter OAuth 2.0 is configured, `POST /api/laptops` sends the access token back to Supabase, verifies the user, and derives the public owner identity on the server. If X sign-in is unavailable, the creator uses a browser-generated management key stored in `localStorage`; the server hashes that key into a stable private owner identity and applies the same creation rate limit.
 
 1. In the [X Developer Portal](https://developer.x.com/), create an OAuth 2.0 Web App and enable **Request email from users**.
 2. Add `https://<project-ref>.supabase.co/auth/v1/callback` as the X app callback URL. For a local Supabase stack, also add `http://localhost:54321/auth/v1/callback`.
@@ -101,6 +102,7 @@ In **Project Settings > Environment Variables**, configure:
 | `SUPABASE_SECRET_KEY` | The Supabase `sb_secret_...` key | Production, Preview, Development |
 | `NEXT_PUBLIC_SUPABASE_URL` | The Supabase Project URL | Production, Preview, Development |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | The Supabase `sb_publishable_...` key | Production, Preview, Development |
+| `NEXT_PUBLIC_SITE_URL` | `https://brand-anything.vercel.app` | Production, Preview, Development |
 | `SUPABASE_DATABASE_PREFIX` | `ba_prod` | Production only |
 | `SUPABASE_DATABASE_PREFIX` | `ba_dev` | Preview and Development only |
 
@@ -138,7 +140,7 @@ USD is the default and the canonical auction currency. The database and Route Ha
 
 ## Multi-tenant laptop flow
 
-`POST /api/laptops` validates the multipart creation form, stores an optional laptop photo privately, and creates the campaign plus all ten spots in one database transaction. Each campaign is published at `/laptop/<slug>` and exposes only public fields.
+`POST /api/laptops` validates the multipart creation form, stores an optional laptop photo privately, and creates the campaign plus all ten spots in one database transaction. Each campaign is published at `/<slug>` and exposes only public fields; the former `/laptop/<slug>` route remains compatible.
 
 Every environment adds three compact tables:
 

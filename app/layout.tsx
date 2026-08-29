@@ -4,11 +4,12 @@ import { cookies } from "next/headers";
 import { I18nProvider } from "@/app/i18n-provider";
 import { LOCALE_COOKIE, localeTag, normalizeLocale } from "@/lib/i18n";
 import { CURRENCY_COOKIE, normalizeCurrency } from "@/lib/money";
+import { SITE_URL } from "@/lib/site";
 
 import "./globals.css";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
+  metadataBase: new URL(SITE_URL),
   title: "Brand Anything — Put your brand on my laptop",
   description:
     "Publish your own 10-spot laptop sponsorship auction, accept live bids, and share a page built around the machine you carry.",

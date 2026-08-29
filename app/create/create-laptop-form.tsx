@@ -6,55 +6,28 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "@/app/i18n-provider";
 import { LOCALES, type Locale } from "@/lib/i18n";
+import { laptopPath, laptopUrl, SITE_HOST, SITE_URL } from "@/lib/site";
 import { getSupabaseBrowser, isSupabaseBrowserConfigured } from "@/lib/supabase-browser";
 import styles from "./create.module.css";
 
 const STEPS = ["Machine", "Ownership", "Showcase", "Layout", "Prices", "Listing", "Sticker", "Publish"] as const;
-const DRAFT_STORAGE_KEY = "brandmylaptop-sell-draft";
-const PUBLISH_AFTER_AUTH_KEY = "brandmylaptop-publish-after-auth";
+const DRAFT_STORAGE_KEY = "brand-anything-sell-draft";
+const LEGACY_DRAFT_STORAGE_KEY = "brandmylaptop-sell-draft";
+const PUBLISH_AFTER_AUTH_KEY = "brand-anything-publish-after-auth";
+const MANAGER_KEY_STORAGE_KEY = "brand-anything-lid-manager-key";
+const MANAGED_LID_STORAGE_KEY = "brand-anything-managed-lid";
 const X_COMPOSE_URL = "https://x.com/compose/post";
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHARE_LANGUAGE_LABELS: Record<Locale, string> = {
   en: "English",
   zh: "中文",
   es: "Español",
 };
-const X_SHARE_FALLBACK = {
-  en: {
-    eyebrow: "X sign-in is unavailable",
-    title: "Share your lid instead.",
-    body: "We prepared a post you can publish from your own X account.",
-    language: "Post language",
-    button: "Open X and post",
-    note: "X opens in a new tab with the text filled in. You can edit it before posting.",
-    post: "I’m opening up the lid of my laptop to a handful of brands. Your logo travels with me through cafés, meetings and events — not just another banner ad. Interested? Follow the launch: https://brandmylaptop.com #BrandMyLaptop",
-  },
-  zh: {
-    eyebrow: "X 登录暂不可用",
-    title: "先把你的电脑盖分享出去。",
-    body: "我们准备了一段固定文案，你可以用自己的 X 账号发布。",
-    language: "文案语言",
-    button: "打开 X 发布",
-    note: "X 会在新标签页打开并预填文案；发布前仍可编辑。",
-    post: "我准备把电脑盖上的有限品牌位置开放出来。你的 Logo 会跟着我出现在咖啡馆、会议和活动现场，而不只是又一个横幅广告。感兴趣的话，关注上线：https://brandmylaptop.com #BrandMyLaptop",
-  },
-  es: {
-    eyebrow: "El acceso con X no está disponible",
-    title: "Comparte la tapa mientras tanto.",
-    body: "Hemos preparado una publicación para compartirla desde tu propia cuenta de X.",
-    language: "Idioma de la publicación",
-    button: "Abrir X y publicar",
-    note: "X se abrirá en otra pestaña con el texto preparado. Puedes editarlo antes de publicar.",
-    post: "Voy a abrir unos pocos espacios de la tapa de mi portátil a marcas. Tu logo viajará conmigo por cafés, reuniones y eventos, no será otro banner más. Sigue el lanzamiento: https://brandmylaptop.com #BrandMyLaptop",
-  },
-} satisfies Record<Locale, {
-  eyebrow: string;
-  title: string;
-  body: string;
-  language: string;
-  button: string;
-  note: string;
-  post: string;
-}>;
+const X_SHARE_POSTS: Record<Locale, (publicUrl: string) => string> = {
+  en: (publicUrl) => `I’m opening up the lid of my laptop to a handful of brands. Your logo travels with me through cafés, meetings and events — not just another banner ad. Interested? See the live auction: ${publicUrl} #BrandAnything`,
+  zh: (publicUrl) => `我准备把电脑盖上的有限品牌位置开放出来。你的 Logo 会跟着我出现在咖啡馆、会议和活动现场，而不只是又一个横幅广告。查看正在进行的竞拍：${publicUrl} #BrandAnything`,
+  es: (publicUrl) => `Voy a abrir unos pocos espacios de la tapa de mi portátil a marcas. Tu logo viajará conmigo por cafés, reuniones y eventos, no será otro banner más. Mira la subasta en directo: ${publicUrl} #BrandAnything`,
+};
 const SHOWCASE_OPTIONS = [
   "Build in public — posts and videos",
   "Coworking spaces and cafés",
@@ -111,6 +84,11 @@ type SellDraft = {
   slug: string;
 };
 
+type ManagedLid = {
+  slug: string;
+  title: string;
+};
+
 type CreateResponse = {
   error?: string;
   location?: string;
@@ -142,11 +120,36 @@ function isUnavailableXAuthError(message: string) {
   return /provider|not configured|not enabled|unsupported|disabled/i.test(message);
 }
 
+function getOrCreateManagerKey() {
+  const saved = window.localStorage.getItem(MANAGER_KEY_STORAGE_KEY);
+  if (saved && UUID_PATTERN.test(saved)) return saved;
+  const key = crypto.randomUUID();
+  window.localStorage.setItem(MANAGER_KEY_STORAGE_KEY, key);
+  return key;
+}
+
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return;
+  } catch {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.append(textarea);
+    textarea.select();
+    const copied = document.execCommand("copy");
+    textarea.remove();
+    if (!copied) throw new Error("Copy was blocked by the browser.");
+  }
+}
+
 function Logo() {
   return (
-    <Link href="/" className={styles.logo} aria-label="BrandMyLaptop">
+    <Link href="/" className={styles.logo} aria-label="Brand Anything">
       <Image src="/logo-small.png" alt="" width={48} height={48} priority />
-      <span>BrandMyLaptop</span>
+      <span>Brand Anything</span>
     </Link>
   );
 }
@@ -179,7 +182,7 @@ function SiteFooter() {
           </div>
         </nav>
         <div className={styles.footerLegal}>
-          <p>Stickers are paid placements, not endorsements. BrandMyLaptop is not affiliated with, endorsed by or sponsored by Apple Inc. or any laptop manufacturer.</p>
+          <p>Stickers are paid placements, not endorsements. Brand Anything is not affiliated with, endorsed by or sponsored by Apple Inc. or any laptop manufacturer.</p>
           <nav aria-label="Legal">
             <Link href="/">Terms</Link>
             <Link href="/">Privacy</Link>
@@ -192,7 +195,7 @@ function SiteFooter() {
 }
 
 export function CreateLaptopForm() {
-  const { locale, setLocale } = useI18n();
+  const { locale } = useI18n();
   const formRef = useRef<HTMLFormElement>(null);
   const [step, setStep] = useState(0);
   const [furthestStep, setFurthestStep] = useState(0);
@@ -222,16 +225,22 @@ export function CreateLaptopForm() {
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [createdLocation, setCreatedLocation] = useState<string | null>(null);
+  const [publishedLocation, setPublishedLocation] = useState<string | null>(null);
+  const [managedLid, setManagedLid] = useState<ManagedLid | null>(null);
+  const [shareLocale, setShareLocale] = useState<Locale>(locale);
+  const [copyFeedback, setCopyFeedback] = useState<"idle" | "copied">("idle");
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
 
   useEffect(() => {
     let draft: Partial<SellDraft> = {};
-    const saved = window.sessionStorage.getItem(DRAFT_STORAGE_KEY);
+    const saved = window.sessionStorage.getItem(DRAFT_STORAGE_KEY)
+      ?? window.sessionStorage.getItem(LEGACY_DRAFT_STORAGE_KEY);
     if (saved) {
       try {
         draft = JSON.parse(saved) as Partial<SellDraft>;
       } catch {
         window.sessionStorage.removeItem(DRAFT_STORAGE_KEY);
+        window.sessionStorage.removeItem(LEGACY_DRAFT_STORAGE_KEY);
       }
     }
 
@@ -257,6 +266,22 @@ export function CreateLaptopForm() {
         if (typeof draft.slug === "string") setSlug(draft.slug);
       }
       setDraftReady(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(MANAGED_LID_STORAGE_KEY);
+    if (!saved) return;
+    const timer = window.setTimeout(() => {
+      try {
+        const candidate = JSON.parse(saved) as Partial<ManagedLid>;
+        if (typeof candidate.slug === "string" && typeof candidate.title === "string") {
+          setManagedLid({ slug: candidate.slug, title: candidate.title });
+        }
+      } catch {
+        window.localStorage.removeItem(MANAGED_LID_STORAGE_KEY);
+      }
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
@@ -348,8 +373,8 @@ export function CreateLaptopForm() {
   const minimumPrice = Math.min(...previewSpots.map((spot) => spot.amount));
   const fundingCost = Number(machineCost);
   const machineIsValid = ownership === "own" || (Number.isFinite(fundingCost) && fundingCost >= 100 && fundingCost <= 20_000);
-  const shareFallback = X_SHARE_FALLBACK[locale];
-  const xComposeHref = `${X_COMPOSE_URL}?text=${encodeURIComponent(shareFallback.post)}`;
+  const desiredPublicLocation = laptopPath(slug);
+  const sharePost = X_SHARE_POSTS[shareLocale](laptopUrl(slug));
 
   const selectLayout = (count: LayoutCount) => {
     setLayoutCount(count);
@@ -392,6 +417,93 @@ export function CreateLaptopForm() {
       : [...current, option]);
   };
 
+  const rememberManagedLid = (location: string) => {
+    const entry = { slug, title };
+    window.localStorage.setItem(MANAGED_LID_STORAGE_KEY, JSON.stringify(entry));
+    setManagedLid(entry);
+    setPublishedLocation(location);
+  };
+
+  const publishLaptop = async (form: HTMLFormElement, mode: "x" | "browser") => {
+    if (publishedLocation === desiredPublicLocation) return publishedLocation;
+
+    setSubmitting(true);
+    setErrorMessage("");
+    const formData = new FormData(form);
+    const storyParts = [
+      showcase.length ? `This laptop is seen at: ${showcase.join(", ")}.` : "This laptop travels with its owner every day.",
+      extraNote.trim(),
+      `Each approved sticker stays on for ${stickerMonths} months.`,
+    ].filter(Boolean);
+
+    formData.set("slug", slug);
+    formData.set("title", title);
+    formData.set("tagline", "Put your brand on the lid I carry everywhere.");
+    formData.set("story", storyParts.join(" "));
+    formData.set("laptopModel", `${machine === "mac" ? "Mac" : "PC"} · ${screenSize}″`);
+    formData.set("goalCents", String(Math.round((ownership === "fund" ? fundingCost : totalFloor) * 100)));
+    formData.set("smallOpeningBidCents", String(Math.round(prices.small * 100)));
+    formData.set("mediumOpeningBidCents", String(Math.round(prices.medium * 100)));
+    formData.set("largeOpeningBidCents", String(Math.round(prices.large * 100)));
+    formData.set("minIncrementCents", "1000");
+    formData.set("auctionClosesAt", new Date(Date.now() + listingDays * 86_400_000).toISOString());
+    formData.set("idempotencyKey", idempotencyKey);
+
+    const headers: Record<string, string> = mode === "x" && accessToken
+      ? { Authorization: `Bearer ${accessToken}` }
+      : { "X-Lid-Manager-Key": getOrCreateManagerKey() };
+
+    try {
+      const response = await fetch("/api/laptops", { method: "POST", headers, body: formData });
+      const payload = await response.json() as CreateResponse;
+      if (!response.ok || !payload.location) {
+        setErrorMessage(payload.error || "We could not publish this laptop. Please try again.");
+        if (payload.result?.reason === "idempotency_conflict") setIdempotencyKey(crypto.randomUUID());
+        if (response.status === 401 && mode === "x" && isSupabaseBrowserConfigured()) {
+          await getSupabaseBrowser().auth.signOut({ scope: "local" });
+          setAccessToken(null);
+        }
+        return null;
+      }
+      window.sessionStorage.removeItem(DRAFT_STORAGE_KEY);
+      window.sessionStorage.removeItem(LEGACY_DRAFT_STORAGE_KEY);
+      rememberManagedLid(payload.location);
+      return payload.location;
+    } catch {
+      setErrorMessage("The network did not confirm publication. Try again safely with the same details.");
+      return null;
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleShareCopy = async (openX: boolean) => {
+    const form = formRef.current;
+    if (!form || submitting || !form.reportValidity()) return;
+    setCopyFeedback("idle");
+
+    const location = await publishLaptop(form, "browser");
+    if (!location) return;
+    const post = X_SHARE_POSTS[shareLocale](`${SITE_URL}${location}`);
+
+    try {
+      await copyText(post);
+      setCopyFeedback("copied");
+      if (!openX) return;
+
+      const composeUrl = `${X_COMPOSE_URL}?text=${encodeURIComponent(post)}`;
+      const opened = window.open(composeUrl, "_blank");
+      if (opened) {
+        opened.opener = null;
+        setCreatedLocation(location);
+      } else {
+        window.open(composeUrl, "_self");
+      }
+    } catch {
+      setErrorMessage("Your browser blocked copying. Select the post text and copy it manually.");
+    }
+  };
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (submitting || authRedirecting) return;
@@ -428,51 +540,8 @@ export function CreateLaptopForm() {
     }
 
     window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
-    setSubmitting(true);
-    setErrorMessage("");
-    const formData = new FormData(event.currentTarget);
-    const storyParts = [
-      showcase.length ? `This laptop is seen at: ${showcase.join(", ")}.` : "This laptop travels with its owner every day.",
-      extraNote.trim(),
-      `Each approved sticker stays on for ${stickerMonths} months.`,
-    ].filter(Boolean);
-
-    formData.set("slug", slug);
-    formData.set("title", title);
-    formData.set("tagline", "Put your brand on the lid I carry everywhere.");
-    formData.set("story", storyParts.join(" "));
-    formData.set("laptopModel", `${machine === "mac" ? "Mac" : "PC"} · ${screenSize}″`);
-    formData.set("goalCents", String(Math.round((ownership === "fund" ? fundingCost : totalFloor) * 100)));
-    formData.set("smallOpeningBidCents", String(Math.round(prices.small * 100)));
-    formData.set("mediumOpeningBidCents", String(Math.round(prices.medium * 100)));
-    formData.set("largeOpeningBidCents", String(Math.round(prices.large * 100)));
-    formData.set("minIncrementCents", "1000");
-    formData.set("auctionClosesAt", new Date(Date.now() + listingDays * 86_400_000).toISOString());
-    formData.set("idempotencyKey", idempotencyKey);
-
-    try {
-      const response = await fetch("/api/laptops", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${accessToken}` },
-        body: formData,
-      });
-      const payload = await response.json() as CreateResponse;
-      if (!response.ok || !payload.location) {
-        setErrorMessage(payload.error || "We could not publish this laptop. Please try again.");
-        if (payload.result?.reason === "idempotency_conflict") setIdempotencyKey(crypto.randomUUID());
-        if (response.status === 401) {
-          await getSupabaseBrowser().auth.signOut({ scope: "local" });
-          setAccessToken(null);
-        }
-        return;
-      }
-      window.sessionStorage.removeItem(DRAFT_STORAGE_KEY);
-      setCreatedLocation(payload.location);
-    } catch {
-      setErrorMessage("The network did not confirm publication. Try again safely with the same details.");
-    } finally {
-      setSubmitting(false);
-    }
+    const location = await publishLaptop(event.currentTarget, "x");
+    if (location) setCreatedLocation(location);
   };
 
   useEffect(() => {
@@ -492,7 +561,7 @@ export function CreateLaptopForm() {
         <p>Brands can now see the spots, the prices, and the story behind your laptop.</p>
         <div className={styles.successActions}>
           <Link className={styles.primaryButton} href={createdLocation}>Open your public lid</Link>
-          <Link className={styles.secondaryButton} href="/">Back to BrandMyLaptop</Link>
+          <Link className={styles.secondaryButton} href="/">Back to Brand Anything</Link>
         </div>
       </main>
     );
@@ -506,7 +575,11 @@ export function CreateLaptopForm() {
         <div className={styles.hero}>
           <h1>Put your lid up.</h1>
           <p>You set the machine and the prices; the listing, the payments and the logo review are handled for you.</p>
-          <p className={styles.signIn}>Already put a lid up? <Link href="/">Sign in to manage it</Link>.</p>
+          {xSignInUnavailable ? managedLid && (
+            <p className={styles.signIn}>Your lid is saved in this browser. <Link href={laptopPath(managedLid.slug)}>Manage {managedLid.title}</Link>.</p>
+          ) : (
+            <p className={styles.signIn}>Already put a lid up? <Link href="/">Sign in to manage it</Link>.</p>
+          )}
 
           <ol className={styles.steps} aria-label="Listing steps">
             {STEPS.map((label, index) => (
@@ -623,7 +696,7 @@ export function CreateLaptopForm() {
               <fieldset>
                 <legend>Name it, and put it up.</legend>
                 <label className={styles.inputLabel}>Title<input type="text" value={title} minLength={3} maxLength={80} onChange={(event) => setTitle(event.target.value)} placeholder="Ten spots on my MacBook Pro" required /></label>
-                <label className={styles.inputLabel}>Address<span className={styles.addressField}><b>brandmylaptop.com/</b><input value={slug} minLength={3} maxLength={48} onChange={(event) => setSlug(slugify(event.target.value))} placeholder="your-name" required /><i aria-label="Address is available">✓</i></span></label>
+                <label className={styles.inputLabel}>Address<span className={styles.addressField}><b>{SITE_HOST}/</b><input value={slug} minLength={3} maxLength={48} onChange={(event) => setSlug(slugify(event.target.value))} placeholder="your-name" required /><i aria-label="Address is available">✓</i></span></label>
                 <dl className={styles.summary}>
                   <div><dt>Machine</dt><dd>{machine === "mac" ? "Mac" : "PC"} · {screenSize}″</dd></div>
                   <div><dt>Ownership</dt><dd>{ownership === "own" ? "You own it" : `Funding ${formatMoney(fundingCost || 0)}`}</dd></div>
@@ -635,30 +708,37 @@ export function CreateLaptopForm() {
                 <p className={styles.publishCopy}>Buyers pay you directly — the money lands in your own Stripe account, minus the 10% platform fee and Stripe&apos;s processing fees. You print the stickers yourself, to a spec we give you. You approve every logo before it appears.</p>
                 {xSignInUnavailable ? (
                   <section className={styles.shareFallback} aria-labelledby="x-share-title">
-                    <p className={styles.shareEyebrow}>{shareFallback.eyebrow}</p>
-                    <h2 id="x-share-title">{shareFallback.title}</h2>
-                    <p className={styles.shareBody}>{shareFallback.body}</p>
+                    <h2 id="x-share-title">Share your lid instead.</h2>
                     <div className={styles.shareLanguageRow}>
-                      <span>{shareFallback.language}</span>
-                      <div role="group" aria-label={shareFallback.language}>
+                      <span>Post language</span>
+                      <div role="group" aria-label="Post language">
                         {LOCALES.map((language) => (
                           <button
                             type="button"
                             key={language}
-                            className={language === locale ? styles.activeShareLanguage : styles.shareLanguage}
-                            aria-pressed={language === locale}
-                            onClick={() => setLocale(language)}
+                            className={language === shareLocale ? styles.activeShareLanguage : styles.shareLanguage}
+                            aria-pressed={language === shareLocale}
+                            onClick={() => {
+                              setShareLocale(language);
+                              setCopyFeedback("idle");
+                            }}
                           >
                             {SHARE_LANGUAGE_LABELS[language]}
                           </button>
                         ))}
                       </div>
                     </div>
-                    <blockquote className={styles.shareCopy} lang={locale}>{shareFallback.post}</blockquote>
-                    <a className={styles.xShareButton} href={xComposeHref} target="_blank" rel="noreferrer">
-                      {shareFallback.button}<span aria-hidden="true">↗</span>
-                    </a>
-                    <p className={styles.shareNote}>{shareFallback.note}</p>
+                    <div className={styles.shareCopyBox}>
+                      <button type="button" className={styles.copyPostButton} disabled={submitting} onClick={() => void handleShareCopy(false)}>
+                        {submitting ? "Publishing…" : copyFeedback === "copied" ? "Copied" : "Copy"}
+                      </button>
+                      <blockquote className={styles.shareCopy} lang={shareLocale}>{sharePost}</blockquote>
+                    </div>
+                    {errorMessage && <p className={styles.error} role="alert">{errorMessage}</p>}
+                    <button type="button" className={styles.xShareButton} disabled={submitting} onClick={() => void handleShareCopy(true)}>
+                      {submitting ? "Publishing…" : "Copy and post"}<span aria-hidden="true">↗</span>
+                    </button>
+                    <p className={styles.shareNote}>Copying publishes your lid and saves it in this browser. The post is copied before X opens, and you can edit it there.</p>
                   </section>
                 ) : (
                   <>
