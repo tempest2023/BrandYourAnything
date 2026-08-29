@@ -275,7 +275,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
           <dl>
             <div><dt>{t("laptop.machine")}</dt><dd>{snapshot.campaign.laptopModel}</dd></div>
             <div><dt>{t("laptop.owner")}</dt><dd>{snapshot.campaign.ownerName}</dd></div>
-            <div><dt>{t("laptop.closes")}</dt><dd>{formatDate(snapshot.campaign.closesAt)}</dd></div>
+            <div><dt>{t("laptop.closes")}</dt><dd suppressHydrationWarning>{formatDate(snapshot.campaign.closesAt)}</dd></div>
           </dl>
         </div>
         <div className={styles.ownerPhoto}>

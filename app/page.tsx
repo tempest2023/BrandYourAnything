@@ -27,7 +27,7 @@ type TableView = "spots" | "history";
 
 const CAMPAIGN_GOAL_USD = 3200;
 const SOURCE_URL = "https://github.com/tempest2023/BrandYourAnything";
-const CREATE_URL = "/create";
+const CREATE_URL = "/sell";
 const X_ACCOUNT_URL = "https://x.com/biIIIionaire";
 const X_PAYMENT_URL = "https://x.com/i/money/pay/biIIIionaire";
 const BUY_ME_A_COFFEE_URL = "https://www.buymeacoffee.com/tempes666";

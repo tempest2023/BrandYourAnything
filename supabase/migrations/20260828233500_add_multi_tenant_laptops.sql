@@ -1,6 +1,6 @@
 -- Multi-tenant Brand Anything campaigns. These tables live beside the original
 -- single-laptop starter so existing campaigns remain intact while new users can
--- publish isolated laptop auctions under /laptop/<slug>.
+-- publish isolated laptop auctions under /<slug>.
 
 create table public.ba_dev_laptops (
   id uuid primary key default gen_random_uuid(),
