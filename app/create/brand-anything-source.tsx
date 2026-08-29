@@ -4,10 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ModelStage } from "@/app/model-stage";
 import {
-  BRAND_MODEL_MIME,
-  isGlbFileName,
+  BRAND_MODEL_ACCEPT,
+  brandModelFormatList,
+  getBrandModelFormat,
+  getBrandModelMimeType,
+  isSupportedBrandModelFileName,
   MAX_BRAND_MODEL_BYTES,
   readableFileSize,
+  type BrandModelFormat,
   type UploadedBrandModel,
 } from "@/lib/brand-model";
 import { getSupabaseBrowser, isSupabaseBrowserConfigured } from "@/lib/supabase-browser";
@@ -22,6 +26,7 @@ type UploadTicket = {
   token?: string;
   signedUrl?: string;
   contentType?: string;
+  format?: BrandModelFormat;
   uploadClaim?: string;
   error?: string;
 };
@@ -78,6 +83,9 @@ export function BrandAnythingSource({
   getUploadHeaders,
 }: BrandAnythingSourceProps) {
   const [localModelUrl, setLocalModelUrl] = useState<string | null>(null);
+  const [localModelFormat, setLocalModelFormat] = useState<BrandModelFormat | null>(
+    model ? getBrandModelFormat(model.fileName) : null,
+  );
   const [referenceUrl, setReferenceUrl] = useState<string | null>(null);
   const [referenceName, setReferenceName] = useState("reference.jpg");
   const [uploadState, setUploadState] = useState<"idle" | "uploading" | "ready" | "error">(model ? "ready" : "idle");
@@ -109,14 +117,15 @@ export function BrandAnythingSource({
 
   const uploadModel = async (file: File) => {
     setUploadError("");
-    if (!isGlbFileName(file.name)) {
+    const format = getBrandModelFormat(file.name);
+    if (!format || !isSupportedBrandModelFileName(file.name)) {
       setUploadState("error");
-      setUploadError("Choose a self-contained .glb file. Multi-file .gltf packages are not supported.");
+      setUploadError(`Choose a supported ${brandModelFormatList()} model. Multi-file packages are not supported.`);
       return;
     }
     if (file.size <= 0 || file.size > MAX_BRAND_MODEL_BYTES) {
       setUploadState("error");
-      setUploadError("Your GLB needs to be smaller than 25 MB.");
+      setUploadError("Your 3D model needs to be smaller than 25 MB.");
       return;
     }
 
@@ -124,11 +133,13 @@ export function BrandAnythingSource({
     const nextUrl = URL.createObjectURL(file);
     modelUrlRef.current = nextUrl;
     setLocalModelUrl(nextUrl);
+    setLocalModelFormat(format);
     setUploadState("uploading");
     onModelChange(null);
-    const uploadFile = file.type === BRAND_MODEL_MIME
+    const expectedMime = getBrandModelMimeType(format)!;
+    const uploadFile = file.type === expectedMime
       ? file
-      : new File([file], file.name, { type: BRAND_MODEL_MIME, lastModified: file.lastModified });
+      : new File([file], file.name, { type: expectedMime, lastModified: file.lastModified });
 
     try {
       const ticketResponse = await fetch("/api/models/upload-ticket", {
@@ -146,7 +157,7 @@ export function BrandAnythingSource({
           .from(ticket.bucket)
           .uploadToSignedUrl(ticket.path, ticket.token, uploadFile, {
             cacheControl: "3600",
-            contentType: ticket.contentType || BRAND_MODEL_MIME,
+            contentType: ticket.contentType || expectedMime,
             upsert: false,
           });
         if (error) throw error;
@@ -167,6 +178,7 @@ export function BrandAnythingSource({
         uploadClaim: ticket.uploadClaim,
         fileName: file.name,
         size: file.size,
+        format: ticket.format || format,
       });
       setUploadState("ready");
     } catch (error) {
@@ -218,7 +230,7 @@ export function BrandAnythingSource({
           aria-pressed={source === "model"}
           onClick={() => onSourceChange("model")}
         >
-          <span>01</span><strong>I have a 3D model</strong><small>Upload a ready-to-use GLB</small>
+          <span>01</span><strong>I have a 3D model</strong><small>Upload a supported single-file model</small>
         </button>
         <button
           type="button"
@@ -232,11 +244,18 @@ export function BrandAnythingSource({
 
       {source === "model" ? (
         <div className={styles.modelRoute}>
-          {localModelUrl && <ModelStage sourceUrl={localModelUrl} label={`Preview of ${assetName || "your uploaded object"}`} className={styles.createModelStage} />}
+          {localModelUrl && localModelFormat && (
+            <ModelStage
+              sourceUrl={localModelUrl}
+              format={localModelFormat}
+              label={`Preview of ${assetName || "your uploaded object"}`}
+              className={styles.createModelStage}
+            />
+          )}
           <label className={`${styles.modelDrop} ${visibleUploadState === "ready" ? styles.modelDropReady : ""}`}>
             <input
               type="file"
-              accept=".glb,model/gltf-binary"
+              accept={BRAND_MODEL_ACCEPT}
               onChange={(event) => {
                 const file = event.target.files?.[0];
                 if (file) void uploadModel(file);
@@ -246,11 +265,11 @@ export function BrandAnythingSource({
             <strong>
               {visibleUploadState === "uploading" ? "Uploading your model…"
                 : model ? model.fileName
-                  : "Drop in one self-contained GLB"}
+                  : "Drop in one 3D model"}
             </strong>
             <small>
               {model ? `${readableFileSize(model.size)} · private until your auction is published`
-                : "Embedded textures · 25 MB maximum · GLB only"}
+                : `${brandModelFormatList()} · single file · 25 MB maximum`}
             </small>
             {visibleUploadState === "ready" && <b aria-label="Upload complete">Ready</b>}
           </label>

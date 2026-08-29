@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import { BRAND_MODEL_MIME, MAX_BRAND_MODEL_BYTES } from "@/lib/brand-model";
+import { getBrandModelMimeType, MAX_BRAND_MODEL_BYTES } from "@/lib/brand-model";
 
 type ModelUploadClaim = {
   path: string;
@@ -39,11 +39,13 @@ export function normalizeModelClaimInput(input: {
   fileName: string;
   size: number;
 }) {
+  const mimeType = getBrandModelMimeType(input.fileName);
+  if (!mimeType) throw new Error("Unsupported 3D model format.");
   return {
     path: input.path.trim(),
     fileName: input.fileName.trim().slice(0, 180),
     size: input.size,
-    mimeType: BRAND_MODEL_MIME,
+    mimeType,
   } satisfies ModelUploadClaim;
 }
 

@@ -3,8 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
+import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader.js";
+import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 
+import { getBrandModelFormat, type BrandModelFormat } from "@/lib/brand-model";
 import styles from "./model-stage.module.css";
 
 export type ModelStageSpot = {
@@ -15,6 +20,7 @@ export type ModelStageSpot = {
 
 type ModelStageProps = {
   sourceUrl: string;
+  format?: BrandModelFormat;
   label: string;
   className?: string;
   spots?: ModelStageSpot[];
@@ -34,8 +40,46 @@ function disposeMaterial(material: THREE.Material) {
   material.dispose();
 }
 
+function meshFromGeometry(geometry: THREE.BufferGeometry) {
+  if (!geometry.getAttribute("normal")) geometry.computeVertexNormals();
+  const material = new THREE.MeshStandardMaterial({
+    color: 0xd9d5ca,
+    metalness: 0.08,
+    roughness: 0.58,
+    side: THREE.DoubleSide,
+    vertexColors: Boolean(geometry.getAttribute("color")),
+  });
+  return new THREE.Mesh(geometry, material);
+}
+
+function loadModelSource(
+  sourceUrl: string,
+  format: BrandModelFormat,
+  onLoad: (root: THREE.Object3D, animations?: THREE.AnimationClip[]) => void,
+  onError: () => void,
+) {
+  if (format === "glb" || format === "gltf") {
+    new GLTFLoader().load(sourceUrl, (gltf) => onLoad(gltf.scene, gltf.animations), undefined, onError);
+    return;
+  }
+  if (format === "fbx") {
+    new FBXLoader().load(sourceUrl, (group) => onLoad(group, group.animations), undefined, onError);
+    return;
+  }
+  if (format === "obj") {
+    new OBJLoader().load(sourceUrl, (group) => onLoad(group), undefined, onError);
+    return;
+  }
+  if (format === "stl") {
+    new STLLoader().load(sourceUrl, (geometry) => onLoad(meshFromGeometry(geometry)), undefined, onError);
+    return;
+  }
+  new PLYLoader().load(sourceUrl, (geometry) => onLoad(meshFromGeometry(geometry)), undefined, onError);
+}
+
 export function ModelStage({
   sourceUrl,
+  format,
   label,
   className = "",
   spots = [],
@@ -44,6 +88,7 @@ export function ModelStage({
 }: ModelStageProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const resolvedFormat = format || getBrandModelFormat(sourceUrl) || "glb";
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -89,15 +134,15 @@ export function ModelStage({
     rim.position.set(-5, 2, -4);
     scene.add(rim);
 
-    const loader = new GLTFLoader();
     queueMicrotask(() => {
       if (!disposed) setStatus("loading");
     });
-    loader.load(
+    loadModelSource(
       sourceUrl,
-      (gltf) => {
+      resolvedFormat,
+      (loadedRoot, animations = []) => {
         if (disposed) return;
-        modelRoot = gltf.scene;
+        modelRoot = loadedRoot;
         modelRoot.traverse((child) => {
           if (!(child instanceof THREE.Mesh)) return;
           child.castShadow = false;
@@ -125,13 +170,12 @@ export function ModelStage({
         camera.lookAt(controls.target);
         controls.update();
 
-        if (gltf.animations.length > 0) {
+        if (animations.length > 0) {
           mixer = new THREE.AnimationMixer(modelRoot);
-          mixer.clipAction(gltf.animations[0]).play();
+          mixer.clipAction(animations[0]).play();
         }
         setStatus("ready");
       },
-      undefined,
       () => {
         if (!disposed) setStatus("error");
       },
@@ -183,7 +227,7 @@ export function ModelStage({
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [sourceUrl]);
+  }, [resolvedFormat, sourceUrl]);
 
   return (
     <div className={`${styles.stage} ${className}`} role="img" aria-label={label}>
@@ -191,8 +235,8 @@ export function ModelStage({
       {status === "loading" && <div className={styles.status}><span />Preparing your model…</div>}
       {status === "error" && (
         <div className={styles.error} role="status">
-          <strong>This GLB could not be previewed.</strong>
-          <span>Re-export it as one self-contained binary glTF file.</span>
+          <strong>This {resolvedFormat.toUpperCase()} model could not be previewed.</strong>
+          <span>Use one self-contained file without missing textures or companion files.</span>
         </div>
       )}
       {status === "ready" && <span className={styles.orbitHint}>Drag to orbit · scroll to zoom</span>}

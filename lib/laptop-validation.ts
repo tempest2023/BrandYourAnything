@@ -1,6 +1,6 @@
 import "server-only";
 
-import { isGlbFileName } from "@/lib/brand-model";
+import { isSupportedBrandModelFileName } from "@/lib/brand-model";
 import type { CampaignAssetType } from "@/lib/brand-model";
 import { isModelSizeAllowed } from "@/lib/model-upload-claim";
 
@@ -10,7 +10,7 @@ const ACCEPTED_PHOTO_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,46}[a-z0-9])$/;
-const MODEL_PATH_PATTERN = /^[a-f0-9]{16}\/[a-f0-9-]{36}-[a-zA-Z0-9_-]+\.glb$/;
+const MODEL_PATH_PATTERN = /^[a-f0-9]{16}\/[a-f0-9-]{36}-[a-zA-Z0-9_-]+\.(?:glb|gltf|obj|fbx|stl|ply)$/i;
 
 export class LaptopValidationError extends Error {
   constructor(message: string) {
@@ -111,9 +111,9 @@ export function parseLaptopForm(formData: FormData): ParsedLaptopForm {
   if (assetType === "anything") {
     if (!modelStoragePath || !MODEL_PATH_PATTERN.test(modelStoragePath)
       || !modelUploadClaim || !/^[a-f0-9]{64}$/i.test(modelUploadClaim)
-      || !modelFileName || !isGlbFileName(modelFileName)
+      || !modelFileName || !isSupportedBrandModelFileName(modelFileName)
       || modelFileSize === null || !isModelSizeAllowed(modelFileSize)) {
-      throw new LaptopValidationError("Upload a valid self-contained GLB before publishing this auction.");
+      throw new LaptopValidationError("Upload a valid single-file 3D model before publishing this auction.");
     }
   }
   if (!UUID_PATTERN.test(idempotencyKey)) {

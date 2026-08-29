@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { BRAND_MODEL_MIME } from "@/lib/brand-model";
+import { getBrandModelMimeType } from "@/lib/brand-model";
 import { getBrandModelBucket, getLaptopMediaBucket } from "@/lib/database-names";
 import { attachCampaignAsset, createLaptop, getLaptopSnapshot } from "@/lib/laptop-repository";
 import { LaptopValidationError, parseLaptopForm } from "@/lib/laptop-validation";
@@ -59,17 +59,19 @@ export async function POST(request: Request) {
         size: input.modelFileSize!,
       });
       if (!verifyModelUploadClaim(claimInput, input.modelUploadClaim!)) {
-        throw new LaptopValidationError("This model upload ticket is invalid or expired. Upload the GLB again.");
+        throw new LaptopValidationError("This model upload ticket is invalid or expired. Upload the model again.");
       }
       const { data: modelInfo, error: modelError } = await getSupabaseAdmin().storage
         .from(getBrandModelBucket())
         .info(input.modelStoragePath!);
       if (modelError || !modelInfo) {
-        throw new LaptopValidationError("The uploaded GLB could not be found. Upload it again before publishing.");
+        throw new LaptopValidationError("The uploaded 3D model could not be found. Upload it again before publishing.");
       }
+      const expectedModelMime = getBrandModelMimeType(input.modelFileName!);
+      const storedModelMime = modelInfo.contentType?.split(";", 1)[0]?.toLowerCase();
       if (modelInfo.size !== input.modelFileSize
-        || (modelInfo.contentType && modelInfo.contentType !== BRAND_MODEL_MIME)) {
-        throw new LaptopValidationError("The uploaded GLB does not match its upload ticket. Upload it again.");
+        || (storedModelMime && storedModelMime !== expectedModelMime && storedModelMime !== "application/octet-stream")) {
+        throw new LaptopValidationError("The uploaded 3D model does not match its upload ticket. Upload it again.");
       }
     }
     if (input.photo) {

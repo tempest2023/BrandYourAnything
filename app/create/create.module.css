@@ -1085,59 +1085,145 @@
 
 .objectCards {
   display: grid;
-  margin-top: 18px;
+  margin-top: 20px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 12px;
 }
 
-.anythingCard,
-.selectedAnythingCard {
-  position: relative;
+.objectCard,
+.selectedObjectCard {
   display: grid;
-  min-height: 110px;
-  padding: 20px 22px 20px 74px;
-  grid-column: 1 / -1;
-  align-content: center;
-  gap: 4px;
-  overflow: hidden;
-  border: 1px solid oklch(73% 0.07 60);
+  min-height: 132px;
+  padding: 18px;
+  grid-template-columns: 44px minmax(0, 1fr) 20px;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid var(--hairline);
   border-radius: 16px;
-  background: radial-gradient(circle at 90% 14%, oklch(84% 0.13 68 / 0.48), transparent 32%), oklch(98% 0.012 70);
-  color: oklch(22% 0.02 255);
+  background: #fff;
+  color: var(--ink);
   cursor: pointer;
   font: inherit;
   text-align: left;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
-.anythingCard strong,
-.selectedAnythingCard strong {
-  font-size: 16px;
-  font-weight: 650;
+.objectIcon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: 13px;
+  background: #f5f5f7;
+  color: var(--ink);
 }
 
-.anythingCard > span:last-child,
-.selectedAnythingCard > span:last-child {
-  color: oklch(48% 0.025 255);
-  font-size: 13px;
+.objectIcon svg {
+  width: 28px;
+  height: 28px;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.55;
+  vector-effect: non-scaling-stroke;
+}
+
+.objectCardCopy {
+  display: grid;
+  min-width: 0;
+  align-content: center;
+  gap: 5px;
+}
+
+.objectCardCopy strong {
+  font-size: 15px;
+  font-weight: 620;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+.objectCardCopy small {
+  color: var(--muted);
+  font-size: 12px;
   line-height: 1.45;
 }
 
-.anythingGlyph {
-  position: absolute;
-  left: 22px;
+.objectSelectedMark {
   display: grid;
-  width: 36px;
-  height: 36px;
+  width: 20px;
+  height: 20px;
   place-items: center;
   border-radius: 50%;
-  background: oklch(24% 0.02 255);
-  color: oklch(85% 0.15 68);
-  font-size: 17px;
+  background: var(--blue);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  opacity: 0;
+  transform: scale(0.8);
+  transition: opacity 160ms ease, transform 160ms ease;
 }
 
-.selectedAnythingCard {
+.selectedObjectCard {
   border-color: oklch(58% 0.18 45);
+  background: oklch(98% 0.012 70);
   box-shadow: 0 0 0 1px oklch(58% 0.18 45);
+}
+
+.selectedObjectCard .objectIcon {
+  background: oklch(93% 0.06 68);
+  color: oklch(47% 0.16 45);
+}
+
+.selectedObjectCard .objectSelectedMark {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.modelPicker {
+  display: grid;
+  margin-top: 14px;
+  padding: 15px 16px 16px;
+  gap: 10px;
+  border: 1px solid oklch(86% 0.025 65);
+  border-radius: 15px;
+  background: oklch(99% 0.008 70);
+}
+
+.modelPicker > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.modelPicker > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.modelChoice,
+.selectedModelChoice {
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 520;
+}
+
+.selectedModelChoice {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #fff;
 }
 
 .anythingBuilder {
@@ -1182,8 +1268,9 @@
   display: grid;
   min-height: 116px;
   padding: 15px;
-  align-content: start;
-  gap: 4px;
+  grid-template-rows: 24px auto 1fr;
+  align-items: start;
+  gap: 7px;
   border: 1px solid var(--hairline);
   border-radius: 14px;
   background: #fff;
@@ -1194,10 +1281,16 @@
 }
 
 .sourceSwitch button > span {
-  margin-bottom: 9px;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 50%;
+  background: #f5f5f7;
   color: var(--quiet);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
 
 .sourceSwitch button strong {
@@ -1208,12 +1301,18 @@
 .sourceSwitch button small {
   color: var(--muted);
   font-size: 12px;
+  line-height: 1.4;
 }
 
 .sourceSwitch .activeSource {
   border-color: oklch(58% 0.18 45);
   background: oklch(98% 0.012 70);
   box-shadow: inset 0 0 0 1px oklch(58% 0.18 45);
+}
+
+.sourceSwitch .activeSource > span {
+  background: oklch(91% 0.09 65);
+  color: oklch(43% 0.15 45);
 }
 
 .modelRoute,
@@ -1262,6 +1361,7 @@
   background: var(--ink);
   color: #fff;
   font-size: 18px;
+  line-height: 1;
 }
 
 .modelDrop strong,
@@ -1571,6 +1671,49 @@
   background: oklch(34% 0.04 245 / 0.9);
 }
 
+.miniObject[data-kind="yacht"] {
+  width: 190px;
+  height: 72px;
+  border-radius: 12px 50% 48% 44%;
+  clip-path: polygon(2% 29%, 100% 28%, 83% 88%, 23% 100%);
+  transform: translate(-50%, -50%) rotate(-3deg);
+}
+
+.miniObject[data-kind="yacht"] i {
+  display: none;
+}
+
+.miniObject[data-kind="yacht"] i:last-child {
+  top: -27px;
+  left: 58px;
+  display: block;
+  width: 88px;
+  height: 40px;
+  border: 1px solid oklch(90% 0.08 70 / 0.62);
+  border-radius: 16px 55% 4px 4px;
+  background: oklch(34% 0.04 245 / 0.9);
+}
+
+.miniObject[data-kind="jet"] {
+  width: 210px;
+  height: 102px;
+  border-radius: 0;
+  clip-path: polygon(0 48%, 39% 39%, 55% 2%, 66% 4%, 62% 38%, 100% 48%, 100% 58%, 62% 55%, 51% 94%, 40% 92%, 42% 55%, 0 58%);
+  transform: translate(-50%, -50%) rotate(-8deg);
+}
+
+.miniObject[data-kind="jet"] i,
+.miniObject[data-kind="anything"] i {
+  display: none;
+}
+
+.miniObject[data-kind="anything"] {
+  width: 128px;
+  height: 128px;
+  border-radius: 32% 68% 61% 39% / 38% 37% 63% 62%;
+  transform: translate(-50%, -50%) rotate(-12deg);
+}
+
 .miniOrbit {
   position: absolute;
   top: 40%;
@@ -1605,11 +1748,29 @@
 .miniMarker:nth-of-type(3n) { top: 19%; }
 
 @media (hover: hover) and (pointer: fine) {
-  .anythingCard:hover,
+  .objectCard:hover,
+  .selectedObjectCard:hover,
+  .modelChoice:hover,
   .sourceSwitch button:hover,
   .installCommands button:hover {
     border-color: oklch(58% 0.18 45);
   }
+
+  .objectCard:hover,
+  .selectedObjectCard:hover {
+    transform: translateY(-1px);
+  }
+}
+
+.objectCard:focus-visible,
+.selectedObjectCard:focus-visible,
+.modelChoice:focus-visible,
+.selectedModelChoice:focus-visible,
+.sourceSwitch button:focus-visible,
+.modelDrop:focus-within,
+.referenceDrop:focus-within {
+  outline: 3px solid rgba(0, 113, 227, 0.28);
+  outline-offset: 2px;
 }
 
 .successPage {
@@ -1753,9 +1914,14 @@
 
   .twoCards .optionCard,
   .twoCards .selectedCard,
-  .objectCards .optionCard,
-  .objectCards .selectedCard {
+  .objectCard,
+  .selectedObjectCard {
     min-height: 0;
+  }
+
+  .objectCard,
+  .selectedObjectCard {
+    padding: 16px;
   }
 
   .sourceSwitch {

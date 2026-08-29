@@ -69,7 +69,8 @@ const SIX_SPOTS = [
 ] as const;
 
 type PriceKey = "small" | "medium" | "large";
-type Machine = "mac" | "pc" | "anything";
+type Machine = "mac" | "pc" | "tesla" | "yacht" | "jet" | "anything";
+type TeslaModel = "Model 3" | "Model Y" | "Model S" | "Model X" | "Cybertruck";
 type Ownership = "own" | "fund";
 type LayoutCount = 6 | 10;
 type SellDraft = {
@@ -77,6 +78,7 @@ type SellDraft = {
   furthestStep: number;
   machine: Machine;
   assetName: string;
+  teslaModel: TeslaModel;
   anythingSource: AnythingSource;
   brandModel: UploadedBrandModel | null;
   screenSize: 13 | 14 | 16;
@@ -95,6 +97,37 @@ type SellDraft = {
   title: string;
   slug: string;
 };
+
+const TESLA_MODELS: TeslaModel[] = ["Model 3", "Model Y", "Model S", "Model X", "Cybertruck"];
+
+const OBJECT_PRESETS: Array<{
+  id: Machine;
+  title: string;
+  description: string;
+  icon: "laptop" | "pc" | "car" | "yacht" | "jet" | "anything";
+}> = [
+  { id: "mac", title: "Mac", description: "A familiar lid, ready for a finite set of sponsors.", icon: "laptop" },
+  { id: "pc", title: "PC laptop", description: "A clean laptop lid without a maker mark in the preview.", icon: "pc" },
+  { id: "tesla", title: "Tesla", description: "Choose Model 3, Model Y, Model S, Model X or Cybertruck.", icon: "car" },
+  { id: "yacht", title: "Private yacht", description: "Azimut Fly 68 — a celebrated best-seller from the Fly series.", icon: "yacht" },
+  { id: "jet", title: "Private jet", description: "Gulfstream G700 — the brand’s industry flagship.", icon: "jet" },
+  { id: "anything", title: "Anything else", description: "Bring a robot, instrument, sculpture or another one-of-one object.", icon: "anything" },
+];
+
+function ObjectIcon({ kind }: { kind: (typeof OBJECT_PRESETS)[number]["icon"] }) {
+  return (
+    <span className={styles.objectIcon} aria-hidden="true">
+      <svg viewBox="0 0 32 32" focusable="false">
+        {kind === "laptop" && <><rect x="6" y="6" width="20" height="15" rx="2" /><path d="M3.5 24.5h25M12 24.5l1-2h6l1 2" /></>}
+        {kind === "pc" && <><rect x="5" y="7" width="22" height="14" rx="1.5" /><path d="M11 25h10M16 21v4" /></>}
+        {kind === "car" && <><path d="M5 20.5h22l-1.8-6-4-3.5H11l-4.2 3.5L5 20.5Z" /><circle cx="10" cy="21" r="2.5" /><circle cx="22" cy="21" r="2.5" /><path d="M9 14.5h14" /></>}
+        {kind === "yacht" && <><path d="M3.5 19.5h25l-4 6H9l-5.5-6Z" /><path d="M10 19.5l2-7h9l4 7M15 12.5V8l6 4.5" /><path d="M5 28c3-1.5 5-1.5 8 0 3-1.5 5-1.5 8 0 2-1 4-1.2 6 0" /></>}
+        {kind === "jet" && <><path d="M4 18l10-3 4-10 3 1-2 9 8 3v2l-9-1-5 7-2-1 2-7-9 2v-2Z" /></>}
+        {kind === "anything" && <><path d="M16 4v24M4 16h24M7.5 7.5l17 17M24.5 7.5l-17 17" /><circle cx="16" cy="16" r="4" /></>}
+      </svg>
+    </span>
+  );
+}
 
 type ManagedLid = {
   slug: string;
@@ -213,6 +246,7 @@ export function CreateLaptopForm() {
   const [furthestStep, setFurthestStep] = useState(0);
   const [machine, setMachine] = useState<Machine>("mac");
   const [assetName, setAssetName] = useState("My car");
+  const [teslaModel, setTeslaModel] = useState<TeslaModel>("Model Y");
   const [anythingSource, setAnythingSource] = useState<AnythingSource>("model");
   const [brandModel, setBrandModel] = useState<UploadedBrandModel | null>(null);
   const [screenSize, setScreenSize] = useState<13 | 14 | 16>(14);
@@ -271,6 +305,7 @@ export function CreateLaptopForm() {
         if (Number.isInteger(draft.furthestStep) && draft.furthestStep! >= 0 && draft.furthestStep! < STEPS.length) setFurthestStep(draft.furthestStep!);
         if (draft.machine) setMachine(draft.machine);
         if (typeof draft.assetName === "string") setAssetName(draft.assetName);
+        if (draft.teslaModel && TESLA_MODELS.includes(draft.teslaModel)) setTeslaModel(draft.teslaModel);
         if (draft.anythingSource) setAnythingSource(draft.anythingSource);
         if (draft.brandModel
           && typeof draft.brandModel.storagePath === "string"
@@ -323,6 +358,7 @@ export function CreateLaptopForm() {
       furthestStep,
       machine,
       assetName,
+      teslaModel,
       anythingSource,
       brandModel,
       screenSize,
@@ -341,7 +377,7 @@ export function CreateLaptopForm() {
       title,
       slug,
     }));
-  }, [anythingSource, assetName, brandModel, draftReady, extraNote, furthestStep, largePrice, layoutCount, listingDays, machine, machineCost, mediumPrice, ownership, screenSize, showcase, slug, smallPrice, specialPrice, specialSpot, step, stickerMonths, title]);
+  }, [anythingSource, assetName, brandModel, draftReady, extraNote, furthestStep, largePrice, layoutCount, listingDays, machine, machineCost, mediumPrice, ownership, screenSize, showcase, slug, smallPrice, specialPrice, specialSpot, step, stickerMonths, teslaModel, title]);
 
   useEffect(() => {
     let active = true;
@@ -402,10 +438,11 @@ export function CreateLaptopForm() {
     amount: Math.round(prices[spot.price as PriceKey] * ("premium" in spot ? spot.premium : 1)),
   }));
   const specialAmount = clampPrice(specialPrice, 1500);
-  const totalFloor = previewSpots.reduce((sum, spot) => sum + spot.amount, 0) + (specialSpot ? specialAmount : 0);
+  const hasSpecialSpot = machine === "mac" && specialSpot;
+  const totalFloor = previewSpots.reduce((sum, spot) => sum + spot.amount, 0) + (hasSpecialSpot ? specialAmount : 0);
   const minimumPrice = Math.min(...previewSpots.map((spot) => spot.amount));
   const fundingCost = Number(machineCost);
-  const isAnything = machine === "anything";
+  const isAnything = machine !== "mac" && machine !== "pc";
   const objectName = isAnything ? assetName.trim() || "your object" : `${machine === "mac" ? "Mac" : "PC"} · ${screenSize}″`;
   const machineIsValid = ownership === "own" || (Number.isFinite(fundingCost) && fundingCost >= 100 && fundingCost <= 20_000);
   const objectIsValid = !isAnything || (assetName.trim().length >= 2 && brandModel !== null);
@@ -423,6 +460,26 @@ export function CreateLaptopForm() {
       setMediumPrice("400");
       setLargePrice("800");
     }
+  };
+
+  const selectObjectPreset = (nextMachine: Machine) => {
+    if (nextMachine !== machine && (isAnything || (nextMachine !== "mac" && nextMachine !== "pc"))) {
+      setBrandModel(null);
+    }
+    setMachine(nextMachine);
+    setSpecialSpot(nextMachine === "mac");
+    if (nextMachine === "tesla") setAssetName(`Tesla ${teslaModel}`);
+    if (nextMachine === "yacht") setAssetName("Azimut Fly 68");
+    if (nextMachine === "jet") setAssetName("Gulfstream G700");
+    if (nextMachine === "anything" && /^(My car|Tesla |Azimut Fly 68|Gulfstream G700)/.test(assetName)) {
+      setAssetName("My object");
+    }
+  };
+
+  const selectTeslaModel = (model: TeslaModel) => {
+    if (model !== teslaModel) setBrandModel(null);
+    setTeslaModel(model);
+    setAssetName(`Tesla ${model}`);
   };
 
   const goToStep = (index: number) => {
@@ -655,25 +712,41 @@ export function CreateLaptopForm() {
               <fieldset>
                 <legend>What are you selling space on?</legend>
                 <div className={styles.objectCards}>
-                  <button type="button" className={machine === "mac" ? styles.selectedCard : styles.optionCard} aria-pressed={machine === "mac"} onClick={() => setMachine("mac")}>
-                    <strong>A Mac</strong><span>The drawn lid wears the Apple mark, because yours does.</span>
-                  </button>
-                  <button type="button" className={machine === "pc" ? styles.selectedCard : styles.optionCard} aria-pressed={machine === "pc"} onClick={() => setMachine("pc")}>
-                    <strong>A PC</strong><span>A bare lid. No maker&apos;s mark — it is not ours to print.</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={machine === "anything" ? styles.selectedAnythingCard : styles.anythingCard}
-                    aria-pressed={machine === "anything"}
-                    onClick={() => {
-                      setMachine("anything");
-                      setSpecialSpot(false);
-                    }}
-                  >
-                    <span className={styles.anythingGlyph} aria-hidden="true">✣</span>
-                    <strong>Anything else</strong><span>Turn a car, boat, aircraft — or almost any object — into BrandMyAnything.</span>
-                  </button>
+                  {OBJECT_PRESETS.map((preset) => (
+                    <button
+                      type="button"
+                      key={preset.id}
+                      className={machine === preset.id ? styles.selectedObjectCard : styles.objectCard}
+                      aria-pressed={machine === preset.id}
+                      onClick={() => selectObjectPreset(preset.id)}
+                    >
+                      <ObjectIcon kind={preset.icon} />
+                      <span className={styles.objectCardCopy}>
+                        <strong>{preset.title}</strong>
+                        <small>{preset.description}</small>
+                      </span>
+                      <span className={styles.objectSelectedMark} aria-hidden="true">✓</span>
+                    </button>
+                  ))}
                 </div>
+                {machine === "tesla" && (
+                  <div className={styles.modelPicker} role="group" aria-label="Tesla model">
+                    <span>Choose your Tesla</span>
+                    <div>
+                      {TESLA_MODELS.map((model) => (
+                        <button
+                          type="button"
+                          key={model}
+                          className={teslaModel === model ? styles.selectedModelChoice : styles.modelChoice}
+                          aria-pressed={teslaModel === model}
+                          onClick={() => selectTeslaModel(model)}
+                        >
+                          {model}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {isAnything ? (
                   <BrandAnythingSource
                     assetName={assetName}
@@ -743,7 +816,7 @@ export function CreateLaptopForm() {
                   <PriceField label={`${layoutCount === 10 ? 3 : 2} × Medium`} dimensions={isAnything ? "Profile placement" : "9.5 × 4 cm printed"} value={mediumPrice} onChange={setMediumPrice} />
                   <PriceField label={`${layoutCount === 10 ? 4 : 2} × Small`} dimensions={isAnything ? "Detail placement" : "4.5 × 4.5 cm printed"} value={smallPrice} onChange={setSmallPrice} />
                 </div>
-                {!isAnything && (
+                {machine === "mac" && (
                   <label className={specialSpot ? styles.checkedSpecial : styles.specialSpot}>
                     <input type="checkbox" checked={specialSpot} onChange={(event) => setSpecialSpot(event.target.checked)} />
                     <span><strong>Add a special spot over the logo</strong><small>6 × 6 cm, covering the Apple mark in the middle of the lid. Name your own price — it is the one placement size says nothing about.</small></span>
@@ -779,7 +852,7 @@ export function CreateLaptopForm() {
                 <dl className={styles.summary}>
                   <div><dt>Object</dt><dd>{objectName}</dd></div>
                   <div><dt>Ownership</dt><dd>{ownership === "own" ? "You own it" : `Funding ${formatMoney(fundingCost || 0)}`}</dd></div>
-                  <div><dt>Layout</dt><dd>{layoutCount + (specialSpot ? 1 : 0)} spots{specialSpot ? ", logo covered" : ""}</dd></div>
+                  <div><dt>Layout</dt><dd>{layoutCount + (hasSpecialSpot ? 1 : 0)} spots{hasSpecialSpot ? ", logo covered" : ""}</dd></div>
                   <div><dt>If it all sells</dt><dd>{formatMoney(totalFloor)}</dd></div>
                   <div><dt>Runs for</dt><dd>{listingDays} days</dd></div>
                   <div><dt>Stickers stay</dt><dd>{stickerMonths} months</dd></div>
@@ -836,16 +909,16 @@ export function CreateLaptopForm() {
               </fieldset>
             )}
 
-            {step < 7 && <div className={styles.actions}>{step > 0 && <button type="button" className={styles.backButton} onClick={backStep}>Back</button>}<button type="button" className={styles.continueButton} disabled={(step === 0 && !objectIsValid) || (step === 1 && !machineIsValid)} onClick={continueStep}>{step === 0 && isAnything && !brandModel ? "Upload a GLB to continue" : "Continue"}</button></div>}
+            {step < 7 && <div className={styles.actions}>{step > 0 && <button type="button" className={styles.backButton} onClick={backStep}>Back</button>}<button type="button" className={styles.continueButton} disabled={(step === 0 && !objectIsValid) || (step === 1 && !machineIsValid)} onClick={continueStep}>{step === 0 && isAnything && !brandModel ? "Upload a 3D model to continue" : "Continue"}</button></div>}
           </section>
 
           <aside className={styles.previewColumn} aria-label={`${objectName} auction preview`}>
             {isAnything ? (
               <div className={styles.anythingMiniStage}>
                 <span className={styles.miniOrbit} aria-hidden="true" />
-                <div className={styles.miniObject} aria-hidden="true"><i /><i /><i /></div>
+                <div className={styles.miniObject} data-kind={machine} aria-hidden="true"><i /><i /><i /></div>
                 <strong>{objectName}</strong>
-                <small>{brandModel ? `${brandModel.fileName} · ready` : "Your GLB appears here"}</small>
+                <small>{brandModel ? `${brandModel.fileName} · ready` : "Your 3D model appears here"}</small>
                 {previewSpots.map((spot, index) => (
                   <span key={spot.id} className={styles.miniMarker} style={{ "--marker-index": index } as React.CSSProperties}>{spot.id}</span>
                 ))}
@@ -863,7 +936,7 @@ export function CreateLaptopForm() {
                     <strong>{spot.size}</strong><span>{formatMoney(spot.amount)}</span>
                   </button>
                 ))}
-                {specialSpot && <button type="button" className={`${styles.previewSpot} ${styles.specialPreview}`} aria-label={`Spot over the logo, Large. ${formatMoney(specialAmount)}.`}><strong>Large</strong><span>{formatMoney(specialAmount)}</span></button>}
+                {hasSpecialSpot && <button type="button" className={`${styles.previewSpot} ${styles.specialPreview}`} aria-label={`Spot over the logo, Large. ${formatMoney(specialAmount)}.`}><strong>Large</strong><span>{formatMoney(specialAmount)}</span></button>}
               </div>
             )}
             <p>{layoutCount} spots · from {formatMoney(minimumPrice)}</p>

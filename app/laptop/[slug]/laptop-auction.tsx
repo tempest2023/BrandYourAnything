@@ -8,6 +8,7 @@ import { useI18n } from "@/app/i18n-provider";
 import { ModelStage } from "@/app/model-stage";
 import { PreferenceControls } from "@/app/preference-controls";
 import type { Spot } from "@/lib/auction";
+import { getBrandModelFormat } from "@/lib/brand-model";
 import { formatRelativeTime, SPOT_NAME_KEYS } from "@/lib/i18n";
 import type { LaptopBidResult, LaptopSnapshot } from "@/lib/laptop";
 import {
@@ -242,6 +243,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
           {isAnything && snapshot.campaign.modelUrl ? (
             <ModelStage
               sourceUrl={snapshot.campaign.modelUrl}
+              format={snapshot.campaign.modelFileName ? getBrandModelFormat(snapshot.campaign.modelFileName) || undefined : undefined}
               label={t("laptop.modelAria", { object: snapshot.campaign.assetName })}
               spots={snapshot.spots}
               selectedSpotId={selectedSpotId}
