@@ -550,7 +550,14 @@ export default function Home() {
 
       <footer className="site-footer">
         <div className="footer-inner">
-          <div className="footer-avatar" aria-hidden="true">T</div>
+          <Image
+            className="footer-avatar"
+            src="/github-avatar.jpeg"
+            alt=""
+            width={72}
+            height={72}
+            sizes="72px"
+          />
           <div>
             <p className="footer-title">{t("home.footerTitle")}</p>
             <p>{t("home.footerOpenSource")} <a href={SOURCE_URL} target="_blank" rel="noreferrer">Brand Anything ↗</a></p>
