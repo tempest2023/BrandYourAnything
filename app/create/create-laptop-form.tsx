@@ -24,9 +24,9 @@ const SHARE_LANGUAGE_LABELS: Record<Locale, string> = {
   es: "Español",
 };
 const X_SHARE_POSTS: Record<Locale, (publicUrl: string) => string> = {
-  en: (publicUrl) => `I’m opening up the lid of my laptop to a handful of brands. Your logo travels with me through cafés, meetings and events — not just another banner ad. Interested? See the live auction: ${publicUrl} #BrandAnything`,
-  zh: (publicUrl) => `我准备把电脑盖上的有限品牌位置开放出来。你的 Logo 会跟着我出现在咖啡馆、会议和活动现场，而不只是又一个横幅广告。查看正在进行的竞拍：${publicUrl} #BrandAnything`,
-  es: (publicUrl) => `Voy a abrir unos pocos espacios de la tapa de mi portátil a marcas. Tu logo viajará conmigo por cafés, reuniones y eventos, no será otro banner más. Mira la subasta en directo: ${publicUrl} #BrandAnything`,
+  en: (publicUrl) => `I’m opening up the lid of my laptop to a handful of brands. Your logo travels with me through cafés, meetings and events — not just another banner ad. Interested? See the live auction: ${publicUrl}\n#BrandAnything`,
+  zh: (publicUrl) => `我准备把电脑盖上的有限品牌位置开放出来。你的 Logo 会跟着我出现在咖啡馆、会议和活动现场，而不只是又一个横幅广告。查看正在进行的竞拍：${publicUrl}\n#BrandAnything`,
+  es: (publicUrl) => `Voy a abrir unos pocos espacios de la tapa de mi portátil a marcas. Tu logo viajará conmigo por cafés, reuniones y eventos, no será otro banner más. Mira la subasta en directo: ${publicUrl}\n#BrandAnything`,
 };
 const SHOWCASE_OPTIONS = [
   "Build in public — posts and videos",
@@ -230,6 +230,12 @@ export function CreateLaptopForm() {
   const [shareLocale, setShareLocale] = useState<Locale>(locale);
   const [copyFeedback, setCopyFeedback] = useState<"idle" | "copied">("idle");
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+
+  useEffect(() => {
+    if (copyFeedback !== "copied") return;
+    const timer = window.setTimeout(() => setCopyFeedback("idle"), 2400);
+    return () => window.clearTimeout(timer);
+  }, [copyFeedback]);
 
   useEffect(() => {
     let draft: Partial<SellDraft> = {};
@@ -481,24 +487,29 @@ export function CreateLaptopForm() {
     const form = formRef.current;
     if (!form || submitting || !form.reportValidity()) return;
     setCopyFeedback("idle");
+    const composeWindow = openX ? window.open("about:blank", "_blank") : null;
+    if (composeWindow) composeWindow.opener = null;
 
     const location = await publishLaptop(form, "browser");
-    if (!location) return;
+    if (!location) {
+      composeWindow?.close();
+      return;
+    }
     const post = X_SHARE_POSTS[shareLocale](`${SITE_URL}${location}`);
+
+    if (openX) {
+      const composeUrl = `${X_COMPOSE_URL}?text=${encodeURIComponent(post)}`;
+      if (composeWindow) {
+        composeWindow.location.replace(composeUrl);
+      } else {
+        window.open(composeUrl, "_self");
+      }
+      return;
+    }
 
     try {
       await copyText(post);
       setCopyFeedback("copied");
-      if (!openX) return;
-
-      const composeUrl = `${X_COMPOSE_URL}?text=${encodeURIComponent(post)}`;
-      const opened = window.open(composeUrl, "_blank");
-      if (opened) {
-        opened.opener = null;
-        setCreatedLocation(location);
-      } else {
-        window.open(composeUrl, "_self");
-      }
     } catch {
       setErrorMessage("Your browser blocked copying. Select the post text and copy it manually.");
     }
@@ -554,7 +565,7 @@ export function CreateLaptopForm() {
 
   if (createdLocation) {
     return (
-      <main className={styles.successPage}>
+      <main className={`${styles.page} ${styles.successPage}`}>
         <div className={styles.successMark} aria-hidden="true">✓</div>
         <p className={styles.successEyebrow}>Published</p>
         <h1>Your lid is live.</h1>
@@ -734,11 +745,16 @@ export function CreateLaptopForm() {
                       </button>
                       <blockquote className={styles.shareCopy} lang={shareLocale}>{sharePost}</blockquote>
                     </div>
+                    {copyFeedback === "copied" && (
+                      <p className={styles.copyToast} role="status" aria-live="polite">Copied to your clipboard</p>
+                    )}
                     {errorMessage && <p className={styles.error} role="alert">{errorMessage}</p>}
                     <button type="button" className={styles.xShareButton} disabled={submitting} onClick={() => void handleShareCopy(true)}>
-                      {submitting ? "Publishing…" : "Copy and post"}<span aria-hidden="true">↗</span>
+                      {submitting ? "Publishing…" : "Post on X"}<span aria-hidden="true">↗</span>
                     </button>
-                    <p className={styles.shareNote}>Copying publishes your lid and saves it in this browser. The post is copied before X opens, and you can edit it there.</p>
+                    <p className={styles.shareNote}>{publishedLocation
+                      ? "Your lid is live and saved in this browser. Copy the post again whenever you need it."
+                      : "Copy or open X to publish your lid and save it in this browser. X opens in a new tab so this page stays here."}</p>
                   </section>
                 ) : (
                   <>
