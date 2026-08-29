@@ -151,12 +151,14 @@ export function BrandAnythingSource({
         throw new Error(ticket.error || "The upload could not be prepared.");
       }
 
-      const uploadBody = new FormData();
-      uploadBody.append("cacheControl", "3600");
-      uploadBody.append("", uploadFile);
+      const uploadBody = await uploadFile.arrayBuffer();
       const response = await fetch(ticket.signedUrl, {
         method: "PUT",
-        headers: { "x-upsert": "false" },
+        headers: {
+          "cache-control": "max-age=3600",
+          "content-type": ticket.contentType || expectedMime,
+          "x-upsert": "false",
+        },
         body: uploadBody,
       });
       if (!response.ok) throw new Error("The storage service rejected this upload.");
