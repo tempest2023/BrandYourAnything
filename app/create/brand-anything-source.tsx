@@ -14,7 +14,6 @@ import {
   type BrandModelFormat,
   type UploadedBrandModel,
 } from "@/lib/brand-model";
-import { getSupabaseBrowser, isSupabaseBrowserConfigured } from "@/lib/supabase-browser";
 
 import styles from "./create.module.css";
 
@@ -152,26 +151,15 @@ export function BrandAnythingSource({
         throw new Error(ticket.error || "The upload could not be prepared.");
       }
 
-      if (isSupabaseBrowserConfigured()) {
-        const { error } = await getSupabaseBrowser().storage
-          .from(ticket.bucket)
-          .uploadToSignedUrl(ticket.path, ticket.token, uploadFile, {
-            cacheControl: "3600",
-            contentType: ticket.contentType || expectedMime,
-            upsert: false,
-          });
-        if (error) throw error;
-      } else {
-        const uploadBody = new FormData();
-        uploadBody.append("cacheControl", "3600");
-        uploadBody.append("", uploadFile);
-        const response = await fetch(ticket.signedUrl, {
-          method: "PUT",
-          headers: { "x-upsert": "false" },
-          body: uploadBody,
-        });
-        if (!response.ok) throw new Error("The storage service rejected this upload.");
-      }
+      const uploadBody = new FormData();
+      uploadBody.append("cacheControl", "3600");
+      uploadBody.append("", uploadFile);
+      const response = await fetch(ticket.signedUrl, {
+        method: "PUT",
+        headers: { "x-upsert": "false" },
+        body: uploadBody,
+      });
+      if (!response.ok) throw new Error("The storage service rejected this upload.");
 
       onModelChange({
         storagePath: ticket.path,
