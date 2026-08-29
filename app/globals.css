@@ -184,7 +184,7 @@ p {
 
 .language-switch select {
   appearance: none;
-  width: 4.4rem;
+  width: 4rem;
   min-height: 2.3rem;
   border: 1px solid color-mix(in oklch, var(--hairline) 82%, transparent);
   border-radius: 999px;
@@ -193,7 +193,7 @@ p {
   cursor: pointer;
   font: inherit;
   font-size: 0.72rem;
-  padding: 0 2rem 0 0.7rem;
+  padding: 0 1.8rem 0 0.55rem;
 }
 
 .language-switch select:focus-visible {
@@ -1004,11 +1004,13 @@ p {
 }
 
 .outbid-button {
+  min-width: 4rem;
   min-height: 2.45rem;
   background: var(--blue);
   color: var(--paper);
   padding: 0.55rem 1rem;
   font-size: 0.78rem;
+  white-space: nowrap;
 }
 
 .history-row {
