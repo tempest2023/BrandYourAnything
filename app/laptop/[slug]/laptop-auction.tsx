@@ -65,7 +65,7 @@ function LaptopLid({ spots, onSelect }: { spots: Spot[]; onSelect: (spot: Spot) 
               )}
               <span className="lid-holder">{hasBid ? spot.holder : "Available"}</span>
               <span className="lid-price">{hasBid ? formatMoney(spot.bid) : `Starts ${formatMoney(spot.minBid)}`}</span>
-              <span className="lid-outbid">{hasBid ? "Outbid" : "Place bid"}</span>
+              <span className="lid-outbid">{hasBid ? "Outbid" : "Bid"}</span>
             </button>
           );
         })}

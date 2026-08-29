@@ -138,7 +138,7 @@ function MacLid({ spots, currency, onSelect }: { spots: Spot[]; currency: Curren
               {hasBid ? <Logo spot={spot} /> : <span className="lid-spot-number">{spot.id}</span>}
               {(!hasBid || spot.logo) && <span className="lid-holder">{hasBid ? spot.holder : "Available"}</span>}
               <span className="lid-price">{hasBid ? formatMoney(spot.bid, currency) : `Starts ${formatMoney(spot.minBid, currency)}`}</span>
-              <span className="lid-outbid">{hasBid ? "Outbid" : "Place bid"}</span>
+              <span className="lid-outbid">{hasBid ? "Outbid" : "Bid"}</span>
             </button>
           );
         })}
@@ -514,7 +514,7 @@ export default function Home() {
                         <td data-label="Size"><span className={`size-tag size-tag--${spot.size.toLowerCase()}`}>{spot.size}</span>{spot.dimensions}</td>
                         <td data-label="Brand">{spot.bids === 0 ? <span className="availability-pill">Available</span> : spot.website ? <a href={spot.website} target="_blank" rel="noreferrer"><Logo spot={spot} compact /></a> : <Logo spot={spot} compact />}</td>
                         <td data-label={spot.bids === 0 ? "Starting bid" : "Current bid"}><strong>{formatMoney(spot.bids === 0 ? spot.minBid : spot.bid, currency)}</strong><small>{spot.bids === 0 ? "No bids yet" : `${spot.bids} ${spot.bids === 1 ? "bid" : "bids"}`}</small></td>
-                        <td data-label="Action"><button className="outbid-button" onClick={() => setSelectedSpotId(spot.id)}>{spot.bids === 0 ? "Place bid" : "Outbid"}</button></td>
+                        <td data-label="Action"><button className="outbid-button" onClick={() => setSelectedSpotId(spot.id)}>{spot.bids === 0 ? "Bid" : "Outbid"}</button></td>
                       </tr>
                     ))}
                   </tbody>
