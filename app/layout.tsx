@@ -3,18 +3,18 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
-  title: "Brand My Mac — Let your brand travel",
+  title: "Brand Anything — Open-source sponsorship auctions",
   description:
-    "Put your brand on a founder's MacBook. Pick a sticker spot, place a bid, and let your logo travel.",
+    "An open-source template for auctioning brand placements on the things you carry, build, and share.",
   openGraph: {
-    title: "Brand My Mac — Let your brand travel",
-    description: "Your brand, on my Mac.",
+    title: "Brand Anything — Open-source sponsorship auctions",
+    description: "Start with a blank canvas. Let real winning brands fill it.",
     images: [{ url: "/macbook.webp", width: 1536, height: 1024 }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Brand My Mac — Let your brand travel",
-    description: "Your brand, on my Mac.",
+    title: "Brand Anything — Open-source sponsorship auctions",
+    description: "Start with a blank canvas. Let real winning brands fill it.",
     images: ["/macbook.webp"],
   },
 };

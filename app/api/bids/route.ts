@@ -66,7 +66,7 @@ export async function POST(request: Request) {
 
     if (!result.accepted) {
       const message = result.reason === "bid_too_low"
-        ? `Another bidder moved first. The new minimum is €${result.minimumNextBid.toLocaleString("en-US")}.`
+        ? `Another bidder moved first. The new minimum is $${result.minimumNextBid.toLocaleString("en-US")}.`
         : result.reason === "auction_closed"
           ? "This auction has closed."
           : "This request conflicts with a bid that was already processed.";

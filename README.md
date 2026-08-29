@@ -1,6 +1,18 @@
-# Brand Your Mac
+# Brand Anything
 
-A Next.js 16 auction site backed by Supabase Postgres and Storage.
+An open-source Next.js 16 template for auctioning brand placements, backed by Supabase Postgres and Storage. The included MacBook campaign is a starting point: fork it, replace the object and owner story, and launch your own version.
+
+## Starter state
+
+The repository intentionally starts before the first bid:
+
+- all ten spots are available and no sponsor logos are prefilled;
+- bid history and amount raised both start at zero;
+- bids are stored and settled in US dollars, with an optional indicative euro display;
+- opening bids are $125 for Small, $200 for Medium, and $400 for Large spots;
+- Final Look preloads the device image and every active sponsor image, then reveals the composition as one complete view.
+
+The migration `20260828225000_reset_auction_to_empty_usd_state.sql` removes the original sold-out demo bids from databases that applied an earlier version of the initial migration. Review that reset before applying migrations to any environment containing data you intend to keep.
 
 ## Backend design
 

@@ -68,36 +68,21 @@ insert into public.ba_dev_spots (
   current_bidder_name, current_logo_url, current_website, bid_count, closes_at
 )
 values
-  (1, 'Top left banner', 'L', '9.5 × 5.5 cm', 120000, 1000, 'Postiz', '/logos/postiz.png', 'https://postiz.io', 6, '2026-09-09T08:00:00Z'),
-  (2, 'Marquee — above the logo', 'L', '9.5 × 5.5 cm', 171500, 1000, 'See.io', '/logos/see.png', 'https://see.io', 3, '2026-09-09T08:00:00Z'),
-  (3, 'Top right banner', 'L', '9.5 × 5.5 cm', 101000, 1000, 'PrivateAlps', '/logos/privatealps.png', 'https://privatealps.net', 19, '2026-09-09T08:00:00Z'),
-  (4, 'Middle left', 'S', '4.5 × 4.5 cm', 37500, 1000, 'Draftline Fantasy', '/logos/draftline.svg', 'https://www.draftlinefantasy.com', 17, '2026-09-09T08:00:00Z'),
-  (5, 'Inner left — beside the logo', 'S', '4.5 × 4.5 cm', 41000, 1000, 'Surf Office', '/logos/surfoffice.png', 'https://www.surfoffice.com', 12, '2026-09-09T08:00:00Z'),
-  (6, 'Inner right — beside the logo', 'S', '4.5 × 4.5 cm', 37700, 1000, 'emma.pet', '/logos/emma.png', 'https://emma.pet', 12, '2026-09-09T08:00:00Z'),
-  (7, 'Middle right', 'S', '4.5 × 4.5 cm', 37000, 1000, 'Moyai', '/logos/moyai.png', 'https://moyai.ai', 11, '2026-09-09T08:00:00Z'),
-  (8, 'Bottom left strip', 'M', '9.5 × 4 cm', 66600, 1000, 'VedicAstrology.com', '/logos/vedic.png', 'https://vedicastrology.com', 13, '2026-09-09T08:00:00Z'),
-  (9, 'Bottom center — under the logo', 'M', '9.5 × 4 cm', 71000, 1000, 'Felyn GO', '/logos/felyn.jpg', null, 16, '2026-09-09T08:00:00Z'),
-  (10, 'Bottom right strip', 'M', '9.5 × 4 cm', 50000, 1000, 'Clipory', '/logos/clipory.svg', 'https://clipory.app', 14, '2026-09-09T08:00:00Z');
+  -- current_bid_cents starts one $10 increment below the opening price so the
+  -- existing atomic bid function enforces $400 / $200 / $125 first bids.
+  (1, 'Top left banner', 'L', '9.5 × 5.5 cm', 39000, 1000, '', null, null, 0, '2026-09-09T08:00:00Z'),
+  (2, 'Marquee — above the logo', 'L', '9.5 × 5.5 cm', 39000, 1000, '', null, null, 0, '2026-09-09T08:00:00Z'),
+  (3, 'Top right banner', 'L', '9.5 × 5.5 cm', 39000, 1000, '', null, null, 0, '2026-09-09T08:00:00Z'),
+  (4, 'Middle left', 'S', '4.5 × 4.5 cm', 11500, 1000, '', null, null, 0, '2026-09-09T08:00:00Z'),
+  (5, 'Inner left — beside the logo', 'S', '4.5 × 4.5 cm', 11500, 1000, '', null, null, 0, '2026-09-09T08:00:00Z'),
+  (6, 'Inner right — beside the logo', 'S', '4.5 × 4.5 cm', 11500, 1000, '', null, null, 0, '2026-09-09T08:00:00Z'),
+  (7, 'Middle right', 'S', '4.5 × 4.5 cm', 11500, 1000, '', null, null, 0, '2026-09-09T08:00:00Z'),
+  (8, 'Bottom left strip', 'M', '9.5 × 4 cm', 19000, 1000, '', null, null, 0, '2026-09-09T08:00:00Z'),
+  (9, 'Bottom center — under the logo', 'M', '9.5 × 4 cm', 19000, 1000, '', null, null, 0, '2026-09-09T08:00:00Z'),
+  (10, 'Bottom right strip', 'M', '9.5 × 4 cm', 19000, 1000, '', null, null, 0, '2026-09-09T08:00:00Z');
 
 insert into public.ba_prod_spots
 select * from public.ba_dev_spots;
-
-insert into public.ba_dev_bids (
-  id, spot_id, amount_cents, bidder_name, bidder_email, website,
-  idempotency_key, created_at
-)
-values
-  ('10000000-0000-4000-8000-000000000001', 2, 171500, 'See.io', 'legacy+see@brandmymac.invalid', 'https://see.io', '20000000-0000-4000-8000-000000000001', now() - interval '18 minutes'),
-  ('10000000-0000-4000-8000-000000000002', 3, 101000, 'PrivateAlps', 'legacy+privatealps@brandmymac.invalid', 'https://privatealps.net', '20000000-0000-4000-8000-000000000002', now() - interval '34 minutes'),
-  ('10000000-0000-4000-8000-000000000003', 1, 120000, 'Postiz', 'legacy+postiz@brandmymac.invalid', 'https://postiz.io', '20000000-0000-4000-8000-000000000003', now() - interval '1 hour'),
-  ('10000000-0000-4000-8000-000000000004', 9, 71000, 'Felyn GO', 'legacy+felyn@brandmymac.invalid', null, '20000000-0000-4000-8000-000000000004', now() - interval '2 hours'),
-  ('10000000-0000-4000-8000-000000000005', 8, 66600, 'VedicAstrology.com', 'legacy+vedic@brandmymac.invalid', 'https://vedicastrology.com', '20000000-0000-4000-8000-000000000005', now() - interval '3 hours'),
-  ('10000000-0000-4000-8000-000000000006', 10, 50000, 'Clipory', 'legacy+clipory@brandmymac.invalid', 'https://clipory.app', '20000000-0000-4000-8000-000000000006', now() - interval '4 hours'),
-  ('10000000-0000-4000-8000-000000000007', 5, 41000, 'Surf Office', 'legacy+surfoffice@brandmymac.invalid', 'https://www.surfoffice.com', '20000000-0000-4000-8000-000000000007', now() - interval '5 hours'),
-  ('10000000-0000-4000-8000-000000000008', 6, 37700, 'emma.pet', 'legacy+emma@brandmymac.invalid', 'https://emma.pet', '20000000-0000-4000-8000-000000000008', now() - interval '6 hours');
-
-insert into public.ba_prod_bids
-select * from public.ba_dev_bids;
 
 create or replace function public.ba_place_bid_internal(
   p_environment text,
