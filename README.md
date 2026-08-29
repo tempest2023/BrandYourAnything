@@ -1,6 +1,6 @@
 # Brand Anything
 
-An open-source Next.js 16 template for auctioning brand placements, backed by Supabase Postgres and Storage. The included MacBook campaign is a starting point: fork it, replace the object and owner story, and launch your own version.
+An open-source Next.js 16 platform for auctioning brand placements, backed by Supabase Postgres and private Storage. Visitors can use the included MacBook campaign or publish an isolated 10-spot laptop auction at `/create` without forking the repository.
 
 ## Starter state
 
@@ -14,9 +14,29 @@ The repository intentionally starts before the first bid:
 
 The migration `20260828225000_reset_auction_to_empty_usd_state.sql` removes the original sold-out demo bids from databases that applied an earlier version of the initial migration. Review that reset before applying migrations to any environment containing data you intend to keep.
 
-## Backend design
+## Multi-tenant laptop flow
 
-The database intentionally has only two application tables per environment:
+`POST /api/laptops` validates the multipart creation form, stores an optional laptop photo privately, and creates the campaign plus all ten spots in one database transaction. Each campaign is published at `/laptop/<slug>` and exposes only public fields.
+
+Every environment adds three compact tables:
+
+- `ba_<env>_laptops` stores the campaign, owner contact, deadline, pricing policy, and private photo path.
+- `ba_<env>_laptop_spots` stores the ten positions and their current winning state.
+- `ba_<env>_laptop_bids` is the append-only bid ledger.
+
+The owner email, bidder emails, and Storage paths are never returned by the public API. Public images use short-lived signed URLs. `anon` and `authenticated` have no direct access to the tables, buckets, or write functions.
+
+Creation goes through `ba_<env>_create_laptop(...)`. It uses advisory locks for slug and idempotency races, creates the laptop and ten spots atomically, and applies a small per-email creation limit. Tenant bids go through `ba_<env>_place_laptop_bid(...)`; it locks the exact campaign spot, re-checks the live minimum, appends the bid, and updates the winner in one transaction. Idempotency keys make network retries safe.
+
+The browser only calls Next.js Route Handlers:
+
+- `POST /api/laptops` publishes a campaign.
+- `GET /api/laptops/<slug>` returns its public snapshot.
+- `POST /api/laptops/<slug>/bids` places a concurrency-safe bid and optionally stores a private logo.
+
+## Included starter auction
+
+The original single-laptop homepage remains available and uses two application tables per environment:
 
 - `ba_<env>_spots` stores the ten auction slots and their current winning state.
 - `ba_<env>_bids` is an append-only bid ledger. Bidder emails and private logo paths are never returned by the public API.
@@ -25,12 +45,12 @@ The database intentionally has only two application tables per environment:
 
 All writes go through `public.ba_<env>_place_bid(...)`. The function takes a PostgreSQL row lock on the selected spot, re-checks the latest minimum, inserts the bid, and updates the winner inside one transaction. An advisory transaction lock plus a unique key makes retries idempotent, including accidental key reuse across different spots.
 
-The browser only talks to the Next.js Route Handlers:
+Its browser flow uses these Route Handlers:
 
 - `GET /api/auction` returns public spots and recent bid history.
 - `POST /api/bids` validates multipart form data, stores an optional logo in the private `ba_<env>_bid_logos` bucket, and calls the atomic database function.
 
-Supabase secret keys are server-only. The `anon` and `authenticated` roles have no direct access to the auction tables or bid function.
+Supabase secret keys are server-only for both flows.
 
 ## Local development
 
@@ -66,9 +86,10 @@ Run the real concurrency test against local Postgres:
 
 ```bash
 npm run test:concurrency
+npm run test:laptop-platform
 ```
 
-The test verifies equal concurrent bids, simultaneous retries, and idempotency-key reuse across different spots.
+The platform test verifies atomic campaign creation, ten-spot isolation, RLS, equal concurrent bids, simultaneous retries, and cross-tenant idempotency-key reuse. Run it once with `SUPABASE_DATABASE_PREFIX=ba_dev` and once with `ba_prod` when validating both namespaces.
 
 ## Production setup
 

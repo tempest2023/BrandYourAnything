@@ -18,6 +18,7 @@ type TableView = "spots" | "history";
 
 const CAMPAIGN_GOAL_USD = 3200;
 const SOURCE_URL = "https://github.com/tempest2023/BrandYourAnything";
+const CREATE_URL = "/create";
 
 const FAQS = [
   {
@@ -67,9 +68,9 @@ const FAQS = [
     answer: <p>Absolutely. The default copy, prices, auction date, object image, and ten spot positions are meant to be adapted. Keep only the parts that make sense for what you want to brand.</p>,
   },
   {
-    question: "Can I use this for my own project?",
+    question: "Can I list my own laptop?",
     answer: (
-      <p>That is exactly why Tempest open-sourced <a href={SOURCE_URL} target="_blank" rel="noreferrer">Brand Anything</a>. Fork the repository, add your details, and make the template yours.</p>
+      <p>Yes. <a href={CREATE_URL}>Create your public laptop page</a>, set your story, goal, deadline, and three spot prices, then share the live auction URL. No fork or external website is required.</p>
     ),
   },
 ];
@@ -387,6 +388,7 @@ export default function Home() {
             <a href="#how">How it works</a>
             <a href="#specs">The machine</a>
             <a href="#faq">FAQ</a>
+            <a href={CREATE_URL}>List your laptop</a>
           </div>
           <div className="nav-actions">
             <CurrencySwitch currency={currency} onChange={setCurrency} />
@@ -584,11 +586,11 @@ export default function Home() {
 
         <section className="waitlist-section" id="waitlist">
           <div className="waitlist-card">
-            <p className="eyebrow">Open source, yours to remix</p>
-            <h2>What would you brand?</h2>
-            <p><strong>Brand Anything</strong> turns this idea into a reusable auction template. Change the object, inventory, prices, story, and owner details — then launch it as your own.</p>
-            <a className="dark-button" href={SOURCE_URL} target="_blank" rel="noreferrer">Use the template →</a>
-            <small>Built in public and shared for anyone who wants to try the format.</small>
+            <p className="eyebrow">Your machine, live in minutes</p>
+            <h2>List your own laptop.</h2>
+            <p>Choose the public URL, tell your story, set the goal and prices, and publish a real 10-spot auction backed by the same concurrency-safe database.</p>
+            <a className="dark-button" href={CREATE_URL}>Create your laptop →</a>
+            <small>No external site and no code required. Prefer to self-host? The source remains open on GitHub.</small>
           </div>
         </section>
       </main>
@@ -600,13 +602,13 @@ export default function Home() {
             <p className="footer-title">Hey, I&apos;m Tempest 👋</p>
             <p>I open-sourced this project so the idea would not belong to one finished MacBook. <a href={SOURCE_URL} target="_blank" rel="noreferrer">Brand Anything</a> is a starting point anyone can fork, reshape, and launch around their own story.</p>
             <p>Found a bug, built your own version, or want to improve the template? <a href={`${SOURCE_URL}/issues`} target="_blank" rel="noreferrer">Open an issue on GitHub.</a></p>
-            <div className="footer-meta"><a href={SOURCE_URL} target="_blank" rel="noreferrer">Source on GitHub</a><a href={`${SOURCE_URL}/fork`} target="_blank" rel="noreferrer">Fork the template</a></div>
+            <div className="footer-meta"><a href={CREATE_URL}>List your laptop</a><a href={SOURCE_URL} target="_blank" rel="noreferrer">Source on GitHub</a></div>
             <p className="legal">Brand Anything is not affiliated with, endorsed by, or sponsored by Apple Inc. MacBook Pro and Mac are trademarks of Apple Inc.</p>
           </div>
         </div>
       </footer>
 
-      <a className="floating-cta" href={SOURCE_URL} target="_blank" rel="noreferrer">Use this template →</a>
+      <a className="floating-cta" href={CREATE_URL}>List your laptop →</a>
       <BidDialog
         key={selectedSpot?.id ?? "closed"}
         spot={selectedSpot}

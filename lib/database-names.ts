@@ -29,3 +29,19 @@ export function getPlaceBidFunction() {
 export function getLogoBucket() {
   return `${getDatabasePrefix()}_bid_logos`;
 }
+
+export function getLaptopTable(name: "laptops" | "laptop_spots" | "laptop_bids") {
+  return `${getDatabasePrefix()}_${name}`;
+}
+
+export function getCreateLaptopFunction() {
+  return `${getDatabasePrefix()}_create_laptop`;
+}
+
+export function getPlaceLaptopBidFunction() {
+  return `${getDatabasePrefix()}_place_laptop_bid`;
+}
+
+export function getLaptopMediaBucket() {
+  return `${getDatabasePrefix()}_laptop_media`;
+}

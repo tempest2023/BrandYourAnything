@@ -1,0 +1,731 @@
+.page {
+  --campaign-ink: oklch(18% 0.016 255);
+  --campaign-muted: oklch(48% 0.016 255);
+  --campaign-paper: oklch(98% 0.004 250);
+  --campaign-line: oklch(86% 0.009 250);
+  --campaign-blue: oklch(58% 0.19 252);
+  min-height: 100vh;
+  background: var(--campaign-paper);
+  color: var(--campaign-ink);
+}
+
+.nav {
+  position: sticky;
+  z-index: 30;
+  top: 0;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  min-height: 4.25rem;
+  padding: 0 1rem;
+  align-items: center;
+  border-bottom: 1px solid var(--campaign-line);
+  background: oklch(98% 0.004 250 / 0.94);
+  backdrop-filter: blur(18px);
+}
+
+.nav a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.wordmark {
+  font-size: 0.96rem;
+  font-weight: 720;
+  letter-spacing: -0.035em;
+}
+
+.live,
+.offline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--campaign-muted);
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.live::before,
+.offline::before {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: oklch(64% 0.17 145);
+  box-shadow: 0 0 0 0.2rem oklch(64% 0.17 145 / 0.13);
+  content: "";
+}
+
+.offline::before {
+  background: oklch(65% 0.15 35);
+  box-shadow: 0 0 0 0.2rem oklch(65% 0.15 35 / 0.13);
+}
+
+.createLink {
+  justify-self: end;
+  font-size: 0.76rem;
+  font-weight: 680;
+}
+
+.hero {
+  display: grid;
+  width: min(100% - 2rem, 80rem);
+  margin: 0 auto;
+  padding: clamp(4rem, 10vw, 8rem) 0 3rem;
+  gap: 3.5rem;
+  align-items: center;
+}
+
+.heroCopy {
+  min-width: 0;
+}
+
+.ownerLine,
+.auctionIntro > p,
+.storySection > div:first-child > p {
+  margin: 0 0 1rem;
+  color: var(--campaign-blue);
+  font-size: 0.7rem;
+  font-weight: 720;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.heroCopy h1 {
+  max-width: 10ch;
+  margin: 0;
+  font-size: clamp(3.6rem, 13vw, 8.8rem);
+  font-weight: 500;
+  letter-spacing: -0.078em;
+  line-height: 0.89;
+}
+
+.heroCopy > p:nth-of-type(2) {
+  max-width: 37rem;
+  margin: 1.6rem 0 0;
+  color: var(--campaign-muted);
+  font-size: clamp(1rem, 2.4vw, 1.25rem);
+  line-height: 1.55;
+}
+
+.heroStats {
+  display: grid;
+  margin-top: 2.5rem;
+  border-top: 1px solid var(--campaign-line);
+  border-bottom: 1px solid var(--campaign-line);
+}
+
+.heroStats span {
+  display: flex;
+  min-height: 3.25rem;
+  padding: 0.25rem 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--campaign-line);
+  color: var(--campaign-muted);
+  font-size: 0.78rem;
+}
+
+.heroStats span:last-child {
+  border-bottom: 0;
+}
+
+.heroStats b {
+  color: var(--campaign-ink);
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.lidWrap {
+  min-width: 0;
+}
+
+.lidWrap :global(.lid-stage) {
+  padding-top: 0;
+}
+
+.lidWrap :global(.mac-lid) {
+  box-shadow: 0 2.2rem 4.6rem oklch(22% 0.012 250 / 0.22), inset 0 1px 1px oklch(99% 0.002 250 / 0.9);
+}
+
+.lidWrap > p {
+  margin: 0.4rem 0 0;
+  color: var(--campaign-muted);
+  font-size: 0.7rem;
+  text-align: center;
+}
+
+.progressSection {
+  width: min(100% - 2rem, 80rem);
+  margin: 0 auto;
+  padding: 0 0 clamp(5rem, 9vw, 8rem);
+}
+
+.progressSection > div {
+  height: 0.5rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: oklch(91% 0.008 250);
+}
+
+.progressSection > div span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--campaign-blue);
+  transition: width 500ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.progressSection p {
+  display: flex;
+  margin: 0.7rem 0 0;
+  justify-content: space-between;
+  color: var(--campaign-muted);
+  font-size: 0.76rem;
+}
+
+.progressSection b {
+  color: var(--campaign-ink);
+}
+
+.auctionSection {
+  padding: clamp(5rem, 10vw, 9rem) 1rem;
+  background: oklch(16% 0.016 255);
+  color: oklch(97% 0.005 250);
+}
+
+.auctionIntro,
+.auctionGrid {
+  width: min(100%, 76rem);
+  margin: 0 auto;
+}
+
+.auctionIntro {
+  margin-bottom: 3.5rem;
+}
+
+.auctionIntro h2 {
+  max-width: 11ch;
+  margin: 0;
+  font-size: clamp(2.8rem, 8vw, 6.4rem);
+  font-weight: 500;
+  letter-spacing: -0.068em;
+  line-height: 0.93;
+}
+
+.auctionGrid {
+  display: grid;
+  gap: 3rem;
+}
+
+.spotList {
+  border-top: 1px solid oklch(35% 0.014 255);
+}
+
+.spotList > button {
+  display: grid;
+  grid-template-columns: 2.4rem minmax(0, 1fr) auto;
+  width: 100%;
+  min-height: 5.25rem;
+  padding: 0.75rem 0.25rem;
+  align-items: center;
+  gap: 0.7rem;
+  border: 0;
+  border-bottom: 1px solid oklch(35% 0.014 255);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: background 160ms ease, padding 160ms ease;
+}
+
+.spotList > button > span {
+  color: oklch(62% 0.02 250);
+  font-size: 0.66rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.spotList p,
+.spotList strong {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  gap: 0.25rem;
+}
+
+.spotList b {
+  overflow: hidden;
+  font-size: 0.88rem;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spotList small {
+  color: oklch(64% 0.014 250);
+  font-size: 0.65rem;
+  font-weight: 470;
+}
+
+.spotList strong {
+  justify-items: end;
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.spotList > button.selectedSpot {
+  padding-right: 0.75rem;
+  padding-left: 0.75rem;
+  background: oklch(23% 0.018 255);
+}
+
+.spotList > button:focus-visible {
+  position: relative;
+  z-index: 2;
+  outline: 2px solid oklch(70% 0.14 252);
+  outline-offset: -2px;
+}
+
+.bidColumn {
+  min-width: 0;
+}
+
+.bidForm {
+  display: grid;
+  padding: clamp(1.25rem, 4vw, 2rem);
+  gap: 1rem;
+  border: 1px solid oklch(38% 0.016 255);
+  background: oklch(20% 0.018 255);
+}
+
+.bidHeading {
+  margin-bottom: 0.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid oklch(38% 0.016 255);
+}
+
+.bidHeading p {
+  margin: 0 0 0.7rem;
+  color: oklch(69% 0.13 252);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.bidHeading h3 {
+  margin: 0;
+  font-size: 1.65rem;
+  font-weight: 580;
+  letter-spacing: -0.045em;
+}
+
+.bidHeading span {
+  display: block;
+  margin-top: 0.45rem;
+  color: oklch(68% 0.014 250);
+  font-size: 0.72rem;
+}
+
+.bidForm label {
+  display: grid;
+  gap: 0.45rem;
+  color: oklch(79% 0.01 250);
+  font-size: 0.7rem;
+  font-weight: 620;
+}
+
+.bidForm label em {
+  color: oklch(58% 0.012 250);
+  font-style: normal;
+  font-weight: 450;
+}
+
+.bidForm input {
+  width: 100%;
+  min-height: 3rem;
+  padding: 0 0.8rem;
+  border: 1px solid oklch(39% 0.016 255);
+  border-radius: 0.25rem;
+  background: oklch(17% 0.016 255);
+  color: oklch(96% 0.006 250);
+  font: inherit;
+  font-size: 0.9rem;
+  outline: none;
+}
+
+.bidForm input::placeholder {
+  color: oklch(55% 0.014 250);
+}
+
+.bidForm input:focus-visible {
+  border-color: oklch(70% 0.14 252);
+  box-shadow: 0 0 0 3px oklch(58% 0.19 252 / 0.18);
+}
+
+.fieldPair {
+  display: grid;
+  gap: 1rem;
+}
+
+.logoUpload input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.logoUpload > span {
+  display: flex;
+  min-height: 3.6rem;
+  padding: 0.8rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed oklch(46% 0.016 255);
+  border-radius: 0.25rem;
+  color: oklch(66% 0.014 250);
+  cursor: pointer;
+  font-size: 0.7rem;
+  text-align: center;
+}
+
+.logoUpload:focus-within > span {
+  border-color: oklch(70% 0.14 252);
+  box-shadow: 0 0 0 3px oklch(58% 0.19 252 / 0.18);
+}
+
+.bidForm > button {
+  min-height: 3.25rem;
+  border: 0;
+  border-radius: 999px;
+  background: oklch(93% 0.006 250);
+  color: oklch(20% 0.018 255);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 720;
+}
+
+.bidForm > button:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.bidForm > button:focus-visible {
+  outline: 3px solid oklch(70% 0.14 252);
+  outline-offset: 3px;
+}
+
+.bidForm > small {
+  color: oklch(58% 0.012 250);
+  font-size: 0.64rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.bidError {
+  margin: 0;
+  padding: 0.75rem;
+  border-radius: 0.25rem;
+  background: oklch(31% 0.07 28);
+  color: oklch(88% 0.07 28);
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.bidSuccess {
+  display: grid;
+  min-height: 22rem;
+  padding: 2rem;
+  place-content: center;
+  border: 1px solid oklch(41% 0.05 145);
+  background: oklch(22% 0.035 145);
+  text-align: center;
+}
+
+.bidSuccess > span {
+  display: grid;
+  width: 3.5rem;
+  height: 3.5rem;
+  margin: 0 auto 1rem;
+  place-items: center;
+  border-radius: 50%;
+  background: oklch(68% 0.16 145);
+  color: oklch(18% 0.03 145);
+  font-size: 1.3rem;
+}
+
+.bidSuccess h3 {
+  margin: 0;
+  font-size: 1.75rem;
+}
+
+.bidSuccess p {
+  max-width: 28rem;
+  margin: 0.8rem 0 0;
+  color: oklch(76% 0.035 145);
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+
+.storySection {
+  display: grid;
+  width: min(100% - 2rem, 76rem);
+  margin: 0 auto;
+  padding: clamp(5rem, 10vw, 9rem) 0;
+  gap: 3rem;
+}
+
+.storySection h2 {
+  max-width: 26ch;
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 3.8rem);
+  font-weight: 500;
+  letter-spacing: -0.055em;
+  line-height: 1.02;
+}
+
+.storySection dl {
+  margin: 3rem 0 0;
+  border-top: 1px solid var(--campaign-line);
+}
+
+.storySection dl > div {
+  display: grid;
+  grid-template-columns: 8rem 1fr;
+  min-height: 3.4rem;
+  align-items: center;
+  border-bottom: 1px solid var(--campaign-line);
+  font-size: 0.76rem;
+}
+
+.storySection dt {
+  color: var(--campaign-muted);
+}
+
+.storySection dd {
+  margin: 0;
+  font-weight: 620;
+}
+
+.ownerPhoto {
+  min-height: 22rem;
+  overflow: hidden;
+  background: oklch(88% 0.012 250);
+}
+
+.ownerPhoto img {
+  width: 100%;
+  height: 100%;
+  min-height: 22rem;
+  object-fit: cover;
+}
+
+.ownerPhoto > div {
+  display: grid;
+  height: 100%;
+  min-height: 22rem;
+  place-content: center;
+  color: oklch(32% 0.012 250);
+  text-align: center;
+}
+
+.ownerPhoto span {
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 6rem;
+}
+
+.ownerPhoto p {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+}
+
+.historySection {
+  padding: clamp(5rem, 9vw, 8rem) max(1rem, calc((100vw - 76rem) / 2));
+  background: oklch(92% 0.009 250);
+}
+
+.historyHead {
+  display: flex;
+  margin-bottom: 2rem;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.historyHead h2 {
+  margin: 0;
+  font-size: clamp(2.5rem, 6vw, 4.5rem);
+  font-weight: 500;
+  letter-spacing: -0.06em;
+}
+
+.historyHead span {
+  color: var(--campaign-muted);
+  font-size: 0.7rem;
+}
+
+.historyRow {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+  min-height: 4.4rem;
+  align-items: center;
+  gap: 0.75rem;
+  border-top: 1px solid oklch(80% 0.01 250);
+}
+
+.historyRow > span {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--campaign-ink);
+  color: oklch(96% 0.006 250);
+  font-size: 0.7rem;
+}
+
+.historyRow p {
+  display: grid;
+  margin: 0;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+}
+
+.historyRow small {
+  color: var(--campaign-muted);
+  font-size: 0.64rem;
+}
+
+.historyRow > strong {
+  font-size: 0.86rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.emptyHistory {
+  padding: 4rem 0;
+  border-top: 1px solid oklch(80% 0.01 250);
+}
+
+.emptyHistory b {
+  font-size: 1.25rem;
+}
+
+.emptyHistory p {
+  margin: 0.45rem 0 0;
+  color: var(--campaign-muted);
+  font-size: 0.8rem;
+}
+
+.footer {
+  display: grid;
+  min-height: 22rem;
+  padding: 3rem 1rem;
+  place-content: center;
+  background: var(--campaign-blue);
+  color: oklch(98% 0.004 250);
+  text-align: center;
+}
+
+.footer p {
+  margin: 0 0 1rem;
+  font-size: 0.8rem;
+}
+
+.footer a {
+  color: inherit;
+  font-size: clamp(2.4rem, 8vw, 5.5rem);
+  font-weight: 520;
+  letter-spacing: -0.065em;
+  line-height: 1;
+  text-decoration: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .nav a:hover,
+  .footer a:hover {
+    text-decoration: underline;
+    text-underline-offset: 0.25rem;
+  }
+
+  .spotList > button:hover {
+    padding-right: 0.75rem;
+    padding-left: 0.75rem;
+    background: oklch(23% 0.018 255);
+  }
+
+  .bidForm > button:hover {
+    background: oklch(84% 0.012 250);
+  }
+
+  .logoUpload > span:hover {
+    border-color: oklch(70% 0.14 252);
+    color: oklch(82% 0.02 252);
+  }
+}
+
+@media (min-width: 40rem) {
+  .nav {
+    padding: 0 1.5rem;
+  }
+
+  .heroStats {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .heroStats span {
+    display: grid;
+    min-height: 4.2rem;
+    padding: 0 1rem;
+    justify-content: start;
+    border-right: 1px solid var(--campaign-line);
+    border-bottom: 0;
+  }
+
+  .heroStats span:first-child {
+    padding-left: 0;
+  }
+
+  .heroStats span:last-child {
+    border-right: 0;
+  }
+
+  .fieldPair {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 60rem) {
+  .hero {
+    grid-template-columns: minmax(0, 0.8fr) minmax(31rem, 1.2fr);
+    gap: clamp(3rem, 7vw, 7rem);
+  }
+
+  .heroCopy h1 {
+    font-size: clamp(4.8rem, 8vw, 8.8rem);
+  }
+
+  .auctionGrid {
+    grid-template-columns: minmax(0, 1.15fr) minmax(22rem, 0.85fr);
+    align-items: start;
+  }
+
+  .bidColumn {
+    position: sticky;
+    top: 6.25rem;
+  }
+
+  .storySection {
+    grid-template-columns: minmax(0, 1.15fr) minmax(24rem, 0.85fr);
+    align-items: stretch;
+    gap: clamp(3rem, 8vw, 8rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progressSection > div span,
+  .spotList > button {
+    transition: none;
+  }
+}

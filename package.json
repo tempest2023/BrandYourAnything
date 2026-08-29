@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test:concurrency": "node scripts/test-concurrent-bids.mjs"
+    "test:concurrency": "node scripts/test-concurrent-bids.mjs",
+    "test:laptop-platform": "node scripts/test-laptop-platform.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",

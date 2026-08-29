@@ -1,0 +1,561 @@
+.page {
+  --create-ink: oklch(19% 0.015 255);
+  --create-muted: oklch(48% 0.016 255);
+  --create-line: oklch(87% 0.008 255);
+  --create-paper: oklch(98% 0.004 250);
+  --create-blue: oklch(58% 0.19 252);
+  min-height: 100vh;
+  background: var(--create-paper);
+  color: var(--create-ink);
+}
+
+.topbar {
+  position: sticky;
+  z-index: 20;
+  top: 0;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  min-height: 4rem;
+  padding: 0 1rem;
+  align-items: center;
+  border-bottom: 1px solid var(--create-line);
+  background: oklch(98% 0.004 250 / 0.94);
+  backdrop-filter: blur(18px);
+}
+
+.topbar > span {
+  display: none;
+  color: var(--create-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.brand,
+.backLink {
+  color: inherit;
+  text-decoration: none;
+}
+
+.brand {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+}
+
+.backLink {
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.shell {
+  display: grid;
+}
+
+.formSide {
+  width: min(100%, 48rem);
+  margin: 0 auto;
+  padding: clamp(3.5rem, 8vw, 7rem) 1rem 6rem;
+}
+
+.formIntro {
+  max-width: 42rem;
+  margin-bottom: 4rem;
+}
+
+.eyebrow {
+  margin: 0 0 1rem;
+  color: var(--create-blue);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.formIntro h1,
+.successPage h1 {
+  margin: 0;
+  font-size: clamp(2.7rem, 9vw, 5.8rem);
+  font-weight: 520;
+  letter-spacing: -0.072em;
+  line-height: 0.94;
+}
+
+.formIntro > p:last-child {
+  max-width: 37rem;
+  margin: 1.5rem 0 0;
+  color: var(--create-muted);
+  font-size: clamp(1rem, 2.4vw, 1.2rem);
+  line-height: 1.6;
+}
+
+.form {
+  display: grid;
+  gap: 3.75rem;
+}
+
+.form fieldset {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  padding: 1.4rem 0 0;
+  gap: 1.15rem;
+  border: 0;
+  border-top: 1px solid var(--create-line);
+}
+
+.form legend {
+  display: flex;
+  width: 100%;
+  margin: 0 0 1rem;
+  padding: 0;
+  align-items: baseline;
+  gap: 0.75rem;
+  font-size: 1.3rem;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+}
+
+.form legend span {
+  color: var(--create-blue);
+  font-size: 0.65rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+}
+
+.form label {
+  display: grid;
+  gap: 0.5rem;
+  color: oklch(30% 0.015 255);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.form input,
+.form textarea {
+  width: 100%;
+  border: 1px solid var(--create-line);
+  border-radius: 0.35rem;
+  background: oklch(99% 0.002 250);
+  color: var(--create-ink);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 450;
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.form input {
+  min-height: 3.25rem;
+  padding: 0 0.9rem;
+}
+
+.form textarea {
+  min-height: 9rem;
+  padding: 0.9rem;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.form input:focus-visible,
+.form textarea:focus-visible {
+  border-color: var(--create-blue);
+  box-shadow: 0 0 0 3px oklch(58% 0.19 252 / 0.14);
+}
+
+.form input::placeholder,
+.form textarea::placeholder {
+  color: oklch(57% 0.014 255);
+}
+
+.slugInput {
+  display: flex;
+  min-height: 3.25rem;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--create-line);
+  border-radius: 0.35rem;
+  background: oklch(95% 0.007 250);
+}
+
+.slugInput:focus-within {
+  border-color: var(--create-blue);
+  box-shadow: 0 0 0 3px oklch(58% 0.19 252 / 0.14);
+}
+
+.slugInput b {
+  padding-left: 0.85rem;
+  color: var(--create-muted);
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+.slugInput input {
+  min-width: 0;
+  min-height: 3.1rem;
+  border: 0;
+  background: transparent;
+  box-shadow: none !important;
+}
+
+.fileField em {
+  color: var(--create-muted);
+  font-style: normal;
+  font-weight: 450;
+}
+
+.fileField input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.fileField > span {
+  display: flex;
+  min-height: 5rem;
+  padding: 1rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed oklch(72% 0.015 255);
+  border-radius: 0.35rem;
+  color: var(--create-muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-align: center;
+}
+
+.fileField:focus-within > span {
+  border-color: var(--create-blue);
+  box-shadow: 0 0 0 3px oklch(58% 0.19 252 / 0.14);
+}
+
+.priceGrid,
+.ownerGrid {
+  display: grid;
+  gap: 1rem;
+}
+
+.privateNote,
+.legal {
+  margin: 0;
+  color: var(--create-muted);
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+.error {
+  margin: -1rem 0 0;
+  padding: 0.9rem 1rem;
+  border-radius: 0.3rem;
+  background: oklch(94% 0.035 28);
+  color: oklch(39% 0.14 28);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.publishButton,
+.primaryAction,
+.secondaryAction {
+  display: inline-flex;
+  min-height: 3.5rem;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 680;
+  text-decoration: none;
+}
+
+.publishButton,
+.primaryAction {
+  background: var(--create-ink);
+  color: oklch(98% 0.004 250);
+  cursor: pointer;
+}
+
+.publishButton:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.publishButton:focus-visible,
+.primaryAction:focus-visible,
+.secondaryAction:focus-visible,
+.brand:focus-visible,
+.backLink:focus-visible {
+  outline: 3px solid var(--create-blue);
+  outline-offset: 3px;
+}
+
+.previewSide {
+  min-height: 46rem;
+  padding: 3.5rem 1rem;
+  background:
+    radial-gradient(circle at 55% 42%, oklch(37% 0.018 250), transparent 34%),
+    oklch(17% 0.015 250);
+  color: oklch(96% 0.006 250);
+}
+
+.previewSticky {
+  width: min(100%, 43rem);
+  margin: 0 auto;
+}
+
+.previewMeta,
+.previewFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: oklch(73% 0.012 250);
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.previewCopy {
+  margin: 4rem 0 2.5rem;
+}
+
+.previewCopy > p:first-child {
+  margin: 0 0 0.7rem;
+  color: oklch(68% 0.07 252);
+  font-size: 0.7rem;
+  letter-spacing: 0.03em;
+}
+
+.previewCopy h2 {
+  max-width: 12ch;
+  margin: 0;
+  font-size: clamp(2.5rem, 9vw, 5.4rem);
+  font-weight: 480;
+  letter-spacing: -0.07em;
+  line-height: 0.95;
+}
+
+.previewCopy > p:last-child {
+  max-width: 34rem;
+  margin: 1rem 0 0;
+  color: oklch(75% 0.012 250);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.laptopStage {
+  padding: 1rem 0 3rem;
+  perspective: 900px;
+}
+
+.laptopLid {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1.46 / 1;
+  overflow: hidden;
+  border: 1px solid oklch(69% 0.012 250);
+  border-radius: clamp(0.8rem, 2.5vw, 1.4rem);
+  background:
+    radial-gradient(circle at 50% 9%, oklch(98% 0.005 250 / 0.72), transparent 42%),
+    linear-gradient(140deg, oklch(92% 0.01 250), oklch(67% 0.016 250));
+  box-shadow: 0 2rem 4rem oklch(5% 0.01 250 / 0.4), inset 0 1px oklch(99% 0.002 250 / 0.85);
+  transform: rotateX(1.5deg);
+  background-position: center;
+  background-size: cover;
+}
+
+.laptopLid::after {
+  position: absolute;
+  right: 7%;
+  bottom: 0;
+  left: 7%;
+  height: 0.42rem;
+  border-radius: 80% 80% 0 0;
+  background: oklch(58% 0.012 250);
+  content: "";
+}
+
+.laptopLidWithPhoto {
+  border-color: oklch(72% 0.02 250);
+}
+
+.apple {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 50%;
+  color: oklch(25% 0.01 250);
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: clamp(3.3rem, 14vw, 7rem);
+  line-height: 1;
+  text-shadow: 0 1px oklch(97% 0.005 250 / 0.35);
+  transform: translate(-50%, -50%);
+}
+
+.previewSpot {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  place-content: center;
+  border: 1px dashed oklch(28% 0.015 250 / 0.42);
+  border-radius: 0.45rem;
+  background: oklch(96% 0.006 250 / 0.55);
+  color: oklch(26% 0.015 250);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.previewSpot b {
+  font-size: clamp(0.6rem, 2vw, 0.78rem);
+}
+
+.previewSpot small {
+  font-size: clamp(0.45rem, 1.5vw, 0.62rem);
+}
+
+.spot1 { top: 5%; left: 3%; width: 30%; height: 29%; }
+.spot2 { top: 5%; left: 35%; width: 30%; height: 29%; }
+.spot3 { top: 5%; right: 3%; width: 30%; height: 29%; }
+.spot4 { top: 36%; left: 3%; width: 14%; height: 27%; }
+.spot5 { top: 36%; left: 19%; width: 14%; height: 27%; }
+.spot6 { top: 36%; right: 19%; width: 14%; height: 27%; }
+.spot7 { top: 36%; right: 3%; width: 14%; height: 27%; }
+.spot8 { bottom: 5%; left: 3%; width: 30%; height: 29%; }
+.spot9 { bottom: 5%; left: 35%; width: 30%; height: 29%; }
+.spot10 { right: 3%; bottom: 5%; width: 30%; height: 29%; }
+
+.successPage {
+  display: grid;
+  min-height: 100vh;
+  padding: clamp(2rem, 8vw, 7rem);
+  place-content: center;
+  background:
+    linear-gradient(90deg, transparent 49.8%, oklch(88% 0.009 250) 50%, transparent 50.2%),
+    oklch(98% 0.004 250);
+  color: var(--create-ink, oklch(19% 0.015 255));
+  text-align: center;
+}
+
+.successMark {
+  display: grid;
+  width: 4.5rem;
+  height: 4.5rem;
+  margin: 0 auto 2rem;
+  place-items: center;
+  border-radius: 50%;
+  background: oklch(64% 0.16 145);
+  color: oklch(98% 0.004 145);
+  font-size: 1.7rem;
+}
+
+.successPage > p:not(.eyebrow) {
+  max-width: 37rem;
+  margin: 1.5rem auto 0;
+  color: oklch(45% 0.015 255);
+  line-height: 1.6;
+}
+
+.successActions {
+  display: grid;
+  gap: 0.75rem;
+  width: min(100%, 26rem);
+  margin: 2rem auto 0;
+}
+
+.secondaryAction {
+  border: 1px solid oklch(82% 0.01 255);
+  color: inherit;
+}
+
+.successPage code {
+  display: block;
+  max-width: min(100%, 40rem);
+  margin: 2rem auto 0;
+  padding: 0.75rem 1rem;
+  overflow: hidden;
+  border-radius: 0.3rem;
+  background: oklch(93% 0.008 250);
+  color: oklch(38% 0.02 252);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .publishButton:hover,
+  .primaryAction:hover {
+    background: oklch(28% 0.018 255);
+    transform: translateY(-1px);
+  }
+
+  .backLink:hover,
+  .brand:hover {
+    text-decoration: underline;
+    text-underline-offset: 0.25rem;
+  }
+
+  .fileField > span:hover {
+    border-color: var(--create-blue);
+    color: var(--create-ink);
+  }
+}
+
+@media (min-width: 40rem) {
+  .topbar {
+    grid-template-columns: 1fr auto 1fr;
+    padding: 0 1.5rem;
+  }
+
+  .topbar > span {
+    display: block;
+  }
+
+  .priceGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ownerGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .successActions {
+    grid-template-columns: 1fr 1fr;
+    width: min(100%, 38rem);
+  }
+}
+
+@media (min-width: 64rem) {
+  .shell {
+    grid-template-columns: minmax(34rem, 0.94fr) minmax(34rem, 1.06fr);
+  }
+
+  .formSide {
+    padding-right: clamp(2rem, 5vw, 5rem);
+    padding-left: clamp(2rem, 5vw, 5rem);
+  }
+
+  .previewSide {
+    min-height: calc(100vh - 4rem);
+    padding: 3rem clamp(2rem, 4vw, 4.5rem);
+  }
+
+  .previewSticky {
+    position: sticky;
+    top: 7rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .form input,
+  .form textarea,
+  .publishButton {
+    transition: none;
+  }
+}

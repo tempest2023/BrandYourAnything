@@ -3,18 +3,18 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
-  title: "Brand Anything — Open-source sponsorship auctions",
+  title: "Brand Anything — Put your brand on my laptop",
   description:
-    "An open-source template for auctioning brand placements on the things you carry, build, and share.",
+    "Publish your own 10-spot laptop sponsorship auction, accept live bids, and share a page built around the machine you carry.",
   openGraph: {
-    title: "Brand Anything — Open-source sponsorship auctions",
-    description: "Start with a blank canvas. Let real winning brands fill it.",
+    title: "Brand Anything — Put your brand on my laptop",
+    description: "Create and share a live 10-spot laptop sponsorship auction.",
     images: [{ url: "/macbook.webp", width: 1536, height: 1024 }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Brand Anything — Open-source sponsorship auctions",
-    description: "Start with a blank canvas. Let real winning brands fill it.",
+    title: "Brand Anything — Put your brand on my laptop",
+    description: "Create and share a live 10-spot laptop sponsorship auction.",
     images: ["/macbook.webp"],
   },
 };
@@ -28,7 +28,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="en" data-scroll-behavior="smooth">
       <body>{children}</body>
     </html>
   );
