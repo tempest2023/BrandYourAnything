@@ -1398,6 +1398,64 @@ p {
   font-weight: 600;
 }
 
+.footer-connect-copy {
+  margin-bottom: 0.85rem;
+}
+
+.footer-support-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-bottom: 1.2rem;
+}
+
+.footer-support-link {
+  display: inline-flex;
+  min-height: 2.25rem;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--ink) !important;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.74rem;
+  font-weight: 550;
+  transition: border-color 180ms ease-out, background-color 180ms ease-out, transform 180ms ease-out;
+}
+
+.footer-support-icon {
+  position: relative;
+  display: grid;
+  width: 0.95rem;
+  height: 0.95rem;
+  flex: 0 0 auto;
+  place-items: center;
+}
+
+.footer-support-icon svg {
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
+}
+
+.footer-support-badge {
+  position: absolute;
+  right: -0.32rem;
+  bottom: -0.22rem;
+  display: grid;
+  width: 0.66rem;
+  height: 0.66rem;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--blue);
+  color: var(--paper);
+  font-size: 0.47rem;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 0 0 2px var(--surface-raised);
+}
+
 .footer-meta {
   display: flex;
   gap: 1rem;
@@ -1685,11 +1743,18 @@ p {
 @media (hover: hover) and (pointer: fine) {
   .nav-links a:hover,
   .text-link:hover,
-  .site-footer a:hover,
+  .site-footer a:not(.footer-support-link):hover,
   .spec-note a:hover,
   .faq-answer a:hover {
     text-decoration: underline;
     text-underline-offset: 0.2rem;
+  }
+
+  .footer-support-link:hover {
+    border-color: color-mix(in oklch, var(--blue) 32%, var(--hairline));
+    background: var(--blue-soft);
+    color: var(--blue-dark) !important;
+    transform: translateY(-1px);
   }
 
   .dark-button:hover {
