@@ -13,6 +13,7 @@ import {
   type Spot,
 } from "@/lib/auction";
 import { formatRelativeTime, SPOT_NAME_KEYS } from "@/lib/i18n";
+import type { LaptopCampaign } from "@/lib/laptop";
 import {
   amountToUsd,
   amountToUsdCents,
@@ -24,8 +25,13 @@ import {
 
 type LidView = "live" | "final";
 type TableView = "spots" | "history";
+type AuctionLandingProps = {
+  campaign?: LaptopCampaign;
+  initialSnapshot?: AuctionSnapshot;
+};
 
 const CAMPAIGN_GOAL_USD = 3200;
+const DEFAULT_AUCTION_CLOSE = "2026-09-09T08:00:00Z";
 const SOURCE_URL = "https://github.com/tempest2023/BrandYourAnything";
 const CREATE_URL = "/sell";
 const X_ACCOUNT_URL = "https://x.com/biIIIionaire";
@@ -40,12 +46,12 @@ function XIcon() {
   );
 }
 
-function useCountdown() {
+function useCountdown(closesAt = DEFAULT_AUCTION_CLOSE) {
   const { t } = useI18n();
   const [remaining, setRemaining] = useState({ days: 0, hours: 0, minutes: 0, closed: false });
 
   useEffect(() => {
-    const auctionEnd = new Date("2026-09-09T08:00:00Z").getTime();
+    const auctionEnd = new Date(closesAt).getTime();
     const update = () => {
       const left = Math.max(0, auctionEnd - Date.now());
       const days = Math.floor(left / 86_400_000);
@@ -56,7 +62,7 @@ function useCountdown() {
     update();
     const timer = window.setInterval(update, 30_000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [closesAt]);
 
   return remaining.closed
     ? t("laptop.closed")
@@ -77,7 +83,15 @@ function Logo({ spot, compact = false }: { spot: Spot; compact?: boolean }) {
   );
 }
 
-function MacLid({ spots, onSelect }: { spots: Spot[]; onSelect: (spot: Spot) => void }) {
+function MacLid({
+  spots,
+  showApple = true,
+  onSelect,
+}: {
+  spots: Spot[];
+  showApple?: boolean;
+  onSelect: (spot: Spot) => void;
+}) {
   const { currency, locale, t } = useI18n();
   const money = (amount: number) => formatCurrency(amount, currency, locale);
 
@@ -85,7 +99,7 @@ function MacLid({ spots, onSelect }: { spots: Spot[]; onSelect: (spot: Spot) => 
     <div className="lid-stage" aria-label={t("home.lidAria")}>
       <div className="mac-lid">
         <div className="lid-camera" />
-        <span className="apple-mark" aria-label={t("common.appleLogo")}></span>
+        {showApple && <span className="apple-mark" aria-label={t("common.appleLogo")}></span>}
         {spots.map((spot) => {
           const hasBid = spot.bids > 0 && Boolean(spot.holder);
           const spotNameKey = SPOT_NAME_KEYS[spot.id];
@@ -120,10 +134,12 @@ type BidApiResponse = {
 
 function BidDialog({
   spot,
+  endpoint,
   onClose,
   onSnapshot,
 }: {
   spot: Spot | null;
+  endpoint: string;
   onClose: () => void;
   onSnapshot: (snapshot: AuctionSnapshot) => void;
 }) {
@@ -167,7 +183,7 @@ function BidDialog({
     formData.set("idempotencyKey", idempotencyKey);
 
     try {
-      const response = await fetch("/api/bids", { method: "POST", body: formData });
+      const response = await fetch(endpoint, { method: "POST", body: formData });
       const payload = await response.json() as BidApiResponse;
       if (payload.snapshot) onSnapshot(payload.snapshot);
 
@@ -263,27 +279,45 @@ function BidDialog({
   );
 }
 
-export default function Home() {
-  const { currency, locale, t } = useI18n();
+export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLandingProps) {
+  const { currency, locale, t, formatDate } = useI18n();
   const money = (amount: number) => formatCurrency(amount, currency, locale);
+  const campaignGoal = campaign?.goal ?? CAMPAIGN_GOAL_USD;
+  const auctionEndpoint = campaign
+    ? `/api/laptops/${encodeURIComponent(campaign.slug)}`
+    : "/api/auction";
+  const bidEndpoint = campaign
+    ? `/api/laptops/${encodeURIComponent(campaign.slug)}/bids`
+    : "/api/bids";
+  const isMac = !campaign || /^mac\b/i.test(campaign.laptopModel);
+  const machineImage = campaign?.photoUrl ?? "/macbook.webp";
+  const machineAssetKey = campaign && !campaign.photoUrl && !isMac
+    ? null
+    : `machine:${machineImage}`;
   const [lidView, setLidView] = useState<LidView>("live");
   const [tableView, setTableView] = useState<TableView>("spots");
-  const [spots, setSpots] = useState<Spot[]>(STARTER_SPOTS);
-  const [history, setHistory] = useState(STARTER_HISTORY);
-  const [backendStatus, setBackendStatus] = useState<"connecting" | "live" | "offline">("connecting");
+  const [spots, setSpots] = useState<Spot[]>(initialSnapshot?.spots ?? STARTER_SPOTS);
+  const [history, setHistory] = useState(initialSnapshot?.history ?? STARTER_HISTORY);
+  const [backendStatus, setBackendStatus] = useState<"connecting" | "live" | "offline">(
+    initialSnapshot ? "live" : "connecting",
+  );
   const [selectedSpotId, setSelectedSpotId] = useState<number | null>(null);
   const [loadedFinalAssets, setLoadedFinalAssets] = useState<Set<string>>(() => new Set());
   const [failedFinalAssets, setFailedFinalAssets] = useState<Set<string>>(() => new Set());
-  const countdown = useCountdown();
+  const countdown = useCountdown(campaign?.closesAt);
   const selectedSpot = spots.find((spot) => spot.id === selectedSpotId) ?? null;
   const totalRaised = useMemo(() => spots.reduce((sum, spot) => sum + (spot.bids > 0 ? spot.bid : 0), 0), [spots]);
   const filledSpotCount = useMemo(() => spots.filter((spot) => spot.bids > 0).length, [spots]);
   const availableSpotCount = spots.length - filledSpotCount;
-  const goalProgress = Math.min(100, Math.round((totalRaised / CAMPAIGN_GOAL_USD) * 100));
+  const goalProgress = Math.min(100, Math.round((totalRaised / campaignGoal) * 100));
+  const openingBySize = (size: Spot["size"], fallback: number) => {
+    const amounts = spots.filter((spot) => spot.size === size).map((spot) => spot.minBid);
+    return amounts.length ? Math.min(...amounts) : fallback;
+  };
   const finalAssetKeys = useMemo(() => [
-    "macbook:/macbook.webp",
+    ...(machineAssetKey ? [machineAssetKey] : []),
     ...spots.filter((spot) => spot.logo).map((spot) => `logo:${spot.id}:${spot.logo}`),
-  ], [spots]);
+  ], [machineAssetKey, spots]);
   const finalLookReady = finalAssetKeys.every((key) => loadedFinalAssets.has(key));
   const finalLookFailed = finalAssetKeys.some((key) => failedFinalAssets.has(key));
 
@@ -319,13 +353,13 @@ export default function Home() {
 
   const refreshAuction = useCallback(async () => {
     try {
-      const response = await fetch("/api/auction", { cache: "no-store" });
+      const response = await fetch(auctionEndpoint, { cache: "no-store" });
       if (!response.ok) throw new Error("Auction API unavailable");
       applySnapshot(await response.json() as AuctionSnapshot);
     } catch {
       setBackendStatus("offline");
     }
-  }, [applySnapshot]);
+  }, [applySnapshot, auctionEndpoint]);
 
   useEffect(() => {
     const initialTimer = window.setTimeout(() => void refreshAuction(), 0);
@@ -375,13 +409,13 @@ export default function Home() {
         <header className="hero" id="top">
           <div className="live-visitors"><span />{t("home.auctionOpen")}</div>
           <p className="total-visits"><span>·</span>{t("home.spotsAvailable", { count: availableSpotCount })}</p>
-          <h1>{t("home.heroTitle")}</h1>
-          <p className="hero-subtitle">{t("home.heroSubtitle")}</p>
+          <h1>{campaign?.title ?? t("home.heroTitle")}</h1>
+          <p className="hero-subtitle">{campaign?.tagline ?? t("home.heroSubtitle")}</p>
 
           <div className="funding">
             <div className="funding-row">
               <p><strong>{money(totalRaised)}</strong><span>{t("home.raised")}</span></p>
-              <p>{t("home.goal", { amount: money(CAMPAIGN_GOAL_USD), progress: goalProgress })}</p>
+              <p>{t("home.goal", { amount: money(campaignGoal), progress: goalProgress })}</p>
             </div>
             <div className="progress-track"><span style={{ width: `${goalProgress}%` }} /></div>
             <p className="auction-time">{t("home.auctionEnds", { countdown })} · {filledSpotCount === 0 ? t("home.firstBrand") : t("home.stillOutbid")}</p>
@@ -392,21 +426,33 @@ export default function Home() {
 
           <div className="lid-view">
             <div className={`lid-layer lid-layer--live ${lidView === "live" ? "is-active" : ""}`} aria-hidden={lidView !== "live"}>
-              <MacLid spots={spots} onSelect={(spot) => setSelectedSpotId(spot.id)} />
+              <MacLid spots={spots} showApple={isMac} onSelect={(spot) => setSelectedSpotId(spot.id)} />
             </div>
             <div className={`lid-layer lid-layer--final ${lidView === "final" && finalLookReady ? "is-active" : ""}`} aria-hidden={lidView !== "final" || !finalLookReady}>
               <div className="final-mac">
-                <Image
-                  src="/macbook.webp"
-                  alt={t("home.finalAlt")}
-                  width={1536}
-                  height={1024}
-                  loading="eager"
-                  fetchPriority="high"
-                  sizes="(max-width: 768px) 96vw, 900px"
-                  onLoad={() => markFinalAssetReady("macbook:/macbook.webp")}
-                  onError={() => markFinalAssetFailed("macbook:/macbook.webp")}
-                />
+                {campaign?.photoUrl && machineAssetKey ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={campaign.photoUrl}
+                    alt={`${campaign.title} — ${campaign.laptopModel}`}
+                    onLoad={() => markFinalAssetReady(machineAssetKey)}
+                    onError={() => markFinalAssetFailed(machineAssetKey)}
+                  />
+                ) : isMac && machineAssetKey ? (
+                  <Image
+                    src="/macbook.webp"
+                    alt={campaign ? `${campaign.title} — ${campaign.laptopModel}` : t("home.finalAlt")}
+                    width={1536}
+                    height={1024}
+                    loading="eager"
+                    fetchPriority="high"
+                    sizes="(max-width: 768px) 96vw, 900px"
+                    onLoad={() => markFinalAssetReady(machineAssetKey)}
+                    onError={() => markFinalAssetFailed(machineAssetKey)}
+                  />
+                ) : (
+                  <div className="final-pc-shell" role="img" aria-label={`${campaign?.title ?? "Laptop"} — ${campaign?.laptopModel ?? "PC"}`} />
+                )}
                 {spots.map((spot) => (
                   <span className={`final-sticker final-sticker--${spot.id}`} key={spot.id} aria-hidden="true">
                     {spot.logo && (
@@ -442,8 +488,8 @@ export default function Home() {
           <p className="lid-caption">{lidView === "live" ? t("home.tapBid") : finalLookFailed ? t("home.incompleteHidden") : !finalLookReady ? t("home.appearWhenReady") : filledSpotCount === 0 ? t("home.cleanSlate") : t("home.finishedLid")}</p>
 
           <div className="hero-close">
-            <p>{t("home.zeroPlaceholders")}</p>
-            <p>{t("home.outsideWorld")}</p>
+            <p>{campaign?.story ?? t("home.zeroPlaceholders")}</p>
+            <p>{campaign?.laptopModel ?? t("home.outsideWorld")}</p>
             <div>
               <a className="primary-button" href="#spots">{t("common.getSpot")}</a>
               <a className="text-link" href="#how">{t("common.how")} ›</a>
@@ -454,12 +500,12 @@ export default function Home() {
         <section className="statement" aria-labelledby="statement-title">
           <div className="statement-inner">
             <div>
-              <p className="statement-kicker">{t("home.recognisableLid")}</p>
-              <h2 id="statement-title">{t("home.statement")}</h2>
+              <p className="statement-kicker">{campaign ? t("laptop.byOwner", { owner: campaign.ownerName }) : t("home.recognisableLid")}</p>
+              <h2 id="statement-title">{campaign?.tagline ?? t("home.statement")}</h2>
               <a href="#spots">{t("home.seeAuction")}</a>
             </div>
             <div className="dark-mac" aria-hidden="true">
-              <span className="dark-apple"></span>
+              {isMac && <span className="dark-apple"></span>}
               <i className="sticker-dot one" /><i className="sticker-dot two" /><i className="sticker-dot three" />
             </div>
           </div>
@@ -470,7 +516,11 @@ export default function Home() {
             <p className="auction-status"><span />{t("home.auctionStatus", { countdown, available: availableSpotCount, total: spots.length })}</p>
             <h2>{t("home.auctionTitle")}</h2>
             <p className="section-lead">{t("home.auctionLead")}</p>
-            <p className="section-copy">{t("home.auctionPrices", { small: money(125), medium: money(200), large: money(400) })}</p>
+            <p className="section-copy">{t("home.auctionPrices", {
+              small: money(openingBySize("S", 125)),
+              medium: money(openingBySize("M", 200)),
+              large: money(openingBySize("L", 400)),
+            })}</p>
 
             <div className="segmented table-tabs" role="tablist" aria-label={t("home.tableView")}>
               <button role="tab" className={tableView === "spots" ? "active" : ""} aria-selected={tableView === "spots"} onClick={() => setTableView("spots")}>{t("common.spots")}</button>
@@ -528,19 +578,34 @@ export default function Home() {
         <section className="specs-section" id="specs">
           <div className="section-inner specs-inner">
             <h2>{t("home.moneyTitle")}</h2>
-            <p className="specs-intro">{t("home.specIntro", { amount: money(CAMPAIGN_GOAL_USD) })}</p>
+            <p className="specs-intro">{campaign?.story ?? t("home.specIntro", { amount: money(CAMPAIGN_GOAL_USD) })}</p>
             <div className="spec-card">
-              <div className="spec-card-head"><h3>{t("home.specModel")}</h3><strong>{money(2529)}</strong></div>
-              <dl>
-                <div><dt>{t("home.specChip")}</dt><dd>{t("home.specChipValue")}</dd></div>
-                <div><dt>{t("home.specMemory")}</dt><dd>{t("home.specMemoryValue")}</dd></div>
-                <div><dt>{t("home.specStorage")}</dt><dd>{t("home.specStorageValue")}</dd></div>
-                <div><dt>{t("home.specDisplay")}</dt><dd>{t("home.specDisplayValue")}</dd></div>
-                <div><dt>{t("home.specKeyboard")}</dt><dd>{t("home.specKeyboardValue")}</dd></div>
-                <div><dt>{t("home.specBox")}</dt><dd>{t("home.specBoxValue")}</dd></div>
-              </dl>
+              <div className="spec-card-head"><h3>{campaign?.laptopModel ?? t("home.specModel")}</h3><strong>{money(campaignGoal)}</strong></div>
+              {campaign ? (
+                <dl>
+                  <div><dt>{t("laptop.owner")}</dt><dd>{campaign.ownerName}</dd></div>
+                  <div><dt>{t("laptop.closes")}</dt><dd suppressHydrationWarning>{formatDate(campaign.closesAt)}</dd></div>
+                  <div><dt>{t("common.spots")}</dt><dd>{spots.length}</dd></div>
+                  <div><dt>{t("common.openingBid")}</dt><dd>{money(Math.min(...spots.map((spot) => spot.minBid)))}</dd></div>
+                  <div><dt>{t("common.bids")}</dt><dd>{spots.reduce((sum, spot) => sum + spot.bids, 0)}</dd></div>
+                  <div><dt>{t("home.raised")}</dt><dd>{money(totalRaised)}</dd></div>
+                </dl>
+              ) : (
+                <dl>
+                  <div><dt>{t("home.specChip")}</dt><dd>{t("home.specChipValue")}</dd></div>
+                  <div><dt>{t("home.specMemory")}</dt><dd>{t("home.specMemoryValue")}</dd></div>
+                  <div><dt>{t("home.specStorage")}</dt><dd>{t("home.specStorageValue")}</dd></div>
+                  <div><dt>{t("home.specDisplay")}</dt><dd>{t("home.specDisplayValue")}</dd></div>
+                  <div><dt>{t("home.specKeyboard")}</dt><dd>{t("home.specKeyboardValue")}</dd></div>
+                  <div><dt>{t("home.specBox")}</dt><dd>{t("home.specBoxValue")}</dd></div>
+                </dl>
+              )}
             </div>
-            <p className="spec-note">{t("home.priceNote")} <a href="https://www.apple.com/shop/buy-mac/macbook-pro" target="_blank" rel="noreferrer">{t("home.applePrice")}</a></p>
+            {campaign ? (
+              <p className="spec-note">{campaign.tagline}</p>
+            ) : (
+              <p className="spec-note">{t("home.priceNote")} <a href="https://www.apple.com/shop/buy-mac/macbook-pro" target="_blank" rel="noreferrer">{t("home.applePrice")}</a></p>
+            )}
           </div>
         </section>
 
@@ -619,9 +684,14 @@ export default function Home() {
       <BidDialog
         key={selectedSpot?.id ?? "closed"}
         spot={selectedSpot}
+        endpoint={bidEndpoint}
         onClose={() => setSelectedSpotId(null)}
         onSnapshot={applySnapshot}
       />
     </>
   );
+}
+
+export default function Home() {
+  return <AuctionLandingPage />;
 }

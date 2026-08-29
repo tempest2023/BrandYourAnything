@@ -636,6 +636,18 @@ p {
   filter: drop-shadow(0 1.6rem 1.6rem oklch(20% 0.01 255 / 0.16));
 }
 
+.final-pc-shell {
+  width: 76%;
+  aspect-ratio: 1.45 / 1;
+  margin: 0 auto;
+  border: 1px solid oklch(72% 0.01 255);
+  border-radius: 1.4rem;
+  background:
+    radial-gradient(circle at 50% 4%, oklch(99% 0 0 / 0.72), transparent 42%),
+    linear-gradient(155deg, oklch(94% 0.008 255), oklch(78% 0.012 255));
+  box-shadow: 0 2rem 3rem oklch(20% 0.01 255 / 0.18), inset 0 1px oklch(100% 0 0 / 0.82);
+}
+
 .final-sticker {
   position: absolute;
   z-index: 2;

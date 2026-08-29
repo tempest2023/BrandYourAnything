@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { AuctionLandingPage } from "@/app/page";
 import { getLaptopSnapshot } from "@/lib/laptop-repository";
 import { laptopPath } from "@/lib/site";
-
-import { LaptopAuction } from "./laptop-auction";
 
 export const dynamic = "force-dynamic";
 
@@ -37,5 +36,5 @@ export default async function LaptopPage({
   const { slug } = await params;
   const snapshot = await getLaptopSnapshot(slug);
   if (!snapshot) notFound();
-  return <LaptopAuction initialSnapshot={snapshot} />;
+  return <AuctionLandingPage campaign={snapshot.campaign} initialSnapshot={snapshot} />;
 }
