@@ -38,6 +38,14 @@
   text-decoration: none;
 }
 
+.topbarActions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-self: end;
+  gap: 0.65rem;
+}
+
 .brand {
   font-size: 1rem;
   font-weight: 700;
@@ -443,6 +451,13 @@
   text-align: center;
 }
 
+.successPreferences {
+  position: fixed;
+  z-index: 2;
+  top: 1rem;
+  right: 1rem;
+}
+
 .successMark {
   display: grid;
   width: 4.5rem;
@@ -528,6 +543,12 @@
   .successActions {
     grid-template-columns: 1fr 1fr;
     width: min(100%, 38rem);
+  }
+}
+
+@media (max-width: 39.99rem) {
+  .backLink {
+    display: none;
   }
 }
 

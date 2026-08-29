@@ -82,17 +82,6 @@ export type PlaceLaptopBidInput = {
   idempotencyKey: string;
 };
 
-function formatTimeAgo(timestamp: string) {
-  const seconds = Math.max(1, Math.floor((Date.now() - new Date(timestamp).getTime()) / 1000));
-  if (seconds < 60) return `${seconds} seconds ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
-  const days = Math.floor(hours / 24);
-  return `${days} day${days === 1 ? "" : "s"} ago`;
-}
-
 async function signStoragePath(bucket: string, path: string | null) {
   if (!path) return undefined;
   const supabase = getSupabaseAdmin();
@@ -163,7 +152,7 @@ export async function getLaptopSnapshot(slug: string): Promise<LaptopSnapshot | 
     brand: bid.bidder_name,
     spot: positionBySpotId.get(bid.spot_id) ?? 0,
     amount: bid.amount_cents / 100,
-    time: formatTimeAgo(bid.created_at),
+    createdAt: bid.created_at,
   }));
 
   return {

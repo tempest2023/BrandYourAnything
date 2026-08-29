@@ -157,6 +157,34 @@ p {
   gap: 0.5rem;
 }
 
+.preference-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.language-switch {
+  display: inline-flex;
+}
+
+.language-switch select {
+  width: 4.4rem;
+  min-height: 2.3rem;
+  border: 1px solid color-mix(in oklch, var(--hairline) 82%, transparent);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--ink-2);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 0 1.45rem 0 0.7rem;
+}
+
+.language-switch select:focus-visible {
+  outline: 0.16rem solid var(--blue);
+  outline-offset: 0.16rem;
+}
+
 .currency-switch,
 .segmented {
   display: inline-flex;
@@ -168,7 +196,7 @@ p {
 
 .currency-switch button,
 .segmented button {
-  min-width: 2rem;
+  min-width: 1.85rem;
   min-height: 2rem;
   border: 0;
   border-radius: 999px;
@@ -1876,9 +1904,7 @@ p {
 
 @media (max-width: 26rem) {
   .wordmark span {
-    max-width: 7.2rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    display: none;
   }
 
   .nav-inner {
@@ -1896,6 +1922,12 @@ p {
 
   .currency-switch button {
     min-width: 1.75rem;
+  }
+}
+
+@media (max-width: 34rem) {
+  .nav-actions > .dark-button {
+    display: none;
   }
 }
 
