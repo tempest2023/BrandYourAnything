@@ -4,12 +4,57 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { useI18n } from "@/app/i18n-provider";
+import { LOCALES, type Locale } from "@/lib/i18n";
 import { getSupabaseBrowser, isSupabaseBrowserConfigured } from "@/lib/supabase-browser";
 import styles from "./create.module.css";
 
 const STEPS = ["Machine", "Ownership", "Showcase", "Layout", "Prices", "Listing", "Sticker", "Publish"] as const;
 const DRAFT_STORAGE_KEY = "brandmylaptop-sell-draft";
 const PUBLISH_AFTER_AUTH_KEY = "brandmylaptop-publish-after-auth";
+const X_COMPOSE_URL = "https://x.com/compose/post";
+const SHARE_LANGUAGE_LABELS: Record<Locale, string> = {
+  en: "English",
+  zh: "中文",
+  es: "Español",
+};
+const X_SHARE_FALLBACK = {
+  en: {
+    eyebrow: "X sign-in is unavailable",
+    title: "Share your lid instead.",
+    body: "We prepared a post you can publish from your own X account.",
+    language: "Post language",
+    button: "Open X and post",
+    note: "X opens in a new tab with the text filled in. You can edit it before posting.",
+    post: "I’m opening up the lid of my laptop to a handful of brands. Your logo travels with me through cafés, meetings and events — not just another banner ad. Interested? Follow the launch: https://brandmylaptop.com #BrandMyLaptop",
+  },
+  zh: {
+    eyebrow: "X 登录暂不可用",
+    title: "先把你的电脑盖分享出去。",
+    body: "我们准备了一段固定文案，你可以用自己的 X 账号发布。",
+    language: "文案语言",
+    button: "打开 X 发布",
+    note: "X 会在新标签页打开并预填文案；发布前仍可编辑。",
+    post: "我准备把电脑盖上的有限品牌位置开放出来。你的 Logo 会跟着我出现在咖啡馆、会议和活动现场，而不只是又一个横幅广告。感兴趣的话，关注上线：https://brandmylaptop.com #BrandMyLaptop",
+  },
+  es: {
+    eyebrow: "El acceso con X no está disponible",
+    title: "Comparte la tapa mientras tanto.",
+    body: "Hemos preparado una publicación para compartirla desde tu propia cuenta de X.",
+    language: "Idioma de la publicación",
+    button: "Abrir X y publicar",
+    note: "X se abrirá en otra pestaña con el texto preparado. Puedes editarlo antes de publicar.",
+    post: "Voy a abrir unos pocos espacios de la tapa de mi portátil a marcas. Tu logo viajará conmigo por cafés, reuniones y eventos, no será otro banner más. Sigue el lanzamiento: https://brandmylaptop.com #BrandMyLaptop",
+  },
+} satisfies Record<Locale, {
+  eyebrow: string;
+  title: string;
+  body: string;
+  language: string;
+  button: string;
+  note: string;
+  post: string;
+}>;
 const SHOWCASE_OPTIONS = [
   "Build in public — posts and videos",
   "Coworking spaces and cafés",
@@ -93,6 +138,10 @@ function clampPrice(value: string, fallback: number) {
   return Number.isFinite(amount) && amount >= 10 ? amount : fallback;
 }
 
+function isUnavailableXAuthError(message: string) {
+  return /provider|not configured|not enabled|unsupported|disabled/i.test(message);
+}
+
 function Logo() {
   return (
     <Link href="/" className={styles.logo} aria-label="BrandMyLaptop">
@@ -143,6 +192,7 @@ function SiteFooter() {
 }
 
 export function CreateLaptopForm() {
+  const { locale, setLocale } = useI18n();
   const formRef = useRef<HTMLFormElement>(null);
   const [step, setStep] = useState(0);
   const [furthestStep, setFurthestStep] = useState(0);
@@ -165,6 +215,9 @@ export function CreateLaptopForm() {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [authRedirecting, setAuthRedirecting] = useState(false);
+  const [xSignInUnavailable, setXSignInUnavailable] = useState(
+    () => !isSupabaseBrowserConfigured(),
+  );
   const [draftReady, setDraftReady] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -267,7 +320,9 @@ export function CreateLaptopForm() {
       setAuthReady(true);
       if (callbackError || error) {
         window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
-        setErrorMessage(callbackError || "Your X session could not be restored. Please try again.");
+        const message = callbackError || "Your X session could not be restored. Please try again.";
+        if (isUnavailableXAuthError(message)) setXSignInUnavailable(true);
+        setErrorMessage(message);
       }
     });
 
@@ -293,6 +348,8 @@ export function CreateLaptopForm() {
   const minimumPrice = Math.min(...previewSpots.map((spot) => spot.amount));
   const fundingCost = Number(machineCost);
   const machineIsValid = ownership === "own" || (Number.isFinite(fundingCost) && fundingCost >= 100 && fundingCost <= 20_000);
+  const shareFallback = X_SHARE_FALLBACK[locale];
+  const xComposeHref = `${X_COMPOSE_URL}?text=${encodeURIComponent(shareFallback.post)}`;
 
   const selectLayout = (count: LayoutCount) => {
     setLayoutCount(count);
@@ -345,7 +402,8 @@ export function CreateLaptopForm() {
     }
 
     if (!isSupabaseBrowserConfigured()) {
-      setErrorMessage("X sign in is not configured for this deployment yet.");
+      setXSignInUnavailable(true);
+      setErrorMessage("");
       return;
     }
 
@@ -363,7 +421,8 @@ export function CreateLaptopForm() {
       } catch {
         window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
         setAuthRedirecting(false);
-        setErrorMessage("X sign in could not be opened. Please try again.");
+        setXSignInUnavailable(true);
+        setErrorMessage("");
       }
       return;
     }
@@ -574,11 +633,42 @@ export function CreateLaptopForm() {
                   <div><dt>Stickers stay</dt><dd>{stickerMonths} months</dd></div>
                 </dl>
                 <p className={styles.publishCopy}>Buyers pay you directly — the money lands in your own Stripe account, minus the 10% platform fee and Stripe&apos;s processing fees. You print the stickers yourself, to a spec we give you. You approve every logo before it appears.</p>
-                {errorMessage && <p className={styles.error} role="alert">{errorMessage}</p>}
-                <button className={styles.publishButton} type="submit" disabled={!authReady || submitting || authRedirecting}>
-                  {submitting ? "Publishing…" : authRedirecting ? "Opening X…" : accessToken ? "Publish your lid" : "Sign in with X and publish"}
-                </button>
-                <p className={styles.authNote}>X is what a buyer checks before putting their logo on a stranger&apos;s laptop. Everything above is kept while you sign in; you land back here.</p>
+                {xSignInUnavailable ? (
+                  <section className={styles.shareFallback} aria-labelledby="x-share-title">
+                    <p className={styles.shareEyebrow}>{shareFallback.eyebrow}</p>
+                    <h2 id="x-share-title">{shareFallback.title}</h2>
+                    <p className={styles.shareBody}>{shareFallback.body}</p>
+                    <div className={styles.shareLanguageRow}>
+                      <span>{shareFallback.language}</span>
+                      <div role="group" aria-label={shareFallback.language}>
+                        {LOCALES.map((language) => (
+                          <button
+                            type="button"
+                            key={language}
+                            className={language === locale ? styles.activeShareLanguage : styles.shareLanguage}
+                            aria-pressed={language === locale}
+                            onClick={() => setLocale(language)}
+                          >
+                            {SHARE_LANGUAGE_LABELS[language]}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <blockquote className={styles.shareCopy} lang={locale}>{shareFallback.post}</blockquote>
+                    <a className={styles.xShareButton} href={xComposeHref} target="_blank" rel="noreferrer">
+                      {shareFallback.button}<span aria-hidden="true">↗</span>
+                    </a>
+                    <p className={styles.shareNote}>{shareFallback.note}</p>
+                  </section>
+                ) : (
+                  <>
+                    {errorMessage && <p className={styles.error} role="alert">{errorMessage}</p>}
+                    <button className={styles.publishButton} type="submit" disabled={!authReady || submitting || authRedirecting}>
+                      {submitting ? "Publishing…" : authRedirecting ? "Opening X…" : accessToken ? "Publish your lid" : "Sign in with X and publish"}
+                    </button>
+                    <p className={styles.authNote}>X is what a buyer checks before putting their logo on a stranger&apos;s laptop. Everything above is kept while you sign in; you land back here.</p>
+                  </>
+                )}
               </fieldset>
             )}
 
