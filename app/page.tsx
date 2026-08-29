@@ -40,17 +40,6 @@ function XIcon() {
   );
 }
 
-function CoffeeIcon() {
-  return (
-    <svg className="footer-support-coffee-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M5 7h11v5.25A4.75 4.75 0 0 1 11.25 17H9.75A4.75 4.75 0 0 1 5 12.25V7Z" />
-      <path d="M16 9h1.25a2.75 2.75 0 0 1 0 5.5H15.7" />
-      <path d="M4 20h14" />
-      <path d="M8 4c0-1 1-1 1-2M12 4c0-1 1-1 1-2" />
-    </svg>
-  );
-}
-
 function useCountdown() {
   const { t } = useI18n();
   const [remaining, setRemaining] = useState({ days: 0, hours: 0, minutes: 0, closed: false });
@@ -588,9 +577,15 @@ export default function Home() {
                 <span className="footer-support-icon"><XIcon /></span>
                 {t("home.footerFollowX")}
               </a>
-              <a className="footer-support-link" href={BUY_ME_A_COFFEE_URL} target="_blank" rel="noreferrer">
-                <span className="footer-support-icon"><CoffeeIcon /></span>
-                {t("home.footerCoffee")}
+              <a className="footer-coffee-link" href={BUY_ME_A_COFFEE_URL} target="_blank" rel="noreferrer">
+                <Image
+                  className="footer-coffee-image"
+                  src="/buy-me-a-coffee.png"
+                  alt={t("home.footerCoffee")}
+                  width={170}
+                  height={37}
+                  sizes="170px"
+                />
               </a>
               <a className="footer-support-link" href={X_PAYMENT_URL} target="_blank" rel="noreferrer">
                 <span className="footer-support-icon footer-support-icon--payment">

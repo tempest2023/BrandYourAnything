@@ -1439,12 +1439,19 @@ p {
   fill: currentColor;
 }
 
-.footer-support-icon .footer-support-coffee-icon {
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.7;
+.footer-coffee-link {
+  display: inline-flex;
+  height: 2.25rem;
+  overflow: hidden;
+  align-items: center;
+  border-radius: 0.42rem;
+  transition: box-shadow 180ms ease-out, transform 180ms ease-out;
+}
+
+.footer-coffee-image {
+  display: block;
+  width: auto;
+  height: 2.25rem;
 }
 
 .footer-support-badge {
@@ -1751,7 +1758,7 @@ p {
 @media (hover: hover) and (pointer: fine) {
   .nav-links a:hover,
   .text-link:hover,
-  .site-footer a:not(.footer-support-link):hover,
+  .site-footer a:not(.footer-support-link):not(.footer-coffee-link):hover,
   .spec-note a:hover,
   .faq-answer a:hover {
     text-decoration: underline;
@@ -1762,6 +1769,11 @@ p {
     border-color: color-mix(in oklch, var(--blue) 32%, var(--hairline));
     background: var(--blue-soft);
     color: var(--blue-dark) !important;
+    transform: translateY(-1px);
+  }
+
+  .footer-coffee-link:hover {
+    box-shadow: 0 0.55rem 1.1rem oklch(45% 0.12 90 / 0.2);
     transform: translateY(-1px);
   }
 
