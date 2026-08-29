@@ -157,6 +157,43 @@ p {
   gap: 0.5rem;
 }
 
+.github-nav-link {
+  display: inline-grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid color-mix(in oklch, var(--hairline) 88%, transparent);
+  border-radius: 50%;
+  background: color-mix(in oklch, var(--paper) 92%, var(--ink) 8%);
+  color: var(--ink);
+  text-decoration: none;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.github-nav-link svg {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+@media (hover: hover) {
+  .github-nav-link:hover {
+    border-color: var(--ink);
+    background: var(--ink);
+    color: var(--paper);
+    transform: translateY(-1px);
+  }
+}
+
+.github-nav-link:active {
+  transform: scale(0.94);
+}
+
+.github-nav-link:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+}
+
 .preference-controls {
   display: inline-flex;
   align-items: center;
