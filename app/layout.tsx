@@ -1,4 +1,10 @@
 import type { Metadata, Viewport } from "next";
+import { cookies } from "next/headers";
+
+import { I18nProvider } from "@/app/i18n-provider";
+import { LOCALE_COOKIE, localeTag, normalizeLocale } from "@/lib/i18n";
+import { CURRENCY_COOKIE, normalizeCurrency } from "@/lib/money";
+
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -26,10 +32,18 @@ export const viewport: Viewport = {
   themeColor: "#fbfbfd",
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const cookieStore = await cookies();
+  const locale = normalizeLocale(cookieStore.get(LOCALE_COOKIE)?.value);
+  const currency = normalizeCurrency(cookieStore.get(CURRENCY_COOKIE)?.value);
+
   return (
-    <html lang="en" data-scroll-behavior="smooth">
-      <body>{children}</body>
+    <html lang={localeTag(locale)} data-scroll-behavior="smooth" suppressHydrationWarning>
+      <body>
+        <I18nProvider initialLocale={locale} initialCurrency={currency}>
+          {children}
+        </I18nProvider>
+      </body>
     </html>
   );
 }

@@ -67,6 +67,14 @@
   font-weight: 680;
 }
 
+.navActions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-self: end;
+  gap: 0.65rem;
+}
+
 .hero {
   display: grid;
   width: min(100% - 2rem, 80rem);
@@ -693,6 +701,17 @@
 
   .fieldPair {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 39.99rem) {
+  .nav {
+    grid-template-columns: auto 1fr;
+  }
+
+  .nav > span,
+  .createLink {
+    display: none;
   }
 }
 

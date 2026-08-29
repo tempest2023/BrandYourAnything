@@ -8,11 +8,17 @@ The repository intentionally starts before the first bid:
 
 - all ten spots are available and no sponsor logos are prefilled;
 - bid history and amount raised both start at zero;
-- bids are stored and settled in US dollars, with an optional indicative euro display;
+- bids are stored and settled in US dollars, with optional indicative EUR and RMB displays;
 - opening bids are $125 for Small, $200 for Medium, and $400 for Large spots;
 - Final Look preloads the device image and every active sponsor image, then reveals the composition as one complete view.
 
 The migration `20260828225000_reset_auction_to_empty_usd_state.sql` removes the original sold-out demo bids from databases that applied an earlier version of the initial migration. Review that reset before applying migrations to any environment containing data you intend to keep.
+
+## Languages and currencies
+
+The homepage, campaign creator, and published laptop pages support English, Simplified Chinese, and Spanish. Language and display-currency choices are stored as first-party preference cookies and follow the visitor between routes.
+
+USD is the default and the canonical auction currency. The database and Route Handlers continue to read and write integer USD cents; EUR and RMB (ISO currency code `CNY`) are display and input conversions only. Creation and bid forms convert the visitor's selected currency back to USD cents before submission. The fixed indicative rates live in `lib/money.ts` and should be updated or replaced with a live rate provider if a deployment needs financial-grade conversion.
 
 ## Multi-tenant laptop flow
 

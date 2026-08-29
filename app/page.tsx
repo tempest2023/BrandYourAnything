@@ -3,15 +3,24 @@
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useI18n } from "@/app/i18n-provider";
+import { PreferenceControls } from "@/app/preference-controls";
 import {
-  EUR_TO_USD,
   STARTER_HISTORY,
   STARTER_SPOTS,
   type AuctionSnapshot,
-  type Currency,
   type PlaceBidResult,
   type Spot,
 } from "@/lib/auction";
+import { formatRelativeTime, SPOT_NAME_KEYS } from "@/lib/i18n";
+import {
+  amountToUsd,
+  amountToUsdCents,
+  currencyDisplayName,
+  currencySymbol,
+  formatMoney as formatCurrency,
+  minimumDisplayAmount,
+} from "@/lib/money";
 
 type LidView = "live" | "final";
 type TableView = "spots" | "history";
@@ -20,76 +29,9 @@ const CAMPAIGN_GOAL_USD = 3200;
 const SOURCE_URL = "https://github.com/tempest2023/BrandYourAnything";
 const CREATE_URL = "/create";
 
-const FAQS = [
-  {
-    question: "Is this real?",
-    answer: (
-      <p>Yes. This starter includes a working auction flow, persistent bids, and room for real sponsor logos. It intentionally ships with every spot open so your launch starts from a truthful blank slate.</p>
-    ),
-  },
-  {
-    question: "Why a MacBook lid?",
-    answer: (
-      <>
-        <p>It is portable, recognisable, and visible wherever its owner works. The ten-zone layout turns that everyday surface into clear, limited inventory.</p>
-        <p>Brand Anything is open source, so you can replace the MacBook, story, pricing, and campaign goal with an object that fits your own audience.</p>
-      </>
-    ),
-  },
-  {
-    question: "What do I actually get?",
-    answer: (
-      <>
-        <p>Your brand showing up both on socials and in the real world:</p>
-        <ul>
-          <li>A die-cut vinyl sticker of your logo on the lid — visible in public spaces and in my photos and vlogs.</li>
-          <li>A spot on this page with a link to your site.</li>
-        </ul>
-        <p>I can&apos;t promise impressions or ROI, just that it goes where I work and appears in some of the stuff I post.</p>
-      </>
-    ),
-  },
-  {
-    question: "How does payment work?",
-    answer: (
-      <p>The included backend records bids atomically in US dollars, but it does not charge a card. Connect your preferred payment provider before launch if you want deposits or automatic settlement.</p>
-    ),
-  },
-  {
-    question: "What if someone outbids me?",
-    answer: <p>You stay in the public bid history and can bid again. After the opening bid, each new bid must beat the current leader by at least $10.</p>,
-  },
-  {
-    question: "Can any brand join?",
-    answer: <p>The starter assumes every sponsor and logo is reviewed before it appears. Define your own acceptance policy, then connect that approval step to whichever payment flow you choose.</p>,
-  },
-  {
-    question: "Can I change the campaign?",
-    answer: <p>Absolutely. The default copy, prices, auction date, object image, and ten spot positions are meant to be adapted. Keep only the parts that make sense for what you want to brand.</p>,
-  },
-  {
-    question: "Can I list my own laptop?",
-    answer: (
-      <p>Yes. <a href={CREATE_URL}>Create your public laptop page</a>, set your story, goal, deadline, and three spot prices, then share the live auction URL. No fork or external website is required.</p>
-    ),
-  },
-];
-
-function displayAmount(amount: number, currency: Currency) {
-  return currency === "USD" ? amount : Math.round(amount / EUR_TO_USD);
-}
-
-function formatMoney(amount: number, currency: Currency) {
-  const converted = displayAmount(amount, currency);
-  return new Intl.NumberFormat(currency === "USD" ? "en-US" : "en-IE", {
-    style: "currency",
-    currency,
-    maximumFractionDigits: 2,
-  }).format(converted);
-}
-
 function useCountdown() {
-  const [countdown, setCountdown] = useState("11d 12h 49m");
+  const { t } = useI18n();
+  const [remaining, setRemaining] = useState({ days: 0, hours: 0, minutes: 0, closed: false });
 
   useEffect(() => {
     const auctionEnd = new Date("2026-09-09T08:00:00Z").getTime();
@@ -98,18 +40,25 @@ function useCountdown() {
       const days = Math.floor(left / 86_400_000);
       const hours = Math.floor((left % 86_400_000) / 3_600_000);
       const minutes = Math.floor((left % 3_600_000) / 60_000);
-      setCountdown(left > 0 ? `${days}d ${hours}h ${minutes}m` : "auction closing");
+      setRemaining({ days, hours, minutes, closed: left === 0 });
     };
     update();
     const timer = window.setInterval(update, 30_000);
     return () => window.clearInterval(timer);
   }, []);
 
-  return countdown;
+  return remaining.closed
+    ? t("laptop.closed")
+    : t("common.countdown", {
+      days: remaining.days,
+      hours: remaining.hours,
+      minutes: remaining.minutes,
+    });
 }
 
 function Logo({ spot, compact = false }: { spot: Spot; compact?: boolean }) {
-  if (!spot.logo) return <span>{spot.holder || "Available"}</span>;
+  const { t } = useI18n();
+  if (!spot.logo) return <span>{spot.holder || t("common.available")}</span>;
   return (
     <span className={`brand-logo ${compact ? "brand-logo--compact" : ""}`}>
       <Image src={spot.logo} alt={spot.holder} width={180} height={100} sizes="180px" />
@@ -117,14 +66,19 @@ function Logo({ spot, compact = false }: { spot: Spot; compact?: boolean }) {
   );
 }
 
-function MacLid({ spots, currency, onSelect }: { spots: Spot[]; currency: Currency; onSelect: (spot: Spot) => void }) {
+function MacLid({ spots, onSelect }: { spots: Spot[]; onSelect: (spot: Spot) => void }) {
+  const { currency, locale, t } = useI18n();
+  const money = (amount: number) => formatCurrency(amount, currency, locale);
+
   return (
-    <div className="lid-stage" aria-label="MacBook sticker auction layout">
+    <div className="lid-stage" aria-label={t("home.lidAria")}>
       <div className="mac-lid">
         <div className="lid-camera" />
-        <span className="apple-mark" aria-label="Apple logo"></span>
+        <span className="apple-mark" aria-label={t("common.appleLogo")}></span>
         {spots.map((spot) => {
           const hasBid = spot.bids > 0 && Boolean(spot.holder);
+          const spotNameKey = SPOT_NAME_KEYS[spot.id];
+          const spotName = spotNameKey ? t(spotNameKey) : spot.name;
 
           return (
             <button
@@ -132,26 +86,17 @@ function MacLid({ spots, currency, onSelect }: { spots: Spot[]; currency: Curren
               key={spot.id}
               onClick={() => onSelect(spot)}
               aria-label={hasBid
-                ? `Spot ${spot.id}, ${spot.name}, ${spot.size}. Held by ${spot.holder} at ${formatMoney(spot.bid, currency)}. Outbid.`
-                : `Spot ${spot.id}, ${spot.name}, ${spot.size}. Available from ${formatMoney(spot.minBid, currency)}. Place the first bid.`}
+                ? t("home.heldSpotAria", { id: spot.id, name: spotName, size: spot.size, holder: spot.holder, amount: money(spot.bid) })
+                : t("home.openSpotAria", { id: spot.id, name: spotName, size: spot.size, amount: money(spot.minBid) })}
             >
               {hasBid ? <Logo spot={spot} /> : <span className="lid-spot-number">{spot.id}</span>}
-              {(!hasBid || spot.logo) && <span className="lid-holder">{hasBid ? spot.holder : "Available"}</span>}
-              <span className="lid-price">{hasBid ? formatMoney(spot.bid, currency) : `Starts ${formatMoney(spot.minBid, currency)}`}</span>
-              <span className="lid-outbid">{hasBid ? "Outbid" : "Bid"}</span>
+              {(!hasBid || spot.logo) && <span className="lid-holder">{hasBid ? spot.holder : t("common.available")}</span>}
+              <span className="lid-price">{hasBid ? money(spot.bid) : t("common.starts", { amount: money(spot.minBid) })}</span>
+              <span className="lid-outbid">{hasBid ? t("common.outbid") : t("common.placeBid")}</span>
             </button>
           );
         })}
       </div>
-    </div>
-  );
-}
-
-function CurrencySwitch({ currency, onChange }: { currency: Currency; onChange: (currency: Currency) => void }) {
-  return (
-    <div className="currency-switch" role="group" aria-label="Display currency">
-      <button className={currency === "USD" ? "active" : ""} aria-pressed={currency === "USD"} onClick={() => onChange("USD")}>$</button>
-      <button className={currency === "EUR" ? "active" : ""} aria-pressed={currency === "EUR"} onClick={() => onChange("EUR")}>€</button>
     </div>
   );
 }
@@ -164,17 +109,17 @@ type BidApiResponse = {
 
 function BidDialog({
   spot,
-  currency,
   onClose,
   onSnapshot,
 }: {
   spot: Spot | null;
-  currency: Currency;
   onClose: () => void;
   onSnapshot: (snapshot: AuctionSnapshot) => void;
 }) {
+  const { currency, locale, t } = useI18n();
+  const money = (amountUsd: number) => formatCurrency(amountUsd, currency, locale);
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const minimumDisplayBid = spot ? Math.ceil(displayAmount(spot.minBid, currency)) : 0;
+  const minimumDisplayBid = spot ? minimumDisplayAmount(spot.minBid, currency) : 0;
   const bidContext = `${spot?.id ?? "closed"}-${spot?.minBid ?? 0}-${currency}`;
   const [bidInput, setBidInput] = useState(() => ({ context: bidContext, value: String(minimumDisplayBid) }));
   const bid = bidInput.context === bidContext ? bidInput.value : String(minimumDisplayBid);
@@ -193,7 +138,8 @@ function BidDialog({
   }, [spot]);
 
   const amount = Number(bid) || 0;
-  const deposit = Math.ceil(amount * 0.2);
+  const amountUsd = amountToUsd(amount, currency);
+  const depositUsd = amountUsd * 0.2;
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -204,9 +150,7 @@ function BidDialog({
 
     const form = event.currentTarget;
     const formData = new FormData(form);
-    const amountCents = currency === "USD"
-      ? Math.round(amount * 100)
-      : Math.ceil(amount * 100 * EUR_TO_USD);
+    const amountCents = amountToUsdCents(amount, currency);
     formData.set("spotId", String(spot.id));
     formData.set("amountCents", String(amountCents));
     formData.set("idempotencyKey", idempotencyKey);
@@ -217,7 +161,7 @@ function BidDialog({
       if (payload.snapshot) onSnapshot(payload.snapshot);
 
       if (!response.ok || !payload.result?.accepted) {
-        setErrorMessage(payload.error || "The bid could not be saved. Please try again.");
+        setErrorMessage(t("home.bidError"));
         if (response.status === 409) setIdempotencyKey(crypto.randomUUID());
         return;
       }
@@ -228,7 +172,7 @@ function BidDialog({
       });
       setSubmitted(true);
     } catch {
-      setErrorMessage("The network did not confirm your bid. Retrying will safely reuse the same request.");
+      setErrorMessage(t("home.networkError"));
     } finally {
       setSubmitting(false);
     }
@@ -240,60 +184,66 @@ function BidDialog({
     }}>
       {spot && (
         <div className="bid-panel">
-          <button className="dialog-close" onClick={onClose} aria-label="Close">×</button>
+          <button className="dialog-close" onClick={onClose} aria-label={t("common.close")}>×</button>
           {!submitted ? (
             <form onSubmit={handleSubmit}>
               <div className="bid-heading">
-                <p className="eyebrow">Spot {spot.id}</p>
-                <h3>{spot.name}</h3>
-                <p>{spot.size === "L" ? "Large" : spot.size === "M" ? "Medium" : "Small"} sticker · {spot.dimensions}</p>
+                <p className="eyebrow">{t("common.spot")} {spot.id}</p>
+                <h3>{SPOT_NAME_KEYS[spot.id] ? t(SPOT_NAME_KEYS[spot.id]!) : spot.name}</h3>
+                <p>{t("home.spotSticker", {
+                  size: spot.size === "L" ? t("common.large") : spot.size === "M" ? t("common.medium") : t("common.small"),
+                  dimensions: spot.dimensions,
+                })}</p>
                 {spot.bids > 0 ? (
-                  <p className="current-bid">Current bid <strong>{formatMoney(spot.bid, currency)}</strong> by {spot.holder} · {spot.bids} {spot.bids === 1 ? "bid" : "bids"}</p>
+                  <p className="current-bid">{t("home.currentBidLine", {
+                    amount: money(spot.bid), holder: spot.holder, count: spot.bids,
+                    bids: spot.bids === 1 ? t("common.bid").toLowerCase() : t("common.bids"),
+                  })}</p>
                 ) : (
-                  <p className="current-bid">Opening bid <strong>{formatMoney(spot.minBid, currency)}</strong> · no bids yet</p>
+                  <p className="current-bid">{t("home.openingBidLine", { amount: money(spot.minBid) })}</p>
                 )}
               </div>
 
-              <label htmlFor="bid">Your bid ({currency})</label>
+              <label htmlFor="bid">{t("home.yourBid", { currency: currencyDisplayName(currency) })}</label>
               <div className="money-input">
                 <input id="bid" type="number" min={minimumDisplayBid} step="1" value={bid} onChange={(event) => setBidInput({ context: bidContext, value: event.target.value })} required />
-                <span>{currency === "EUR" ? "€" : "$"}</span>
+                <span>{currencySymbol(currency)}</span>
               </div>
-              <p className="field-note">Minimum {formatMoney(spot.minBid, currency)} · bids are settled in US dollars</p>
+              <p className="field-note">{t("home.minimumBid", { amount: money(spot.minBid) })}</p>
 
               <div className="deposit-box">
-                <p><span>Expected deposit, 20% of {formatMoney(amount, currency)}</span><span>{formatMoney(deposit, currency)}</span></p>
-                <p className="due"><span>Payment integration</span><strong>Not charged yet</strong></p>
-                <small>This backend records the bid atomically. Card authorization is a separate step and no payment is taken by this form yet.</small>
+                <p><span>{t("home.expectedDeposit", { amount: money(amountUsd) })}</span><span>{money(depositUsd)}</span></p>
+                <p className="due"><span>{t("home.paymentIntegration")}</span><strong>{t("home.notCharged")}</strong></p>
+                <small>{t("home.depositNote")}</small>
               </div>
 
               <div className="form-grid">
-                <label>Brand name<input name="brandName" type="text" maxLength={80} placeholder="Microsoft" required /></label>
-                <label>Email<input name="email" type="email" maxLength={254} placeholder="you@microsoft.com" required /></label>
-                <label>Website <span>(optional)</span><input name="website" type="url" maxLength={2048} placeholder="https://microsoft.com" /></label>
-                <label>X handle <span>(optional)</span><input name="xHandle" type="text" maxLength={50} placeholder="@microsoft" /></label>
+                <label>{t("common.brandName")}<input name="brandName" type="text" maxLength={80} placeholder="Microsoft" required /></label>
+                <label>{t("common.email")}<input name="email" type="email" maxLength={254} placeholder="you@microsoft.com" required /></label>
+                <label>{t("common.website")} <span>({t("common.optional")})</span><input name="website" type="url" maxLength={2048} placeholder="https://microsoft.com" /></label>
+                <label>{t("common.xHandle")} <span>({t("common.optional")})</span><input name="xHandle" type="text" maxLength={50} placeholder="@microsoft" /></label>
               </div>
 
-              <label className="upload-label" htmlFor="logo-upload">Logo</label>
+              <label className="upload-label" htmlFor="logo-upload">{t("common.logo")}</label>
               <label className="upload-zone" htmlFor="logo-upload">
                 <input id="logo-upload" name="logo" type="file" accept=".png,.jpg,.jpeg,.webp,.svg" onChange={(event) => setLogoName(event.target.files?.[0]?.name ?? "")} />
                 <span className="upload-icon">⇧</span>
-                <strong>{logoName || "Upload your logo"}</strong>
-                <small>{logoName ? "Ready for private review" : "PNG · JPG · WEBP · SVG · 2 MB max"}</small>
+                <strong>{logoName || t("home.uploadLogo")}</strong>
+                <small>{logoName ? t("home.logoReady") : t("home.logoFormats")}</small>
               </label>
 
               {errorMessage && <p className="bid-error" role="alert">{errorMessage}</p>}
               <button className="primary-button bid-submit" type="submit" disabled={submitting}>
-                {submitting ? "Saving bid…" : spot.bids > 0 ? `Outbid ${spot.holder}` : "Place the first bid"}
+                {submitting ? t("home.savingBid") : spot.bids > 0 ? `${t("common.outbid")} ${spot.holder}` : t("common.placeFirstBid")}
               </button>
-              <p className="hand-check">I check every logo by hand before it goes on the lid.</p>
+              <p className="hand-check">{t("home.reviewNote")}</p>
             </form>
           ) : (
             <div className="bid-success" role="status">
               <span>✓</span>
-              <h3>Your bid is live.</h3>
-              <p>{acceptedBid?.brand} is now leading with {formatMoney(acceptedBid?.amountUsd ?? spot.bid, currency)}. The database accepted it atomically and the public auction has been refreshed. No card was charged.</p>
-              <button className="primary-button" onClick={onClose}>Back to the auction</button>
+              <h3>{t("home.bidLive")}</h3>
+              <p>{t("home.bidLiveBody", { brand: acceptedBid?.brand ?? "", amount: money(acceptedBid?.amountUsd ?? spot.bid) })}</p>
+              <button className="primary-button" onClick={onClose}>{t("home.backAuction")}</button>
             </div>
           )}
         </div>
@@ -303,7 +253,8 @@ function BidDialog({
 }
 
 export default function Home() {
-  const [currency, setCurrency] = useState<Currency>("USD");
+  const { currency, locale, t } = useI18n();
+  const money = (amount: number) => formatCurrency(amount, currency, locale);
   const [lidView, setLidView] = useState<LidView>("live");
   const [tableView, setTableView] = useState<TableView>("spots");
   const [spots, setSpots] = useState<Spot[]>(STARTER_SPOTS);
@@ -376,55 +327,55 @@ export default function Home() {
 
   return (
     <>
-      <a className="skip-link" href="#main-content">Skip to main content</a>
+      <a className="skip-link" href="#main-content">{t("common.skip")}</a>
       <nav className="site-nav">
         <div className="nav-inner">
-          <a className="wordmark" href="#top" aria-label="Brand Anything home">
+          <a className="wordmark" href="#top" aria-label={t("common.home")}>
             <Image src="/logo-small.png" alt="" width={41} height={41} preload />
             <span>Brand Anything</span>
           </a>
           <div className="nav-links">
-            <a href="#spots">Live auction</a>
-            <a href="#how">How it works</a>
-            <a href="#specs">The machine</a>
-            <a href="#faq">FAQ</a>
-            <a href={CREATE_URL}>List your laptop</a>
+            <a href="#spots">{t("common.liveAuction")}</a>
+            <a href="#how">{t("common.how")}</a>
+            <a href="#specs">{t("common.machine")}</a>
+            <a href="#faq">{t("common.faq")}</a>
+            <a href={CREATE_URL}>{t("common.listLaptop")}</a>
           </div>
           <div className="nav-actions">
-            <CurrencySwitch currency={currency} onChange={setCurrency} />
-            <a className="dark-button" href="#spots">Get a spot</a>
+            <PreferenceControls />
+            <a className="dark-button" href="#spots">{t("common.getSpot")}</a>
           </div>
         </div>
       </nav>
 
       <main id="main-content">
         <header className="hero" id="top">
-          <div className="live-visitors"><span />Auction open for first bids</div>
-          <p className="total-visits"><span>·</span><strong>{availableSpotCount}</strong> spots available</p>
-          <h1>Your brand, on this Mac.</h1>
-          <p className="hero-subtitle">Start with a blank lid. The winning logos turn it into something no one else carries.</p>
+          <div className="live-visitors"><span />{t("home.auctionOpen")}</div>
+          <p className="total-visits"><span>·</span>{t("home.spotsAvailable", { count: availableSpotCount })}</p>
+          <h1>{t("home.heroTitle")}</h1>
+          <p className="hero-subtitle">{t("home.heroSubtitle")}</p>
 
           <div className="funding">
             <div className="funding-row">
-              <p><strong>{formatMoney(totalRaised, currency)}</strong><span>raised</span></p>
-              <p>{formatMoney(CAMPAIGN_GOAL_USD, currency)} goal · <strong>{goalProgress}%</strong></p>
+              <p><strong>{money(totalRaised)}</strong><span>{t("home.raised")}</span></p>
+              <p>{t("home.goal", { amount: money(CAMPAIGN_GOAL_USD), progress: goalProgress })}</p>
             </div>
             <div className="progress-track"><span style={{ width: `${goalProgress}%` }} /></div>
-            <p className="auction-time">Auction ends in {countdown} · {filledSpotCount === 0 ? "be the first brand on the lid" : "you can still outbid any spot"}</p>
+            <p className="auction-time">{t("home.auctionEnds", { countdown })} · {filledSpotCount === 0 ? t("home.firstBrand") : t("home.stillOutbid")}</p>
             <p className={`data-status data-status--${backendStatus}`} aria-live="polite">
-              <span />{backendStatus === "live" ? "Live database connected" : backendStatus === "connecting" ? "Connecting live bids…" : "Showing the empty starter state — bids are temporarily unavailable"}
+              <span />{backendStatus === "live" ? t("home.dbLive") : backendStatus === "connecting" ? t("home.dbConnecting") : t("home.dbOffline")}
             </p>
           </div>
 
           <div className="lid-view">
             <div className={`lid-layer lid-layer--live ${lidView === "live" ? "is-active" : ""}`} aria-hidden={lidView !== "live"}>
-              <MacLid spots={spots} currency={currency} onSelect={(spot) => setSelectedSpotId(spot.id)} />
+              <MacLid spots={spots} onSelect={(spot) => setSelectedSpotId(spot.id)} />
             </div>
             <div className={`lid-layer lid-layer--final ${lidView === "final" && finalLookReady ? "is-active" : ""}`} aria-hidden={lidView !== "final" || !finalLookReady}>
               <div className="final-mac">
                 <Image
                   src="/macbook.webp"
-                  alt="A MacBook Pro seen from behind, ready for the winning brand stickers"
+                  alt={t("home.finalAlt")}
                   width={1536}
                   height={1024}
                   loading="eager"
@@ -454,25 +405,25 @@ export default function Home() {
             {lidView === "final" && !finalLookReady && (
               <div className={`final-loading ${finalLookFailed ? "final-loading--error" : ""}`} role="status" aria-live="polite">
                 <span aria-hidden="true">{finalLookFailed ? "!" : ""}</span>
-                <strong>{finalLookFailed ? "The final look could not load completely" : "Preparing the final look"}</strong>
-                <small>{finalLookFailed ? "No partial composition was shown. Reload to try the missing asset again." : "Loading the MacBook and every brand together…"}</small>
-                {finalLookFailed && <button type="button" onClick={() => window.location.reload()}>Reload assets</button>}
+                <strong>{finalLookFailed ? t("home.finalLoadError") : t("home.finalPreparing")}</strong>
+                <small>{finalLookFailed ? t("home.finalErrorNote") : t("home.finalLoadingNote")}</small>
+                {finalLookFailed && <button type="button" onClick={() => window.location.reload()}>{t("common.reload")}</button>}
               </div>
             )}
           </div>
 
-          <div className="segmented" role="group" aria-label="Lid view">
-            <button className={lidView === "live" ? "active" : ""} aria-pressed={lidView === "live"} onClick={() => setLidView("live")}>Live auction</button>
-            <button className={lidView === "final" ? "active" : ""} aria-pressed={lidView === "final"} onClick={() => setLidView("final")}>Final look</button>
+          <div className="segmented" role="group" aria-label={t("home.lidView")}>
+            <button className={lidView === "live" ? "active" : ""} aria-pressed={lidView === "live"} onClick={() => setLidView("live")}>{t("common.liveAuction")}</button>
+            <button className={lidView === "final" ? "active" : ""} aria-pressed={lidView === "final"} onClick={() => setLidView("final")}>{t("home.finalLook")}</button>
           </div>
-          <p className="lid-caption">{lidView === "live" ? "Tap any spot to place a bid." : finalLookFailed ? "The incomplete composition stays hidden." : !finalLookReady ? "The complete composition will appear when every asset is ready." : filledSpotCount === 0 ? "A clean slate — winning logos will appear here." : "Every winning brand, composed on the finished lid."}</p>
+          <p className="lid-caption">{lidView === "live" ? t("home.tapBid") : finalLookFailed ? t("home.incompleteHidden") : !finalLookReady ? t("home.appearWhenReady") : filledSpotCount === 0 ? t("home.cleanSlate") : t("home.finishedLid")}</p>
 
           <div className="hero-close">
-            <p>Ten placements. Zero placeholder sponsors. The lid begins with the brands that actually bid.</p>
-            <p>Cafés, coworking spaces, events… take your brand into the outside world.</p>
+            <p>{t("home.zeroPlaceholders")}</p>
+            <p>{t("home.outsideWorld")}</p>
             <div>
-              <a className="primary-button" href="#spots">Get a spot</a>
-              <a className="text-link" href="#how">How it works ›</a>
+              <a className="primary-button" href="#spots">{t("common.getSpot")}</a>
+              <a className="text-link" href="#how">{t("common.how")} ›</a>
             </div>
           </div>
         </header>
@@ -480,9 +431,9 @@ export default function Home() {
         <section className="statement" aria-labelledby="statement-title">
           <div className="statement-inner">
             <div>
-              <p className="statement-kicker">The world&apos;s most recognisable lid</p>
-              <h2 id="statement-title">Everyone recognises the apple. Show your logo right next to it.</h2>
-              <a href="#spots">See the live auction ↘</a>
+              <p className="statement-kicker">{t("home.recognisableLid")}</p>
+              <h2 id="statement-title">{t("home.statement")}</h2>
+              <a href="#spots">{t("home.seeAuction")}</a>
             </div>
             <div className="dark-mac" aria-hidden="true">
               <span className="dark-apple"></span>
@@ -493,28 +444,28 @@ export default function Home() {
 
         <section className="auction-section" id="spots">
           <div className="section-inner auction-inner">
-            <p className="auction-status"><span />ends in {countdown} <b>·</b> {availableSpotCount} of {spots.length} sticker spots available</p>
-            <h2>The auction, live.</h2>
-            <p className="section-lead">Every open spot shows its starting bid. No demo brands, no borrowed history.</p>
-            <p className="section-copy">Spots from {formatMoney(125, currency)} Small · {formatMoney(200, currency)} Medium · {formatMoney(400, currency)} Large, with a premium next to and around the Apple logo.</p>
+            <p className="auction-status"><span />{t("home.auctionStatus", { countdown, available: availableSpotCount, total: spots.length })}</p>
+            <h2>{t("home.auctionTitle")}</h2>
+            <p className="section-lead">{t("home.auctionLead")}</p>
+            <p className="section-copy">{t("home.auctionPrices", { small: money(125), medium: money(200), large: money(400) })}</p>
 
-            <div className="segmented table-tabs" role="tablist" aria-label="Table view">
-              <button role="tab" className={tableView === "spots" ? "active" : ""} aria-selected={tableView === "spots"} onClick={() => setTableView("spots")}>Spots</button>
-              <button role="tab" className={tableView === "history" ? "active" : ""} aria-selected={tableView === "history"} onClick={() => setTableView("history")}>History ({history.length})</button>
+            <div className="segmented table-tabs" role="tablist" aria-label={t("home.tableView")}>
+              <button role="tab" className={tableView === "spots" ? "active" : ""} aria-selected={tableView === "spots"} onClick={() => setTableView("spots")}>{t("common.spots")}</button>
+              <button role="tab" className={tableView === "history" ? "active" : ""} aria-selected={tableView === "history"} onClick={() => setTableView("history")}>{t("common.history")} ({history.length})</button>
             </div>
 
             {tableView === "spots" ? (
-              <div className="spots-table-wrap" role="region" aria-label="Sticker spot bids" tabIndex={0}>
+              <div className="spots-table-wrap" role="region" aria-label={t("home.stickerBids")} tabIndex={0}>
                 <table className="spots-table">
-                  <thead><tr><th>Spot</th><th>Size</th><th>Brand</th><th>Bid</th><th><span className="sr-only">Action</span></th></tr></thead>
+                  <thead><tr><th>{t("common.spot")}</th><th>{t("common.size")}</th><th>{t("common.brand")}</th><th>{t("common.bid")}</th><th><span className="sr-only">{t("common.action")}</span></th></tr></thead>
                   <tbody>
                     {spots.map((spot) => (
                       <tr key={spot.id}>
-                        <td data-label="Spot"><span className="spot-number">{spot.id}</span><strong>{spot.name}</strong></td>
-                        <td data-label="Size"><span className={`size-tag size-tag--${spot.size.toLowerCase()}`}>{spot.size}</span>{spot.dimensions}</td>
-                        <td data-label="Brand">{spot.bids === 0 ? <span className="availability-pill">Available</span> : spot.website ? <a href={spot.website} target="_blank" rel="noreferrer"><Logo spot={spot} compact /></a> : <Logo spot={spot} compact />}</td>
-                        <td data-label={spot.bids === 0 ? "Starting bid" : "Current bid"}><strong>{formatMoney(spot.bids === 0 ? spot.minBid : spot.bid, currency)}</strong><small>{spot.bids === 0 ? "No bids yet" : `${spot.bids} ${spot.bids === 1 ? "bid" : "bids"}`}</small></td>
-                        <td data-label="Action"><button className="outbid-button" onClick={() => setSelectedSpotId(spot.id)}>{spot.bids === 0 ? "Bid" : "Outbid"}</button></td>
+                        <td data-label={t("common.spot")}><span className="spot-number">{spot.id}</span><strong>{SPOT_NAME_KEYS[spot.id] ? t(SPOT_NAME_KEYS[spot.id]!) : spot.name}</strong></td>
+                        <td data-label={t("common.size")}><span className={`size-tag size-tag--${spot.size.toLowerCase()}`}>{spot.size}</span>{spot.dimensions}</td>
+                        <td data-label={t("common.brand")}>{spot.bids === 0 ? <span className="availability-pill">{t("common.available")}</span> : spot.website ? <a href={spot.website} target="_blank" rel="noreferrer"><Logo spot={spot} compact /></a> : <Logo spot={spot} compact />}</td>
+                        <td data-label={spot.bids === 0 ? t("home.startingBid") : t("common.currentBid")}><strong>{money(spot.bids === 0 ? spot.minBid : spot.bid)}</strong><small>{spot.bids === 0 ? t("common.noBids") : `${spot.bids} ${spot.bids === 1 ? t("common.bid").toLowerCase() : t("common.bids")}`}</small></td>
+                        <td data-label={t("common.action")}><button className="outbid-button" onClick={() => setSelectedSpotId(spot.id)}>{spot.bids === 0 ? t("common.placeBid") : t("common.outbid")}</button></td>
                       </tr>
                     ))}
                   </tbody>
@@ -525,14 +476,14 @@ export default function Home() {
                 {history.length > 0 ? history.map((item) => (
                     <div className="history-row" key={item.id}>
                       <span className="history-avatar">{item.brand.charAt(0)}</span>
-                      <p><strong>{item.brand}</strong> bid on spot {item.spot}<small>{item.time}</small></p>
-                      <strong>{formatMoney(item.amount, currency)}</strong>
+                      <p><strong>{item.brand}</strong> {t("home.bidOnSpot", { spot: item.spot })}<small>{formatRelativeTime(locale, item.createdAt)}</small></p>
+                      <strong>{money(item.amount)}</strong>
                     </div>
                   )) : (
                     <div className="history-empty">
                       <span aria-hidden="true">01</span>
-                      <strong>The first bid writes the first line.</strong>
-                      <p>No imported winners or placeholder activity — this history starts with your launch.</p>
+                      <strong>{t("home.firstLine")}</strong>
+                      <p>{t("home.noImportedHistory")}</p>
                     </div>
                   )}
               </div>
@@ -542,55 +493,57 @@ export default function Home() {
 
         <section className="how-section" id="how">
           <div className="section-inner how-inner">
-            <h2>How it works</h2>
+            <h2>{t("common.how")}</h2>
             <ol className="steps">
-              <li><span>1</span><div><h3>Pick your spot and size</h3><p>Ten zones in three sticker sizes, priced by size and visibility.</p></div></li>
-              <li><span>2</span><div><h3>Win the bid</h3><p>The top bid at the end of the auction wins. I&apos;ll reach out to arrange payment.</p></div></li>
-              <li><span>3</span><div><h3>Your sticker rides along</h3><p>I print your logo as a quality die-cut vinyl sticker, and everywhere the MacBook goes, your brand is visible.</p></div></li>
+              <li><span>1</span><div><h3>{t("home.pickSpot")}</h3><p>{t("home.pickSpotBody")}</p></div></li>
+              <li><span>2</span><div><h3>{t("home.winBid")}</h3><p>{t("home.winBidBody")}</p></div></li>
+              <li><span>3</span><div><h3>{t("home.stickerRides")}</h3><p>{t("home.stickerRidesBody")}</p></div></li>
             </ol>
           </div>
         </section>
 
         <section className="specs-section" id="specs">
           <div className="section-inner specs-inner">
-            <h2>What the money buys.</h2>
-            <p className="specs-intro">This starter campaign uses a {formatMoney(CAMPAIGN_GOAL_USD, currency)} goal for the machine, taxes, production, and the trips that make the placements visible. Forking the template? Replace these figures with your real costs before launch.</p>
+            <h2>{t("home.moneyTitle")}</h2>
+            <p className="specs-intro">{t("home.specIntro", { amount: money(CAMPAIGN_GOAL_USD) })}</p>
             <div className="spec-card">
-              <div className="spec-card-head"><h3>MacBook Pro 14”, Silver</h3><strong>{formatMoney(2529, currency)}</strong></div>
+              <div className="spec-card-head"><h3>{t("home.specModel")}</h3><strong>{money(2529)}</strong></div>
               <dl>
-                <div><dt>Chip</dt><dd>Apple M5 — 10-core CPU, 10-core GPU, 16-core Neural Engine</dd></div>
-                <div><dt>Memory</dt><dd>32 GB unified</dd></div>
-                <div><dt>Storage</dt><dd>1 TB SSD</dd></div>
-                <div><dt>Display</dt><dd>14.2” Liquid Retina XDR, standard glass</dd></div>
-                <div><dt>Keyboard</dt><dd>Backlit Magic Keyboard with Touch ID</dd></div>
-                <div><dt>In the box</dt><dd>No power adapter</dd></div>
+                <div><dt>{t("home.specChip")}</dt><dd>{t("home.specChipValue")}</dd></div>
+                <div><dt>{t("home.specMemory")}</dt><dd>{t("home.specMemoryValue")}</dd></div>
+                <div><dt>{t("home.specStorage")}</dt><dd>{t("home.specStorageValue")}</dd></div>
+                <div><dt>{t("home.specDisplay")}</dt><dd>{t("home.specDisplayValue")}</dd></div>
+                <div><dt>{t("home.specKeyboard")}</dt><dd>{t("home.specKeyboardValue")}</dd></div>
+                <div><dt>{t("home.specBox")}</dt><dd>{t("home.specBoxValue")}</dd></div>
               </dl>
             </div>
-            <p className="spec-note">Prices and bids are stored in US dollars. Euro figures are an indicative display conversion. Anything raised past the goal can fund production and the places the Mac goes. <a href="https://www.apple.com/shop/buy-mac/macbook-pro" target="_blank" rel="noreferrer">Check the current price at Apple.</a></p>
+            <p className="spec-note">{t("home.priceNote")} <a href="https://www.apple.com/shop/buy-mac/macbook-pro" target="_blank" rel="noreferrer">{t("home.applePrice")}</a></p>
           </div>
         </section>
 
         <section className="faq-section" id="faq">
           <div className="section-inner faq-inner">
-            <h2>Questions &amp; Answers</h2>
+            <h2>{t("home.questions")}</h2>
             <div className="faq-list">
-              {FAQS.map((faq) => (
-                <details key={faq.question}>
-                  <summary>{faq.question}<span aria-hidden="true">+</span></summary>
-                  <div className="faq-answer">{faq.answer}</div>
-                </details>
-              ))}
+              <details><summary>{t("home.faq.real.q")}<span aria-hidden="true">+</span></summary><div className="faq-answer"><p>{t("home.faq.real.a")}</p></div></details>
+              <details><summary>{t("home.faq.why.q")}<span aria-hidden="true">+</span></summary><div className="faq-answer"><p>{t("home.faq.why.a1")}</p><p>{t("home.faq.why.a2")}</p></div></details>
+              <details><summary>{t("home.faq.get.q")}<span aria-hidden="true">+</span></summary><div className="faq-answer"><p>{t("home.faq.get.a1")}</p><ul><li>{t("home.faq.get.li1")}</li><li>{t("home.faq.get.li2")}</li></ul><p>{t("home.faq.get.a2")}</p></div></details>
+              <details><summary>{t("home.faq.payment.q")}<span aria-hidden="true">+</span></summary><div className="faq-answer"><p>{t("home.faq.payment.a")}</p></div></details>
+              <details><summary>{t("home.faq.outbid.q")}<span aria-hidden="true">+</span></summary><div className="faq-answer"><p>{t("home.faq.outbid.a")}</p></div></details>
+              <details><summary>{t("home.faq.brands.q")}<span aria-hidden="true">+</span></summary><div className="faq-answer"><p>{t("home.faq.brands.a")}</p></div></details>
+              <details><summary>{t("home.faq.change.q")}<span aria-hidden="true">+</span></summary><div className="faq-answer"><p>{t("home.faq.change.a")}</p></div></details>
+              <details><summary>{t("home.faq.list.q")}<span aria-hidden="true">+</span></summary><div className="faq-answer"><p><a href={CREATE_URL}>{t("home.faq.list.a")}</a></p></div></details>
             </div>
           </div>
         </section>
 
         <section className="waitlist-section" id="waitlist">
           <div className="waitlist-card">
-            <p className="eyebrow">Your machine, live in minutes</p>
-            <h2>List your own laptop.</h2>
-            <p>Choose the public URL, tell your story, set the goal and prices, and publish a real 10-spot auction backed by the same concurrency-safe database.</p>
-            <a className="dark-button" href={CREATE_URL}>Create your laptop →</a>
-            <small>No external site and no code required. Prefer to self-host? The source remains open on GitHub.</small>
+            <p className="eyebrow">{t("home.yourMachineMinutes")}</p>
+            <h2>{t("home.listOwnTitle")}</h2>
+            <p>{t("home.listOwnBody")}</p>
+            <a className="dark-button" href={CREATE_URL}>{t("home.createLaptop")}</a>
+            <small>{t("home.selfHost")}</small>
           </div>
         </section>
       </main>
@@ -599,20 +552,19 @@ export default function Home() {
         <div className="footer-inner">
           <div className="footer-avatar" aria-hidden="true">T</div>
           <div>
-            <p className="footer-title">Hey, I&apos;m Tempest 👋</p>
-            <p>I open-sourced this project so the idea would not belong to one finished MacBook. <a href={SOURCE_URL} target="_blank" rel="noreferrer">Brand Anything</a> is a starting point anyone can fork, reshape, and launch around their own story.</p>
-            <p>Found a bug, built your own version, or want to improve the template? <a href={`${SOURCE_URL}/issues`} target="_blank" rel="noreferrer">Open an issue on GitHub.</a></p>
-            <div className="footer-meta"><a href={CREATE_URL}>List your laptop</a><a href={SOURCE_URL} target="_blank" rel="noreferrer">Source on GitHub</a></div>
-            <p className="legal">Brand Anything is not affiliated with, endorsed by, or sponsored by Apple Inc. MacBook Pro and Mac are trademarks of Apple Inc.</p>
+            <p className="footer-title">{t("home.footerTitle")}</p>
+            <p>{t("home.footerOpenSource")} <a href={SOURCE_URL} target="_blank" rel="noreferrer">Brand Anything ↗</a></p>
+            <p>{t("home.footerContribute")} <a href={`${SOURCE_URL}/issues`} target="_blank" rel="noreferrer">GitHub ↗</a></p>
+            <div className="footer-meta"><a href={CREATE_URL}>{t("common.listLaptop")}</a><a href={SOURCE_URL} target="_blank" rel="noreferrer">{t("home.sourceGithub")}</a></div>
+            <p className="legal">{t("home.legal")}</p>
           </div>
         </div>
       </footer>
 
-      <a className="floating-cta" href={CREATE_URL}>List your laptop →</a>
+      <a className="floating-cta" href={CREATE_URL}>{t("common.listLaptopArrow")}</a>
       <BidDialog
         key={selectedSpot?.id ?? "closed"}
         spot={selectedSpot}
-        currency={currency}
         onClose={() => setSelectedSpotId(null)}
         onSnapshot={applySnapshot}
       />

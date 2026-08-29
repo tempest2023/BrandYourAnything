@@ -4,8 +4,18 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { useI18n } from "@/app/i18n-provider";
+import { PreferenceControls } from "@/app/preference-controls";
 import type { Spot } from "@/lib/auction";
+import { formatRelativeTime, SPOT_NAME_KEYS } from "@/lib/i18n";
 import type { LaptopBidResult, LaptopSnapshot } from "@/lib/laptop";
+import {
+  amountToUsd,
+  amountToUsdCents,
+  currencyDisplayName,
+  formatMoney as formatCurrency,
+  minimumDisplayAmount,
+} from "@/lib/money";
 
 import styles from "./laptop.module.css";
 
@@ -15,23 +25,16 @@ type BidResponse = {
   snapshot?: LaptopSnapshot | null;
 };
 
-function formatMoney(amount: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(amount);
-}
-
 function useCountdown(closesAt: string) {
+  const { t } = useI18n();
   const calculate = useCallback(() => {
     const left = Math.max(0, new Date(closesAt).getTime() - Date.now());
-    if (left === 0) return "Auction closed";
+    if (left === 0) return t("laptop.closed");
     const days = Math.floor(left / 86_400_000);
     const hours = Math.floor((left % 86_400_000) / 3_600_000);
     const minutes = Math.floor((left % 3_600_000) / 60_000);
-    return `${days}d ${hours}h ${minutes}m left`;
-  }, [closesAt]);
+    return t("laptop.countdown", { days, hours, minutes });
+  }, [closesAt, t]);
   const [countdown, setCountdown] = useState(calculate);
 
   useEffect(() => {
@@ -42,11 +45,14 @@ function useCountdown(closesAt: string) {
 }
 
 function LaptopLid({ spots, onSelect }: { spots: Spot[]; onSelect: (spot: Spot) => void }) {
+  const { currency, locale, t } = useI18n();
+  const money = (amount: number) => formatCurrency(amount, currency, locale, 0);
+
   return (
-    <div className="lid-stage" aria-label="Laptop sponsorship layout">
+    <div className="lid-stage" aria-label={t("laptop.layoutAria")}>
       <div className="mac-lid">
         <div className="lid-camera" />
-        <span className="apple-mark" aria-label="Apple logo"></span>
+        <span className="apple-mark" aria-label={t("common.appleLogo")}></span>
         {spots.map((spot) => {
           const hasBid = spot.bids > 0;
           return (
@@ -55,17 +61,17 @@ function LaptopLid({ spots, onSelect }: { spots: Spot[]; onSelect: (spot: Spot) 
               key={spot.id}
               onClick={() => onSelect(spot)}
               aria-label={hasBid
-                ? `Spot ${spot.id}, held by ${spot.holder} at ${formatMoney(spot.bid)}. Outbid.`
-                : `Spot ${spot.id}, available from ${formatMoney(spot.minBid)}. Place bid.`}
+                ? t("laptop.heldSpotAria", { id: spot.id, holder: spot.holder, amount: money(spot.bid) })
+                : t("laptop.openSpotAria", { id: spot.id, amount: money(spot.minBid) })}
             >
               {spot.logo ? (
                 <span className="brand-logo"><img src={spot.logo} alt={spot.holder} /></span>
               ) : (
                 <span className="lid-spot-number">{spot.id}</span>
               )}
-              <span className="lid-holder">{hasBid ? spot.holder : "Available"}</span>
-              <span className="lid-price">{hasBid ? formatMoney(spot.bid) : `Starts ${formatMoney(spot.minBid)}`}</span>
-              <span className="lid-outbid">{hasBid ? "Outbid" : "Bid"}</span>
+              <span className="lid-holder">{hasBid ? spot.holder : t("common.available")}</span>
+              <span className="lid-price">{hasBid ? money(spot.bid) : t("common.starts", { amount: money(spot.minBid) })}</span>
+              <span className="lid-outbid">{hasBid ? t("common.outbid") : t("common.placeBid")}</span>
             </button>
           );
         })}
@@ -83,7 +89,9 @@ function BidPanel({
   spot: Spot;
   onSnapshot: (snapshot: LaptopSnapshot) => void;
 }) {
-  const [amount, setAmount] = useState(String(Math.ceil(spot.minBid)));
+  const { currency, locale, t } = useI18n();
+  const money = (amountUsd: number) => formatCurrency(amountUsd, currency, locale, 0);
+  const [amount, setAmount] = useState(String(minimumDisplayAmount(spot.minBid, currency)));
   const [logoName, setLogoName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -98,7 +106,7 @@ function BidPanel({
     setSuccessMessage("");
     const formData = new FormData(event.currentTarget);
     formData.set("spotId", String(spot.id));
-    formData.set("amountCents", String(Math.round(Number(amount) * 100)));
+    formData.set("amountCents", String(amountToUsdCents(Number(amount), currency)));
     formData.set("idempotencyKey", idempotencyKey);
 
     try {
@@ -109,18 +117,18 @@ function BidPanel({
       const payload = await response.json() as BidResponse;
       if (payload.snapshot) onSnapshot(payload.snapshot);
       if (!response.ok || !payload.result?.accepted) {
-        setErrorMessage(payload.error || "The bid could not be saved. Please try again.");
+        setErrorMessage(t("home.bidError"));
         if (response.status === 409) {
           setIdempotencyKey(crypto.randomUUID());
-          if (payload.result?.minimumNextBid) setAmount(String(Math.ceil(payload.result.minimumNextBid)));
+          if (payload.result?.minimumNextBid) setAmount(String(minimumDisplayAmount(payload.result.minimumNextBid, currency)));
         }
         return;
       }
       setSuccessMessage(payload.result.reason === "already_processed"
-        ? `Your ${formatMoney(Number(amount))} bid for spot ${spot.id} was already recorded. The page now shows the live winner.`
-        : `You are leading spot ${spot.id} at ${formatMoney(payload.result.currentBid)}. No card was charged.`);
+        ? t("laptop.alreadyRecorded", { amount: money(amountToUsd(Number(amount), currency)), spot: spot.id })
+        : t("laptop.leading", { amount: money(payload.result.currentBid), spot: spot.id }));
     } catch {
-      setErrorMessage("The network did not confirm your bid. Retrying will safely reuse this request.");
+      setErrorMessage(t("home.networkError"));
     } finally {
       setSubmitting(false);
     }
@@ -130,7 +138,7 @@ function BidPanel({
     return (
       <div className={styles.bidSuccess} role="status">
         <span aria-hidden="true">✓</span>
-        <h3>Your bid is live.</h3>
+        <h3>{t("home.bidLive")}</h3>
         <p>{successMessage}</p>
       </div>
     );
@@ -139,32 +147,34 @@ function BidPanel({
   return (
     <form className={styles.bidForm} onSubmit={handleSubmit}>
       <div className={styles.bidHeading}>
-        <p>Spot {spot.id} · {spot.size}</p>
-        <h3>{spot.name}</h3>
-        <span>{spot.bids > 0 ? `${spot.holder} leads at ${formatMoney(spot.bid)}` : `Opening bid ${formatMoney(spot.minBid)}`}</span>
+        <p>{t("common.spot")} {spot.id} · {spot.size}</p>
+        <h3>{SPOT_NAME_KEYS[spot.id] ? t(SPOT_NAME_KEYS[spot.id]!) : spot.name}</h3>
+        <span>{spot.bids > 0 ? t("laptop.leadingLine", { holder: spot.holder, amount: money(spot.bid) }) : `${t("common.openingBid")} ${money(spot.minBid)}`}</span>
       </div>
-      <label>Your bid (USD)<input type="number" min={Math.ceil(spot.minBid)} step="1" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>
+      <label>{t("laptop.yourBid", { currency: currencyDisplayName(currency) })}<input type="number" min={minimumDisplayAmount(spot.minBid, currency)} step="1" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>
       <div className={styles.fieldPair}>
-        <label>Brand name<input name="brandName" type="text" maxLength={80} placeholder="Your brand" required /></label>
-        <label>Email<input name="email" type="email" maxLength={254} placeholder="you@company.com" required /></label>
+        <label>{t("common.brandName")}<input name="brandName" type="text" maxLength={80} placeholder={t("common.brand")} required /></label>
+        <label>{t("common.email")}<input name="email" type="email" maxLength={254} placeholder="you@company.com" required /></label>
       </div>
       <div className={styles.fieldPair}>
-        <label>Website <em>optional</em><input name="website" type="url" maxLength={2048} placeholder="https://yourbrand.com" /></label>
-        <label>X handle <em>optional</em><input name="xHandle" type="text" maxLength={50} placeholder="@yourbrand" /></label>
+        <label>{t("common.website")} <em>{t("common.optional")}</em><input name="website" type="url" maxLength={2048} placeholder="https://yourbrand.com" /></label>
+        <label>{t("common.xHandle")} <em>{t("common.optional")}</em><input name="xHandle" type="text" maxLength={50} placeholder="@yourbrand" /></label>
       </div>
       <label className={styles.logoUpload}>
-        Logo <em>optional</em>
+        {t("common.logo")} <em>{t("common.optional")}</em>
         <input name="logo" type="file" accept=".png,.jpg,.jpeg,.webp,.svg" onChange={(event) => setLogoName(event.target.files?.[0]?.name ?? "")} />
-        <span>{logoName || "Choose PNG, JPG, WEBP, or SVG · 2 MB max"}</span>
+        <span>{logoName || t("laptop.chooseLogo")}</span>
       </label>
       {errorMessage && <p className={styles.bidError} role="alert">{errorMessage}</p>}
-      <button type="submit" disabled={submitting}>{submitting ? "Saving bid…" : spot.bids > 0 ? `Outbid ${spot.holder} →` : "Place the first bid →"}</button>
-      <small>Bids are final records in the public history. Payment is arranged separately by the laptop owner.</small>
+      <button type="submit" disabled={submitting}>{submitting ? t("home.savingBid") : spot.bids > 0 ? `${t("common.outbid")} ${spot.holder} →` : `${t("common.placeFirstBid")} →`}</button>
+      <small>{t("laptop.bidFinal")}</small>
     </form>
   );
 }
 
 export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnapshot }) {
+  const { currency, locale, t, formatDate } = useI18n();
+  const money = (amount: number) => formatCurrency(amount, currency, locale, 0);
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [selectedSpotId, setSelectedSpotId] = useState(initialSnapshot.spots[0]?.id ?? 1);
   const [backendStatus, setBackendStatus] = useState<"live" | "offline">("live");
@@ -197,36 +207,39 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
     <main className={styles.page}>
       <nav className={styles.nav}>
         <Link href="/" className={styles.wordmark}>Brand Anything</Link>
-        <span className={backendStatus === "live" ? styles.live : styles.offline}>{backendStatus === "live" ? "Live auction" : "Reconnecting"}</span>
-        <Link href="/create" className={styles.createLink}>List your laptop →</Link>
+        <span className={backendStatus === "live" ? styles.live : styles.offline}>{backendStatus === "live" ? t("common.liveAuction") : t("laptop.reconnecting")}</span>
+        <div className={styles.navActions}>
+          <PreferenceControls />
+          <Link href="/create" className={styles.createLink}>{t("common.listLaptopArrow")}</Link>
+        </div>
       </nav>
 
       <header className={styles.hero}>
         <div className={styles.heroCopy}>
-          <p className={styles.ownerLine}>A laptop by {snapshot.campaign.ownerName}</p>
+          <p className={styles.ownerLine}>{t("laptop.byOwner", { owner: snapshot.campaign.ownerName })}</p>
           <h1>{snapshot.campaign.title}</h1>
           <p>{snapshot.campaign.tagline}</p>
           <div className={styles.heroStats}>
-            <span><b>{formatMoney(totalRaised)}</b> raised</span>
-            <span><b>{filled}/10</b> spots claimed</span>
+            <span><b>{money(totalRaised)}</b> {t("home.raised")}</span>
+            <span><b>{t("laptop.spotsClaimed", { filled })}</b></span>
             <span><b>{countdown}</b></span>
           </div>
         </div>
         <div className={styles.lidWrap}>
           <LaptopLid spots={snapshot.spots} onSelect={(spot) => setSelectedSpotId(spot.id)} />
-          <p>Tap any spot to bid · {snapshot.campaign.laptopModel}</p>
+          <p>{t("laptop.tap", { model: snapshot.campaign.laptopModel })}</p>
         </div>
       </header>
 
-      <section className={styles.progressSection} aria-label="Campaign progress">
+      <section className={styles.progressSection} aria-label={t("laptop.progressAria")}>
         <div><span style={{ width: `${progress}%` }} /></div>
-        <p><b>{progress}%</b> of the {formatMoney(snapshot.campaign.goal)} campaign goal</p>
+        <p>{t("laptop.progress", { progress, goal: money(snapshot.campaign.goal) })}</p>
       </section>
 
       <section className={styles.auctionSection} id="auction">
         <div className={styles.auctionIntro}>
-          <p>Ten placements. One lid.</p>
-          <h2>Choose where your brand travels.</h2>
+          <p>{t("laptop.tenPlacements")}</p>
+          <h2>{t("laptop.chooseWhere")}</h2>
         </div>
         <div className={styles.auctionGrid}>
           <div className={styles.spotList}>
@@ -237,15 +250,15 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
                 onClick={() => setSelectedSpotId(spot.id)}
               >
                 <span>{String(spot.id).padStart(2, "0")}</span>
-                <p><b>{spot.name}</b><small>{spot.size} · {spot.dimensions}</small></p>
-                <strong>{formatMoney(spot.bids > 0 ? spot.bid : spot.minBid)}<small>{spot.bids > 0 ? `${spot.bids} bids` : "opening"}</small></strong>
+                <p><b>{SPOT_NAME_KEYS[spot.id] ? t(SPOT_NAME_KEYS[spot.id]!) : spot.name}</b><small>{spot.size} · {spot.dimensions}</small></p>
+                <strong>{money(spot.bids > 0 ? spot.bid : spot.minBid)}<small>{spot.bids > 0 ? `${spot.bids} ${t("common.bids")}` : t("laptop.opening")}</small></strong>
               </button>
             ))}
           </div>
           <div className={styles.bidColumn}>
             {selectedSpot && (
               <BidPanel
-                key={selectedSpot.id}
+                key={`${selectedSpot.id}-${currency}`}
                 slug={snapshot.campaign.slug}
                 spot={selectedSpot}
                 onSnapshot={setSnapshot}
@@ -257,17 +270,17 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
 
       <section className={styles.storySection}>
         <div>
-          <p>Why this laptop?</p>
+          <p>{t("laptop.why")}</p>
           <h2>{snapshot.campaign.story}</h2>
           <dl>
-            <div><dt>Machine</dt><dd>{snapshot.campaign.laptopModel}</dd></div>
-            <div><dt>Owner</dt><dd>{snapshot.campaign.ownerName}</dd></div>
-            <div><dt>Auction closes</dt><dd>{new Date(snapshot.campaign.closesAt).toLocaleString("en-US", { dateStyle: "long", timeStyle: "short" })}</dd></div>
+            <div><dt>{t("laptop.machine")}</dt><dd>{snapshot.campaign.laptopModel}</dd></div>
+            <div><dt>{t("laptop.owner")}</dt><dd>{snapshot.campaign.ownerName}</dd></div>
+            <div><dt>{t("laptop.closes")}</dt><dd>{formatDate(snapshot.campaign.closesAt)}</dd></div>
           </dl>
         </div>
         <div className={styles.ownerPhoto}>
           {snapshot.campaign.photoUrl ? (
-            <img src={snapshot.campaign.photoUrl} alt={`${snapshot.campaign.ownerName}'s ${snapshot.campaign.laptopModel}`} />
+            <img src={snapshot.campaign.photoUrl} alt={t("laptop.photoAlt", { owner: snapshot.campaign.ownerName, model: snapshot.campaign.laptopModel })} />
           ) : (
             <div><span></span><p>{snapshot.campaign.laptopModel}</p></div>
           )}
@@ -275,24 +288,24 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
       </section>
 
       <section className={styles.historySection}>
-        <div className={styles.historyHead}><h2>Bid history</h2><span>{snapshot.history.length} recent</span></div>
+        <div className={styles.historyHead}><h2>{t("laptop.bidHistory")}</h2><span>{t("laptop.recent", { count: snapshot.history.length })}</span></div>
         {snapshot.history.length > 0 ? snapshot.history.map((bid) => (
           <div className={styles.historyRow} key={bid.id}>
             <span>{bid.brand.charAt(0).toUpperCase()}</span>
-            <p><b>{bid.brand}</b><small>Spot {bid.spot} · {bid.time}</small></p>
-            <strong>{formatMoney(bid.amount)}</strong>
+            <p><b>{bid.brand}</b><small>{t("common.spot")} {bid.spot} · {formatRelativeTime(locale, bid.createdAt)}</small></p>
+            <strong>{money(bid.amount)}</strong>
           </div>
         )) : (
           <div className={styles.emptyHistory}>
-            <b>The first bid starts the story.</b>
-            <p>No placeholder sponsors and no imported history.</p>
+            <b>{t("laptop.firstStory")}</b>
+            <p>{t("laptop.noPlaceholder")}</p>
           </div>
         )}
       </section>
 
       <footer className={styles.footer}>
-        <p>Want a page like this for your own machine?</p>
-        <Link href="/create">List your laptop →</Link>
+        <p>{t("laptop.wantPage")}</p>
+        <Link href="/create">{t("common.listLaptopArrow")}</Link>
       </footer>
     </main>
   );

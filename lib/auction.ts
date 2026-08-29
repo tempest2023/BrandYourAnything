@@ -1,4 +1,4 @@
-export type Currency = "EUR" | "USD";
+export type { Currency } from "@/lib/money";
 export type SpotSize = "S" | "M" | "L";
 
 export type Spot = {
@@ -19,7 +19,7 @@ export type BidHistoryItem = {
   brand: string;
   spot: number;
   amount: number;
-  time: string;
+  createdAt: string;
 };
 
 export type AuctionSnapshot = {
@@ -36,8 +36,6 @@ export type PlaceBidResult = {
   bidCount: number;
   bidId: string | null;
 };
-
-export const EUR_TO_USD = 1.17;
 
 export const STARTER_SPOTS: Spot[] = [
   { id: 1, name: "Top left banner", size: "L", dimensions: "9.5 × 5.5 cm", holder: "", bid: 400, minBid: 400, bids: 0 },
