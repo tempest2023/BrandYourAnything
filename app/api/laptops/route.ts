@@ -52,7 +52,7 @@ export async function POST(request: Request) {
     formData.set("ownerName", owner.ownerName);
     formData.set("ownerEmail", owner.ownerEmail);
     const input = parseLaptopForm(formData);
-    if (input.assetType === "anything") {
+    if (input.assetType === "anything" && !input.presetModelId) {
       const claimInput = normalizeModelClaimInput({
         path: input.modelStoragePath!,
         fileName: input.modelFileName!,

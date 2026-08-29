@@ -8,6 +8,10 @@ import { useI18n } from "@/app/i18n-provider";
 import { ModelStage } from "@/app/model-stage";
 import type { BrandModelPreview, UploadedBrandModel } from "@/lib/brand-model";
 import { LOCALES, type Locale } from "@/lib/i18n";
+import {
+  getPresetModel,
+  type PresetModelId,
+} from "@/lib/preset-models";
 import { laptopPath, laptopUrl, SITE_HOST, SITE_URL } from "@/lib/site";
 import {
   clampSurfaceSpotCount,
@@ -92,6 +96,7 @@ type PreviewSpot = {
 };
 type Machine = "mac" | "pc" | "tesla" | "yacht" | "jet" | "anything";
 type TeslaModel = "Model 3" | "Model Y" | "Model S" | "Model X" | "Cybertruck";
+type ModelMode = "preset" | "custom";
 type Ownership = "own" | "fund";
 type LayoutCount = number;
 type SellDraft = {
@@ -100,6 +105,7 @@ type SellDraft = {
   machine: Machine;
   assetName: string;
   teslaModel: TeslaModel;
+  modelMode: ModelMode;
   anythingSource: AnythingSource;
   brandModel: UploadedBrandModel | null;
   screenSize: 13 | 14 | 16;
@@ -122,6 +128,14 @@ type SellDraft = {
 
 const TESLA_MODELS: TeslaModel[] = ["Model 3", "Model Y", "Model S", "Model X", "Cybertruck"];
 
+function presetIdFor(machine: Machine, teslaModel: TeslaModel): PresetModelId | null {
+  if (machine === "tesla" && teslaModel === "Model 3") return "tesla-model-3";
+  if (machine === "tesla" && teslaModel === "Cybertruck") return "tesla-cybertruck";
+  if (machine === "yacht") return "flybridge-yacht";
+  if (machine === "jet") return "private-jet";
+  return null;
+}
+
 const OBJECT_PRESETS: Array<{
   id: Machine;
   title: string;
@@ -130,9 +144,9 @@ const OBJECT_PRESETS: Array<{
 }> = [
   { id: "mac", title: "Mac", description: "A familiar lid, ready for a finite set of sponsors.", icon: "laptop" },
   { id: "pc", title: "PC laptop", description: "A clean laptop lid without a maker mark in the preview.", icon: "pc" },
-  { id: "tesla", title: "Tesla", description: "Choose Model 3, Model Y, Model S, Model X or Cybertruck.", icon: "car" },
-  { id: "yacht", title: "Private yacht", description: "Azimut Fly 68 — a celebrated best-seller from the Fly series.", icon: "yacht" },
-  { id: "jet", title: "Private jet", description: "Gulfstream G700 — the brand’s industry flagship.", icon: "jet" },
+  { id: "tesla", title: "Tesla", description: "Model 3 and Cybertruck include ready-to-use 3D models.", icon: "car" },
+  { id: "yacht", title: "Private yacht", description: "Start with a licensed flybridge motor-yacht model.", icon: "yacht" },
+  { id: "jet", title: "Private jet", description: "Start with a licensed long-range business-jet model.", icon: "jet" },
   { id: "anything", title: "Anything else", description: "Bring a robot, instrument, sculpture or another one-of-one object.", icon: "anything" },
 ];
 
@@ -281,7 +295,8 @@ export function CreateLaptopForm() {
   const [furthestStep, setFurthestStep] = useState(0);
   const [machine, setMachine] = useState<Machine>("mac");
   const [assetName, setAssetName] = useState("My car");
-  const [teslaModel, setTeslaModel] = useState<TeslaModel>("Model Y");
+  const [teslaModel, setTeslaModel] = useState<TeslaModel>("Model 3");
+  const [modelMode, setModelMode] = useState<ModelMode>("preset");
   const [anythingSource, setAnythingSource] = useState<AnythingSource>("model");
   const [brandModel, setBrandModel] = useState<UploadedBrandModel | null>(null);
   const [brandModelPreview, setBrandModelPreview] = useState<BrandModelPreview | null>(null);
@@ -350,6 +365,7 @@ export function CreateLaptopForm() {
         if (draft.machine) setMachine(draft.machine);
         if (typeof draft.assetName === "string") setAssetName(draft.assetName);
         if (draft.teslaModel && TESLA_MODELS.includes(draft.teslaModel)) setTeslaModel(draft.teslaModel);
+        if (draft.modelMode === "preset" || draft.modelMode === "custom") setModelMode(draft.modelMode);
         if (draft.anythingSource) setAnythingSource(draft.anythingSource);
         if (draft.brandModel
           && typeof draft.brandModel.storagePath === "string"
@@ -357,6 +373,7 @@ export function CreateLaptopForm() {
           && typeof draft.brandModel.fileName === "string"
           && typeof draft.brandModel.size === "number") {
           setBrandModel(draft.brandModel);
+          setModelMode("custom");
         }
         if (draft.screenSize) setScreenSize(draft.screenSize);
         if (draft.ownership) setOwnership(draft.ownership);
@@ -408,6 +425,7 @@ export function CreateLaptopForm() {
       machine,
       assetName,
       teslaModel,
+      modelMode,
       anythingSource,
       brandModel,
       screenSize,
@@ -427,7 +445,7 @@ export function CreateLaptopForm() {
       title,
       slug,
     }));
-  }, [anythingSource, assetName, brandModel, draftReady, extraNote, furthestStep, largePrice, layoutCount, listingDays, machine, machineCost, mediumPrice, ownership, screenSize, showcase, slug, smallPrice, specialPrice, specialSpot, step, stickerMonths, surfaceSpots, teslaModel, title]);
+  }, [anythingSource, assetName, brandModel, draftReady, extraNote, furthestStep, largePrice, layoutCount, listingDays, machine, machineCost, mediumPrice, modelMode, ownership, screenSize, showcase, slug, smallPrice, specialPrice, specialSpot, step, stickerMonths, surfaceSpots, teslaModel, title]);
 
   useEffect(() => {
     let active = true;
@@ -477,6 +495,12 @@ export function CreateLaptopForm() {
   }, []);
 
   const isAnything = machine !== "mac" && machine !== "pc";
+  const selectedPresetId = presetIdFor(machine, teslaModel);
+  const selectedPreset = getPresetModel(selectedPresetId);
+  const usingPresetModel = Boolean(selectedPreset && modelMode === "preset");
+  const previewModel = usingPresetModel && selectedPreset
+    ? { sourceUrl: selectedPreset.publicPath, format: "glb" as const }
+    : brandModelPreview;
   const placementProfile: SurfacePlacementProfile = machine === "tesla"
     ? "car"
     : machine === "yacht"
@@ -517,9 +541,10 @@ export function CreateLaptopForm() {
   const totalFloor = previewSpots.reduce((sum, spot) => sum + spot.amount, 0) + (hasSpecialSpot ? specialAmount : 0);
   const minimumPrice = Math.min(...previewSpots.map((spot) => spot.amount));
   const fundingCost = Number(machineCost);
+  const needsCustomModel = isAnything && !usingPresetModel;
   const objectName = isAnything ? assetName.trim() || "your object" : `${machine === "mac" ? "Mac" : "PC"} · ${screenSize}″`;
   const machineIsValid = ownership === "own" || (Number.isFinite(fundingCost) && fundingCost >= 100 && fundingCost <= 20_000);
-  const objectIsValid = !isAnything || (assetName.trim().length >= 2 && brandModel !== null);
+  const objectIsValid = !isAnything || (assetName.trim().length >= 2 && (usingPresetModel || brandModel !== null));
   const layoutIsValid = !isAnything || (surfaceSpots.length === layoutCount
     && surfaceSpots.every((spot) => spot.position.length === 3 && spot.normal.length === 3));
   const desiredPublicLocation = laptopPath(slug);
@@ -584,27 +609,27 @@ export function CreateLaptopForm() {
   };
 
   const selectObjectPreset = (nextMachine: Machine) => {
-    if (nextMachine !== machine && (isAnything || (nextMachine !== "mac" && nextMachine !== "pc"))) {
-      setBrandModel(null);
-      setBrandModelPreview(null);
-      clearSurfaceLayout();
-    }
+    if (nextMachine === machine) return;
+    const nextPresetId = presetIdFor(nextMachine, teslaModel);
+    setBrandModel(null);
+    setBrandModelPreview(null);
+    clearSurfaceLayout();
+    setModelMode(nextPresetId ? "preset" : "custom");
     setMachine(nextMachine);
     setSpecialSpot(nextMachine === "mac");
     if (nextMachine === "tesla") setAssetName(`Tesla ${teslaModel}`);
-    if (nextMachine === "yacht") setAssetName("Azimut Fly 68");
-    if (nextMachine === "jet") setAssetName("Gulfstream G700");
-    if (nextMachine === "anything" && /^(My car|Tesla |Azimut Fly 68|Gulfstream G700)/.test(assetName)) {
+    if (nextMachine === "yacht") setAssetName("Flybridge motor yacht");
+    if (nextMachine === "jet") setAssetName("Long-range private jet");
+    if (nextMachine === "anything" && /^(My car|Tesla |Azimut Fly 68|Gulfstream G700|Flybridge motor yacht|Long-range private jet)/.test(assetName)) {
       setAssetName("My object");
     }
   };
 
   const selectTeslaModel = (model: TeslaModel) => {
-    if (model !== teslaModel) {
-      setBrandModel(null);
-      setBrandModelPreview(null);
-      clearSurfaceLayout();
-    }
+    setBrandModel(null);
+    setBrandModelPreview(null);
+    clearSurfaceLayout();
+    setModelMode(presetIdFor("tesla", model) ? "preset" : "custom");
     setTeslaModel(model);
     setAssetName(`Tesla ${model}`);
   };
@@ -681,6 +706,8 @@ export function CreateLaptopForm() {
       formData.set("modelUploadClaim", brandModel.uploadClaim);
       formData.set("modelFileName", brandModel.fileName);
       formData.set("modelFileSize", String(brandModel.size));
+    } else if (usingPresetModel && selectedPreset) {
+      formData.set("presetModelId", selectedPreset.id);
     }
     formData.set("goalCents", String(Math.round((ownership === "fund" ? fundingCost : totalFloor) * 100)));
     formData.set("smallOpeningBidCents", String(Math.round(prices.small * 100)));
@@ -845,7 +872,11 @@ export function CreateLaptopForm() {
           </ol>
         </div>
 
-        <form ref={formRef} className={styles.wizardGrid} onSubmit={handleSubmit}>
+        <form
+          ref={formRef}
+          className={`${styles.wizardGrid} ${step === 0 ? styles.objectStepGrid : ""}`}
+          onSubmit={handleSubmit}
+        >
           <section className={styles.formPanel} aria-live="polite">
             {step === 0 && (
               <fieldset>
@@ -887,19 +918,66 @@ export function CreateLaptopForm() {
                   </div>
                 )}
                 {isAnything ? (
-                  <BrandAnythingSource
-                    assetName={assetName}
-                    onAssetNameChange={setAssetName}
-                    source={anythingSource}
-                    onSourceChange={setAnythingSource}
-                    model={brandModel}
-                    onModelChange={setBrandModel}
-                    onPreviewChange={(preview) => {
-                      setBrandModelPreview(preview);
-                      clearSurfaceLayout();
-                    }}
-                    getUploadHeaders={() => ({ "X-Lid-Manager-Key": getOrCreateManagerKey() })}
-                  />
+                  <>
+                    {usingPresetModel && selectedPreset ? (
+                      <section className={styles.includedModel} aria-labelledby="included-model-title">
+                        <div>
+                          <p>3D model included</p>
+                          <h2 id="included-model-title">{selectedPreset.assetName}</h2>
+                          <span>
+                            Ready for the auction preview. You can still replace it with an exact model you own.
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBrandModel(null);
+                            setBrandModelPreview(null);
+                            clearSurfaceLayout();
+                            setModelMode("custom");
+                          }}
+                        >
+                          Upload my own model
+                        </button>
+                      </section>
+                    ) : (
+                      <>
+                        {selectedPreset && (
+                          <button
+                            type="button"
+                            className={styles.useIncludedModel}
+                            onClick={() => {
+                              setBrandModel(null);
+                              setBrandModelPreview(null);
+                              clearSurfaceLayout();
+                              setModelMode("preset");
+                              setAssetName(selectedPreset.assetName);
+                            }}
+                          >
+                            ← Use the included {selectedPreset.assetName} model
+                          </button>
+                        )}
+                        {!selectedPreset && machine === "tesla" && (
+                          <p className={styles.customModelNote}>
+                            This exact Tesla trim is not bundled with a redistributable model. Upload a model you have the right to use.
+                          </p>
+                        )}
+                        <BrandAnythingSource
+                          assetName={assetName}
+                          onAssetNameChange={setAssetName}
+                          source={anythingSource}
+                          onSourceChange={setAnythingSource}
+                          model={brandModel}
+                          onModelChange={setBrandModel}
+                          onPreviewChange={(preview) => {
+                            setBrandModelPreview(preview);
+                            clearSurfaceLayout();
+                          }}
+                          getUploadHeaders={() => ({ "X-Lid-Manager-Key": getOrCreateManagerKey() })}
+                        />
+                      </>
+                    )}
+                  </>
                 ) : (
                   <>
                     <label className={styles.fieldLabel}>How big is the screen?</label>
@@ -1099,32 +1177,43 @@ export function CreateLaptopForm() {
               </fieldset>
             )}
 
-            {step < 7 && <div className={styles.actions}>{step > 0 && <button type="button" className={styles.backButton} onClick={backStep}>Back</button>}<button type="button" className={styles.continueButton} disabled={(step === 0 && !objectIsValid) || (step === 1 && !machineIsValid) || (step === 3 && !layoutIsValid)} onClick={continueStep}>{step === 0 && isAnything && !brandModel ? "Upload a 3D model to continue" : step === 3 && !layoutIsValid ? "Analysing model surfaces…" : "Continue"}</button></div>}
+            {step < 7 && <div className={styles.actions}>{step > 0 && <button type="button" className={styles.backButton} onClick={backStep}>Back</button>}<button type="button" className={styles.continueButton} disabled={(step === 0 && !objectIsValid) || (step === 1 && !machineIsValid) || (step === 3 && !layoutIsValid)} onClick={continueStep}>{step === 0 && needsCustomModel && !brandModel ? "Upload a 3D model to continue" : step === 3 && !layoutIsValid ? "Analysing model surfaces…" : "Continue"}</button></div>}
           </section>
 
           <aside className={styles.previewColumn} aria-label={`${objectName} auction preview`}>
             {isAnything ? (
-              brandModelPreview ? (
-                <ModelStage
-                  sourceUrl={brandModelPreview.sourceUrl}
-                  format={brandModelPreview.format}
-                  label={`${objectName} interactive 3D auction preview`}
-                  className={styles.presetModelStage}
-                  spots={previewSpots.map((spot) => ({
-                    id: spot.id,
-                    ...(spot.position ? { position: spot.position, normal: spot.normal } : {}),
-                  }))}
-                  placementProfile={placementProfile}
-                  editing={step === 3}
-                  selectedSpotId={step === 3 ? selectedSurfaceSpotId : undefined}
-                  onSelectSpot={step === 3 ? (spotId) => {
-                    setSelectedSurfaceSpotId(spotId);
-                    setPlacementMessage(`Spot ${spotId} selected. Click its new side surface in the preview.`);
-                  } : undefined}
-                  onModelAnalysis={handleModelAnalysis}
-                  onPlaceSpot={placeSurfaceSpot}
-                  onPlacementError={setPlacementMessage}
-                />
+              previewModel ? (
+                <div className={styles.presetPreview}>
+                  <ModelStage
+                    sourceUrl={previewModel.sourceUrl}
+                    format={previewModel.format}
+                    label={`${objectName} interactive 3D auction preview`}
+                    className={styles.presetModelStage}
+                    spots={previewSpots.map((spot) => ({
+                      id: spot.id,
+                      ...(spot.position ? { position: spot.position, normal: spot.normal } : {}),
+                    }))}
+                    placementProfile={placementProfile}
+                    editing={step === 3}
+                    selectedSpotId={step === 3 ? selectedSurfaceSpotId : undefined}
+                    onSelectSpot={step === 3 ? (spotId) => {
+                      setSelectedSurfaceSpotId(spotId);
+                      setPlacementMessage(`Spot ${spotId} selected. Click its new side surface in the preview.`);
+                    } : undefined}
+                    onModelAnalysis={handleModelAnalysis}
+                    onPlaceSpot={placeSurfaceSpot}
+                    onPlacementError={setPlacementMessage}
+                  />
+                  {usingPresetModel && selectedPreset && (
+                    <p className={styles.presetAttribution}>
+                      Model by <a href={selectedPreset.sourceUrl} target="_blank" rel="noreferrer">{selectedPreset.author}</a>
+                      {" · "}<a href={selectedPreset.licenseUrl} target="_blank" rel="noreferrer">{selectedPreset.licenseName}</a>
+                      {(selectedPreset.id === "flybridge-yacht" || selectedPreset.id === "private-jet") && (
+                        <span>Representative preview — not an official manufacturer digital twin.</span>
+                      )}
+                    </p>
+                  )}
+                </div>
               ) : (
                 <div className={styles.anythingMiniStage}>
                   <span className={styles.miniOrbit} aria-hidden="true" />
