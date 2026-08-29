@@ -1,6 +1,6 @@
 # Brand Anything
 
-An open-source Next.js 16 platform for auctioning brand placements, backed by Supabase Postgres, Auth, and private Storage. Visitors can use the included MacBook campaign or publish a laptop auction at `/sell` (`/create` remains an alias) without forking the repository.
+An open-source Next.js 16 platform for auctioning brand placements on almost anything, backed by Supabase Postgres, Auth, and private Storage. A creator can upload a ready-made GLB for a car, boat, aircraft, instrument, robot, or other object and publish its interactive 3D auction at `/sell` (`/create` remains an alias). The original Mac and PC lid flow remains available.
 
 <a href="https://www.buymeacoffee.com/tempes666" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/yellow_img.png" alt="Buy Me A Coffee"></a>
 
@@ -68,7 +68,7 @@ The migrations provision both isolated namespaces in one Supabase project:
 
 - `ba_prod_*` tables and database functions for the production deployment;
 - `ba_dev_*` tables and database functions for local and preview deployments;
-- private `ba_prod_*` and `ba_dev_*` Storage buckets for logos and laptop images;
+- private `ba_prod_*` and `ba_dev_*` Storage buckets for logos, laptop images, and Brand Anything GLB models;
 - initial auction spots, Row Level Security, grants, and atomic bidding functions.
 
 Do not create these tables or buckets manually, and do not run `supabase db reset --linked` against production; a linked reset erases the remote database. Future schema updates are deployed by running `npx supabase db push` again. Supabase records applied migrations and skips them on later pushes. See the official [migration deployment workflow](https://supabase.com/docs/guides/local-development/cli-workflows) for details.
@@ -106,6 +106,8 @@ In **Project Settings > Environment Variables**, configure:
 | `SUPABASE_DATABASE_PREFIX` | `ba_prod` | Production only |
 | `SUPABASE_DATABASE_PREFIX` | `ba_dev` | Preview and Development only |
 
+Optionally add a high-entropy `MODEL_UPLOAD_SIGNING_SECRET` to every environment. It signs the metadata claim that binds a model upload to its file name, size, and private Storage path. When omitted, the app derives the signature from the configured Supabase server secret. The accompanying Storage upload URL is short-lived.
+
 Add `SUPABASE_DATABASE_PREFIX` twice with the environment scopes shown above. This keeps preview bids and test campaigns out of the production tables. The variable is optional on Vercel because the application falls back to `ba_prod` when `VERCEL_ENV=production` and `ba_dev` otherwise, but setting it explicitly makes the isolation visible in the project configuration.
 
 Treat `SUPABASE_SECRET_KEY` as a sensitive value if the Vercel UI offers that option. Environment-variable changes only affect new deployments, so redeploy the project after adding, editing, or rotating any value. See [Vercel's environment-variable guide](https://vercel.com/docs/environment-variables/managing-environment-variables) for the current dashboard flow.
@@ -114,8 +116,8 @@ Treat `SUPABASE_SECRET_KEY` as a sensitive value if the Vercel UI offers that op
 
 1. Select **Deploy**. Vercel should detect Next.js and run `npm run build`.
 2. Open the generated URL and confirm that the homepage loads without a Supabase configuration error.
-3. Open `/sell`, complete the wizard, sign in with X, publish a test campaign, and place a test bid. Use a Preview deployment for testing so the records go to the `ba_dev_*` namespace.
-4. In Supabase, use **Table Editor** to confirm the new record and **Storage** to confirm uploaded images are in the matching private bucket.
+3. Open `/sell`, choose **Anything else**, upload a self-contained `.glb`, complete the wizard, sign in with X, publish a test campaign, and place a test bid. Use a Preview deployment for testing so the records go to the `ba_dev_*` namespace.
+4. In Supabase, use **Table Editor** to confirm the campaign asset record and **Storage** to confirm the model is in the matching private bucket. Open the public auction and verify that orbit, zoom, and all numbered placement controls work.
 5. When ready, merge or push to the Vercel Production Branch, normally `main`. Vercel will create the Production deployment using `ba_prod`.
 
 For failures, first check the Vercel deployment and Function logs, confirm all variables are assigned to the correct environment, and verify that `npx supabase db push` completed successfully. Never print the Secret key into logs while troubleshooting.
@@ -138,15 +140,32 @@ The homepage, campaign creator, and published laptop pages support English, Simp
 
 USD is the default and the canonical auction currency. The database and Route Handlers continue to read and write integer USD cents; EUR and RMB (ISO currency code `CNY`) are display and input conversions only. Creation and bid forms convert the visitor's selected currency back to USD cents before submission. The fixed indicative rates live in `lib/money.ts` and should be updated or replaced with a live rate provider if a deployment needs financial-grade conversion.
 
-## Multi-tenant laptop flow
+## Brand Anything 3D workflow
 
-`POST /api/laptops` validates the multipart creation form, stores an optional laptop photo privately, and creates the campaign plus all ten spots in one database transaction. Each campaign is published at `/<slug>` and exposes only public fields; the former `/laptop/<slug>` route remains compatible.
+Brand Anything deliberately does not run expensive image-to-3D inference in production. The photo option is a local handoff: the browser previews the reference and generates a complete prompt, but never uploads the photo to this application. The creator installs the open-source [`img2threejs`](https://github.com/img2threejs/img2threejs) skill in the coding agent they already use:
 
-Every environment adds three compact tables:
+```bash
+# Codex
+git clone https://github.com/img2threejs/img2threejs.git ~/.codex/skills/img2threejs
+
+# Claude Code
+git clone https://github.com/img2threejs/img2threejs.git ~/.claude/skills/img2threejs
+```
+
+The generated prompt asks the agent to reconstruct and browser-verify the object using the skill's quality gates, keep its procedural Three.js source and evidence, and export a self-contained `brand-anything.glb`. The returned GLB must contain its textures, load in a WebGL viewer, and be smaller than 25 MB. A creator who already has a model skips this handoff and uploads the GLB directly.
+
+The browser requests a signed upload ticket, uploads the model straight to a private Supabase bucket, previews it with Three.js, and sends the signed model claim with the campaign form. The server re-verifies the claim and the stored object's size and content type before attaching it to a campaign. Public model access uses short-lived signed URLs.
+
+## Multi-tenant campaign flow
+
+`POST /api/laptops` validates the multipart creation form, stores an optional laptop photo privately, and creates the campaign plus all ten spots in one database transaction. Brand Anything campaigns attach the already-uploaded model metadata immediately afterward using the same idempotency key. Each campaign is published at `/<slug>` and exposes only public fields; the former `/laptop/<slug>` route remains compatible.
+
+Every environment adds four compact tables:
 
 - `ba_<env>_laptops` stores the campaign, owner contact, deadline, pricing policy, and private photo path.
 - `ba_<env>_laptop_spots` stores the ten positions and their current winning state.
 - `ba_<env>_laptop_bids` is the append-only bid ledger.
+- `ba_<env>_campaign_assets` records whether a campaign is a laptop or arbitrary object and, for arbitrary objects, its private GLB path and display metadata.
 
 The owner email, bidder emails, and Storage paths are never returned by the public API. Public images use short-lived signed URLs. `anon` and `authenticated` have no direct access to the tables, buckets, or write functions.
 
@@ -154,6 +173,7 @@ Creation goes through `ba_<env>_create_laptop(...)`. It uses advisory locks for 
 
 The browser only calls Next.js Route Handlers:
 
+- `POST /api/models/upload-ticket` validates a GLB request and returns a one-use signed upload URL plus a signed metadata claim.
 - `POST /api/laptops` publishes a campaign.
 - `GET /api/laptops/<slug>` returns its public snapshot.
 - `POST /api/laptops/<slug>/bids` places a concurrency-safe bid and optionally stores a private logo.

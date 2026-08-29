@@ -1,11 +1,16 @@
 import "server-only";
 
+import { isGlbFileName } from "@/lib/brand-model";
+import type { CampaignAssetType } from "@/lib/brand-model";
+import { isModelSizeAllowed } from "@/lib/model-upload-claim";
+
 export const MAX_LAPTOP_PHOTO_BYTES = 5 * 1024 * 1024;
 
 const ACCEPTED_PHOTO_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,46}[a-z0-9])$/;
+const MODEL_PATH_PATTERN = /^[a-f0-9]{16}\/[a-f0-9-]{36}-[a-zA-Z0-9_-]+\.glb$/;
 
 export class LaptopValidationError extends Error {
   constructor(message: string) {
@@ -22,6 +27,12 @@ export type ParsedLaptopForm = {
   tagline: string;
   story: string;
   laptopModel: string;
+  assetType: CampaignAssetType;
+  assetName: string;
+  modelStoragePath: string | null;
+  modelUploadClaim: string | null;
+  modelFileName: string | null;
+  modelFileSize: number | null;
   goalCents: number;
   auctionClosesAt: string;
   smallOpeningBidCents: number;
@@ -52,6 +63,15 @@ function cents(formData: FormData, key: string, minimum: number, maximum: number
   return value;
 }
 
+function optionalText(formData: FormData, key: string, maxLength: number) {
+  const value = formData.get(key);
+  if (value === null || value === "") return null;
+  if (typeof value !== "string" || value.trim().length > maxLength) {
+    throw new LaptopValidationError(`${key} is not valid.`);
+  }
+  return value.trim();
+}
+
 export function parseLaptopForm(formData: FormData): ParsedLaptopForm {
   const slug = requiredText(formData, "slug", 3, 48).toLowerCase();
   const ownerName = requiredText(formData, "ownerName", 2, 80);
@@ -60,6 +80,17 @@ export function parseLaptopForm(formData: FormData): ParsedLaptopForm {
   const tagline = requiredText(formData, "tagline", 3, 160);
   const story = requiredText(formData, "story", 20, 1200);
   const laptopModel = requiredText(formData, "laptopModel", 2, 100);
+  const assetTypeValue = requiredText(formData, "assetType", 3, 20);
+  const assetType: CampaignAssetType = assetTypeValue === "anything" ? "anything" : "laptop";
+  if (assetTypeValue !== assetType) {
+    throw new LaptopValidationError("Choose a supported auction object type.");
+  }
+  const assetName = requiredText(formData, "assetName", 2, 80);
+  const modelStoragePath = optionalText(formData, "modelStoragePath", 320);
+  const modelUploadClaim = optionalText(formData, "modelUploadClaim", 64);
+  const modelFileName = optionalText(formData, "modelFileName", 180);
+  const modelFileSizeText = optionalText(formData, "modelFileSize", 12);
+  const modelFileSize = modelFileSizeText === null ? null : Number(modelFileSizeText);
   const idempotencyKey = requiredText(formData, "idempotencyKey", 36, 36).toLowerCase();
   const goalCents = cents(formData, "goalCents", 10_000, 100_000_000);
   const smallOpeningBidCents = cents(formData, "smallOpeningBidCents", 1_000, 10_000_000);
@@ -76,6 +107,14 @@ export function parseLaptopForm(formData: FormData): ParsedLaptopForm {
   }
   if (!EMAIL_PATTERN.test(ownerEmail)) {
     throw new LaptopValidationError("Owner email needs a valid address, for example you@company.com.");
+  }
+  if (assetType === "anything") {
+    if (!modelStoragePath || !MODEL_PATH_PATTERN.test(modelStoragePath)
+      || !modelUploadClaim || !/^[a-f0-9]{64}$/i.test(modelUploadClaim)
+      || !modelFileName || !isGlbFileName(modelFileName)
+      || modelFileSize === null || !isModelSizeAllowed(modelFileSize)) {
+      throw new LaptopValidationError("Upload a valid self-contained GLB before publishing this auction.");
+    }
   }
   if (!UUID_PATTERN.test(idempotencyKey)) {
     throw new LaptopValidationError("The creation request is missing a valid idempotency key.");
@@ -103,6 +142,12 @@ export function parseLaptopForm(formData: FormData): ParsedLaptopForm {
     tagline,
     story,
     laptopModel,
+    assetType,
+    assetName,
+    modelStoragePath: assetType === "anything" ? modelStoragePath : null,
+    modelUploadClaim: assetType === "anything" ? modelUploadClaim : null,
+    modelFileName: assetType === "anything" ? modelFileName : null,
+    modelFileSize: assetType === "anything" ? modelFileSize : null,
     goalCents,
     auctionClosesAt: auctionClosesAtDate.toISOString(),
     smallOpeningBidCents,

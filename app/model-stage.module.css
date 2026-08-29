@@ -1,0 +1,161 @@
+.stage {
+  position: relative;
+  min-height: 26rem;
+  overflow: hidden;
+  border-radius: 1.75rem;
+  background:
+    radial-gradient(circle at 24% 18%, oklch(88% 0.08 76 / 0.78), transparent 28%),
+    radial-gradient(circle at 78% 70%, oklch(74% 0.08 255 / 0.36), transparent 34%),
+    linear-gradient(145deg, oklch(28% 0.025 250), oklch(18% 0.02 250));
+  isolation: isolate;
+}
+
+.stage::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(oklch(96% 0.01 80 / 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(96% 0.01 80 / 0.055) 1px, transparent 1px);
+  background-size: 2.5rem 2.5rem;
+  content: "";
+  mask-image: linear-gradient(to bottom, black, transparent 84%);
+}
+
+.canvas {
+  position: absolute;
+  inset: 0;
+  cursor: grab;
+  touch-action: none;
+}
+
+.canvas:active {
+  cursor: grabbing;
+}
+
+.canvas canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.status,
+.error {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  color: oklch(92% 0.01 80);
+  font-size: 0.8rem;
+  transform: translate(-50%, -50%);
+}
+
+.status {
+  gap: 0.65rem;
+}
+
+.status span {
+  width: 0.65rem;
+  height: 0.65rem;
+  border: 2px solid oklch(88% 0.08 76 / 0.28);
+  border-top-color: oklch(88% 0.12 76);
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+
+.error {
+  width: min(80%, 22rem);
+  flex-direction: column;
+  gap: 0.45rem;
+  text-align: center;
+}
+
+.error strong {
+  font-size: 1rem;
+}
+
+.error span {
+  color: oklch(78% 0.02 250);
+}
+
+.orbitHint {
+  position: absolute;
+  right: 1rem;
+  bottom: 1rem;
+  border: 1px solid oklch(94% 0.015 80 / 0.18);
+  border-radius: 999px;
+  background: oklch(18% 0.02 250 / 0.82);
+  color: oklch(91% 0.012 80);
+  font-size: 0.68rem;
+  letter-spacing: 0.02em;
+  padding: 0.45rem 0.7rem;
+  pointer-events: none;
+}
+
+.marker {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  width: 2.35rem;
+  height: 2.35rem;
+  place-items: center;
+  border: 1px solid oklch(100% 0 0 / 0.48);
+  border-radius: 50%;
+  background: oklch(96% 0.01 80);
+  box-shadow: 0 0.4rem 1.1rem oklch(10% 0.02 250 / 0.35);
+  color: oklch(19% 0.02 250);
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+  transform: translate(-50%, -50%);
+  transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1), background 160ms ease-out, color 160ms ease-out;
+}
+
+.marker::after {
+  position: absolute;
+  inset: -0.35rem;
+  border: 1px solid oklch(96% 0.01 80 / 0.2);
+  border-radius: inherit;
+  content: "";
+}
+
+.claimed {
+  background: oklch(72% 0.15 65);
+}
+
+.selected {
+  background: oklch(67% 0.2 36);
+  color: oklch(98% 0.01 80);
+  transform: translate(-50%, -50%) scale(1.18);
+}
+
+@media (hover: hover) {
+  .marker:hover {
+    transform: translate(-50%, -50%) scale(1.12);
+  }
+
+  .selected:hover {
+    transform: translate(-50%, -50%) scale(1.22);
+  }
+}
+
+@media (min-width: 48rem) {
+  .stage {
+    min-height: 34rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status span {
+    animation-duration: 1.8s;
+  }
+
+  .marker {
+    transition-duration: 0.01ms;
+  }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

@@ -1342,11 +1342,60 @@ p {
 .waitlist-card {
   width: min(100%, 43rem);
   margin: 0 auto;
+  overflow: hidden;
   padding: 1.5rem;
-  border: 1px solid var(--hairline);
+  border: 1px solid oklch(80% 0.04 65);
   border-radius: 1.2rem;
-  background: var(--surface-raised);
-  box-shadow: 0 1rem 3rem oklch(25% 0.01 255 / 0.05);
+  background:
+    radial-gradient(circle at 90% 8%, oklch(86% 0.1 70 / 0.46), transparent 31%),
+    var(--surface-raised);
+  box-shadow: 0 1rem 3rem oklch(25% 0.01 255 / 0.08);
+}
+
+.anything-wordrail {
+  display: flex;
+  width: max-content;
+  margin: -1.5rem -1.5rem 2rem;
+  align-items: center;
+  gap: 0.85rem;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: clamp(1.05rem, 4vw, 1.75rem);
+  font-weight: 760;
+  letter-spacing: -0.035em;
+  padding: 0.78rem 1.5rem;
+}
+
+.anything-wordrail i {
+  color: oklch(74% 0.18 65);
+  font-size: 0.8em;
+  font-style: normal;
+}
+
+.anything-path {
+  display: grid;
+  margin: 1.5rem 0;
+  border-block: 1px solid var(--hairline);
+}
+
+.anything-path span {
+  display: flex;
+  min-height: 3.3rem;
+  align-items: center;
+  gap: 0.8rem;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--ink-2);
+  font-size: 0.82rem;
+}
+
+.anything-path span:last-child {
+  border-bottom: 0;
+}
+
+.anything-path b {
+  color: var(--ink);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .waitlist-card > p:not(.eyebrow) {
@@ -2042,6 +2091,26 @@ p {
 
   .waitlist-card {
     padding: 2.2rem;
+  }
+
+  .anything-wordrail {
+    margin: -2.2rem -2.2rem 2.4rem;
+    padding-inline: 2.2rem;
+  }
+
+  .anything-path {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .anything-path span {
+    border-right: 1px solid var(--hairline);
+    border-bottom: 0;
+    padding-right: 0.7rem;
+  }
+
+  .anything-path span:last-child {
+    border-right: 0;
+    padding-left: 0.7rem;
   }
 
   .traffic-section {

@@ -45,3 +45,11 @@ export function getPlaceLaptopBidFunction() {
 export function getLaptopMediaBucket() {
   return `${getDatabasePrefix()}_laptop_media`;
 }
+
+export function getBrandModelBucket() {
+  return `${getDatabasePrefix()}_brand_models`;
+}
+
+export function getCampaignAssetTable() {
+  return `${getDatabasePrefix()}_campaign_assets`;
+}

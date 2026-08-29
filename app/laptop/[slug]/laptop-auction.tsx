@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useI18n } from "@/app/i18n-provider";
+import { ModelStage } from "@/app/model-stage";
 import { PreferenceControls } from "@/app/preference-controls";
 import type { Spot } from "@/lib/auction";
 import { formatRelativeTime, SPOT_NAME_KEYS } from "@/lib/i18n";
@@ -83,10 +84,12 @@ function LaptopLid({ spots, onSelect }: { spots: Spot[]; onSelect: (spot: Spot) 
 function BidPanel({
   slug,
   spot,
+  isAnything,
   onSnapshot,
 }: {
   slug: string;
   spot: Spot;
+  isAnything: boolean;
   onSnapshot: (snapshot: LaptopSnapshot) => void;
 }) {
   const { currency, locale, t } = useI18n();
@@ -148,7 +151,7 @@ function BidPanel({
     <form className={styles.bidForm} onSubmit={handleSubmit}>
       <div className={styles.bidHeading}>
         <p>{t("common.spot")} {spot.id} · {spot.size}</p>
-        <h3>{SPOT_NAME_KEYS[spot.id] ? t(SPOT_NAME_KEYS[spot.id]!) : spot.name}</h3>
+        <h3>{isAnything ? spot.name : SPOT_NAME_KEYS[spot.id] ? t(SPOT_NAME_KEYS[spot.id]!) : spot.name}</h3>
         <span>{spot.bids > 0 ? t("laptop.leadingLine", { holder: spot.holder, amount: money(spot.bid) }) : `${t("common.openingBid")} ${money(spot.minBid)}`}</span>
       </div>
       <label>{t("laptop.yourBid", { currency: currencyDisplayName(currency) })}<input type="number" min={minimumDisplayAmount(spot.minBid, currency)} step="1" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>
@@ -167,7 +170,7 @@ function BidPanel({
       </label>
       {errorMessage && <p className={styles.bidError} role="alert">{errorMessage}</p>}
       <button type="submit" disabled={submitting}>{submitting ? t("home.savingBid") : spot.bids > 0 ? `${t("common.outbid")} ${spot.holder} →` : `${t("common.placeFirstBid")} →`}</button>
-      <small>{t("laptop.bidFinal")}</small>
+      <small>{t(isAnything ? "laptop.bidFinalCampaign" : "laptop.bidFinal")}</small>
     </form>
   );
 }
@@ -186,12 +189,22 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
   );
   const filled = useMemo(() => snapshot.spots.filter((spot) => spot.bids > 0).length, [snapshot.spots]);
   const progress = Math.min(100, Math.round((totalRaised / snapshot.campaign.goal) * 100));
+  const isAnything = snapshot.campaign.assetType === "anything";
 
   const refresh = useCallback(async () => {
     try {
       const response = await fetch(`/api/laptops/${encodeURIComponent(snapshot.campaign.slug)}`, { cache: "no-store" });
       if (!response.ok) throw new Error();
-      setSnapshot(await response.json() as LaptopSnapshot);
+      const nextSnapshot = await response.json() as LaptopSnapshot;
+      setSnapshot((current) => ({
+        ...nextSnapshot,
+        campaign: {
+          ...nextSnapshot.campaign,
+          ...(current.campaign.modelFileName === nextSnapshot.campaign.modelFileName && current.campaign.modelUrl
+            ? { modelUrl: current.campaign.modelUrl }
+            : {}),
+        },
+      }));
       setBackendStatus("live");
     } catch {
       setBackendStatus("offline");
@@ -210,13 +223,13 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
         <span className={backendStatus === "live" ? styles.live : styles.offline}>{backendStatus === "live" ? t("common.liveAuction") : t("laptop.reconnecting")}</span>
         <div className={styles.navActions}>
           <PreferenceControls />
-          <Link href="/create" className={styles.createLink}>{t("common.listLaptopArrow")}</Link>
+          <Link href="/sell" className={styles.createLink}>{t("common.listLaptopArrow")}</Link>
         </div>
       </nav>
 
       <header className={styles.hero}>
         <div className={styles.heroCopy}>
-          <p className={styles.ownerLine}>{t("laptop.byOwner", { owner: snapshot.campaign.ownerName })}</p>
+          <p className={styles.ownerLine}>{t(isAnything ? "laptop.byCampaignOwner" : "laptop.byOwner", { owner: snapshot.campaign.ownerName })}</p>
           <h1>{snapshot.campaign.title}</h1>
           <p>{snapshot.campaign.tagline}</p>
           <div className={styles.heroStats}>
@@ -226,8 +239,19 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
           </div>
         </div>
         <div className={styles.lidWrap}>
-          <LaptopLid spots={snapshot.spots} onSelect={(spot) => setSelectedSpotId(spot.id)} />
-          <p>{t("laptop.tap", { model: snapshot.campaign.laptopModel })}</p>
+          {isAnything && snapshot.campaign.modelUrl ? (
+            <ModelStage
+              sourceUrl={snapshot.campaign.modelUrl}
+              label={t("laptop.modelAria", { object: snapshot.campaign.assetName })}
+              spots={snapshot.spots}
+              selectedSpotId={selectedSpotId}
+              onSelectSpot={setSelectedSpotId}
+              className={styles.modelHeroStage}
+            />
+          ) : (
+            <LaptopLid spots={snapshot.spots} onSelect={(spot) => setSelectedSpotId(spot.id)} />
+          )}
+          <p>{isAnything ? t("laptop.orbitObject", { object: snapshot.campaign.assetName }) : t("laptop.tap", { model: snapshot.campaign.laptopModel })}</p>
         </div>
       </header>
 
@@ -238,8 +262,8 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
 
       <section className={styles.auctionSection} id="auction">
         <div className={styles.auctionIntro}>
-          <p>{t("laptop.tenPlacements")}</p>
-          <h2>{t("laptop.chooseWhere")}</h2>
+          <p>{t(isAnything ? "laptop.anythingPlacements" : "laptop.tenPlacements")}</p>
+          <h2>{t(isAnything ? "laptop.chooseOnObject" : "laptop.chooseWhere")}</h2>
         </div>
         <div className={styles.auctionGrid}>
           <div className={styles.spotList}>
@@ -250,7 +274,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
                 onClick={() => setSelectedSpotId(spot.id)}
               >
                 <span>{String(spot.id).padStart(2, "0")}</span>
-                <p><b>{SPOT_NAME_KEYS[spot.id] ? t(SPOT_NAME_KEYS[spot.id]!) : spot.name}</b><small>{spot.size} · {spot.dimensions}</small></p>
+                <p><b>{isAnything ? spot.name : SPOT_NAME_KEYS[spot.id] ? t(SPOT_NAME_KEYS[spot.id]!) : spot.name}</b><small>{spot.size} · {spot.dimensions}</small></p>
                 <strong>{money(spot.bids > 0 ? spot.bid : spot.minBid)}<small>{spot.bids > 0 ? `${spot.bids} ${t("common.bids")}` : t("laptop.opening")}</small></strong>
               </button>
             ))}
@@ -261,6 +285,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
                 key={`${selectedSpot.id}-${currency}`}
                 slug={snapshot.campaign.slug}
                 spot={selectedSpot}
+                isAnything={isAnything}
                 onSnapshot={setSnapshot}
               />
             )}
@@ -270,10 +295,10 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
 
       <section className={styles.storySection}>
         <div>
-          <p>{t("laptop.why")}</p>
+          <p>{t(isAnything ? "laptop.whyObject" : "laptop.why")}</p>
           <h2>{snapshot.campaign.story}</h2>
           <dl>
-            <div><dt>{t("laptop.machine")}</dt><dd>{snapshot.campaign.laptopModel}</dd></div>
+            <div><dt>{t(isAnything ? "laptop.object" : "laptop.machine")}</dt><dd>{snapshot.campaign.assetName}</dd></div>
             <div><dt>{t("laptop.owner")}</dt><dd>{snapshot.campaign.ownerName}</dd></div>
             <div><dt>{t("laptop.closes")}</dt><dd suppressHydrationWarning>{formatDate(snapshot.campaign.closesAt)}</dd></div>
           </dl>
@@ -282,7 +307,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
           {snapshot.campaign.photoUrl ? (
             <img src={snapshot.campaign.photoUrl} alt={t("laptop.photoAlt", { owner: snapshot.campaign.ownerName, model: snapshot.campaign.laptopModel })} />
           ) : (
-            <div><span></span><p>{snapshot.campaign.laptopModel}</p></div>
+            <div><span>{isAnything ? "✣" : ""}</span><p>{snapshot.campaign.assetName}</p></div>
           )}
         </div>
       </section>
@@ -304,8 +329,8 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
       </section>
 
       <footer className={styles.footer}>
-        <p>{t("laptop.wantPage")}</p>
-        <Link href="/create">{t("common.listLaptopArrow")}</Link>
+        <p>{t(isAnything ? "laptop.anythingFooter" : "laptop.wantPage")}</p>
+        <Link href="/sell">{t("common.listLaptopArrow")}</Link>
       </footer>
     </main>
   );

@@ -627,9 +627,17 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
 
         <section className="waitlist-section" id="waitlist">
           <div className="waitlist-card">
+            <div className="anything-wordrail" aria-hidden="true">
+              <span>CAR</span><i>✣</i><span>BOAT</span><i>✣</i><span>AIRCRAFT</span><i>✣</i><span>ANYTHING</span>
+            </div>
             <p className="eyebrow">{t("home.yourMachineMinutes")}</p>
             <h2>{t("home.listOwnTitle")}</h2>
             <p>{t("home.listOwnBody")}</p>
+            <div className="anything-path" aria-label="Brand Anything creation flow">
+              <span><b>01</b> Photo or GLB</span>
+              <span><b>02</b> Agent-built model</span>
+              <span><b>03</b> Live auction</span>
+            </div>
             <a className="dark-button" href={CREATE_URL}>{t("home.createLaptop")}</a>
             <small>{t("home.selfHost")}</small>
           </div>
