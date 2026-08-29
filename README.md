@@ -2,7 +2,7 @@
 
 An open-source Next.js 16 platform for auctioning brand placements, backed by Supabase Postgres and private Storage. Visitors can use the included MacBook campaign or publish an isolated 10-spot laptop auction at `/create` without forking the repository.
 
-[Buy me a coffee ☕](https://buymeacoffee.com/tempes666)
+<a href="https://www.buymeacoffee.com/tempes666" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/yellow_img.png" alt="Buy Me A Coffee"></a>
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/clone?repository-url=https%3A%2F%2Fgithub.com%2Ftempest2023%2FBrandYourAnything&env=SUPABASE_URL%2CSUPABASE_SECRET_KEY&envDescription=Enter%20the%20Project%20URL%20and%20server-only%20Secret%20key%20from%20your%20Supabase%20project.%20Apply%20the%20database%20migrations%20before%20using%20the%20app.&envLink=https%3A%2F%2Fgithub.com%2Ftempest2023%2FBrandYourAnything%2Fblob%2Fmain%2FREADME.md%23production-deployment&project-name=brand-anything&repository-name=brand-anything)
 
@@ -108,11 +108,17 @@ The repository intentionally starts before the first bid:
 
 - all ten spots are available and no sponsor logos are prefilled;
 - bid history and amount raised both start at zero;
-- bids are stored and settled in US dollars, with an optional indicative euro display;
+- bids are stored and settled in US dollars, with optional indicative EUR and RMB displays;
 - opening bids are $125 for Small, $200 for Medium, and $400 for Large spots;
 - Final Look preloads the device image and every active sponsor image, then reveals the composition as one complete view.
 
 The migration `20260828225000_reset_auction_to_empty_usd_state.sql` removes the original sold-out demo bids from databases that applied an earlier version of the initial migration. Review that reset before applying migrations to any environment containing data you intend to keep.
+
+## Languages and currencies
+
+The homepage, campaign creator, and published laptop pages support English, Simplified Chinese, and Spanish. Language and display-currency choices are stored as first-party preference cookies and follow the visitor between routes.
+
+USD is the default and the canonical auction currency. The database and Route Handlers continue to read and write integer USD cents; EUR and RMB (ISO currency code `CNY`) are display and input conversions only. Creation and bid forms convert the visitor's selected currency back to USD cents before submission. The fixed indicative rates live in `lib/money.ts` and should be updated or replaced with a live rate provider if a deployment needs financial-grade conversion.
 
 ## Multi-tenant laptop flow
 
