@@ -379,7 +379,7 @@ export default function Home() {
       <nav className="site-nav">
         <div className="nav-inner">
           <a className="wordmark" href="#top" aria-label="Brand Anything home">
-            <Image src="/logo-small.png" alt="" width={41} height={27} preload />
+            <Image src="/logo-small.png" alt="" width={41} height={41} preload />
             <span>Brand Anything</span>
           </a>
           <div className="nav-links">
