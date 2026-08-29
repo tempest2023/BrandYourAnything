@@ -1,10 +1,10 @@
 # Brand Anything
 
-An open-source Next.js 16 platform for auctioning brand placements, backed by Supabase Postgres and private Storage. Visitors can use the included MacBook campaign or publish an isolated 10-spot laptop auction at `/create` without forking the repository.
+An open-source Next.js 16 platform for auctioning brand placements, backed by Supabase Postgres, Auth, and private Storage. Visitors can use the included MacBook campaign or publish a laptop auction at `/sell` (`/create` remains an alias) without forking the repository.
 
 <a href="https://www.buymeacoffee.com/tempes666" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/yellow_img.png" alt="Buy Me A Coffee"></a>
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/clone?repository-url=https%3A%2F%2Fgithub.com%2Ftempest2023%2FBrandYourAnything&env=SUPABASE_URL%2CSUPABASE_SECRET_KEY&envDescription=Enter%20the%20Project%20URL%20and%20server-only%20Secret%20key%20from%20your%20Supabase%20project.%20Apply%20the%20database%20migrations%20before%20using%20the%20app.&envLink=https%3A%2F%2Fgithub.com%2Ftempest2023%2FBrandYourAnything%2Fblob%2Fmain%2FREADME.md%23production-deployment&project-name=brand-anything&repository-name=brand-anything)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/clone?repository-url=https%3A%2F%2Fgithub.com%2Ftempest2023%2FBrandYourAnything&env=SUPABASE_URL%2CSUPABASE_SECRET_KEY%2CNEXT_PUBLIC_SUPABASE_URL%2CNEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY&envDescription=Enter%20the%20Supabase%20server%20and%20browser%20credentials.%20Apply%20the%20database%20migrations%20and%20configure%20X%20OAuth%202.0%20before%20using%20the%20app.&envLink=https%3A%2F%2Fgithub.com%2Ftempest2023%2FBrandYourAnything%2Fblob%2Fmain%2FREADME.md%23production-deployment&project-name=brand-anything&repository-name=brand-anything)
 
 ## Production deployment
 
@@ -27,8 +27,10 @@ Open the project's **Connect** dialog or go to **Project Settings > API Keys**. 
 | --- | --- | --- |
 | `SUPABASE_URL` | Project URL | `https://your-project-ref.supabase.co` |
 | `SUPABASE_SECRET_KEY` | A server-side Secret key | `sb_secret_...` |
+| `NEXT_PUBLIC_SUPABASE_URL` | Project URL | `https://your-project-ref.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | A browser-safe Publishable key | `sb_publishable_...` |
 
-Use a Secret key, not a Publishable key. Secret keys have elevated access and bypass Row Level Security, so never commit one, expose it to browser code, or prefix its variable with `NEXT_PUBLIC_`. If a legacy project has only a `service_role` key, set it as `SUPABASE_SERVICE_ROLE_KEY` instead; the application supports that fallback.
+The Publishable key is intended for browser Auth. The Secret key has elevated access and bypasses Row Level Security, so never commit it, expose it to browser code, or prefix it with `NEXT_PUBLIC_`. If a legacy project has only a `service_role` and `anon` key, set them as `SUPABASE_SERVICE_ROLE_KEY` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`; the application supports both fallbacks.
 
 Also copy the project reference. It is the `<project-ref>` segment in the dashboard URL:
 
@@ -70,7 +72,19 @@ The migrations provision both isolated namespaces in one Supabase project:
 
 Do not create these tables or buckets manually, and do not run `supabase db reset --linked` against production; a linked reset erases the remote database. Future schema updates are deployed by running `npx supabase db push` again. Supabase records applied migrations and skips them on later pushes. See the official [migration deployment workflow](https://supabase.com/docs/guides/local-development/cli-workflows) for details.
 
-### 4. Create and configure the Vercel project
+### 4. Configure X sign in
+
+Publishing is protected by Supabase Auth and accepts only the X / Twitter OAuth 2.0 provider. A browser session alone is not trusted: `POST /api/laptops` sends the access token back to Supabase, verifies the user, and derives the public owner identity on the server.
+
+1. In the [X Developer Portal](https://developer.x.com/), create an OAuth 2.0 Web App and enable **Request email from users**.
+2. Add `https://<project-ref>.supabase.co/auth/v1/callback` as the X app callback URL. For a local Supabase stack, also add `http://localhost:54321/auth/v1/callback`.
+3. In **Supabase Dashboard > Authentication > Sign In / Providers**, enable **X / Twitter (OAuth 2.0)** and enter the X Client ID and Client Secret.
+4. In **Authentication > URL Configuration**, set the production Site URL and allow the production `/sell` URL plus every preview URL that should support sign in. The repository's local config already allows both `http://127.0.0.1:3000/sell` and `http://localhost:3000/sell`.
+5. Keep new-user signups enabled in Supabase Auth; a first X login creates the corresponding Supabase user.
+
+The app intentionally uses the OAuth 2.0 provider name `x`, not the legacy OAuth 1.0a provider name `twitter`.
+
+### 5. Create and configure the Vercel project
 
 Either click the **Deploy with Vercel** button above or import the repository manually from the [Vercel Dashboard](https://vercel.com/new):
 
@@ -85,6 +99,8 @@ In **Project Settings > Environment Variables**, configure:
 | --- | --- | --- |
 | `SUPABASE_URL` | The Supabase Project URL | Production, Preview, Development |
 | `SUPABASE_SECRET_KEY` | The Supabase `sb_secret_...` key | Production, Preview, Development |
+| `NEXT_PUBLIC_SUPABASE_URL` | The Supabase Project URL | Production, Preview, Development |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | The Supabase `sb_publishable_...` key | Production, Preview, Development |
 | `SUPABASE_DATABASE_PREFIX` | `ba_prod` | Production only |
 | `SUPABASE_DATABASE_PREFIX` | `ba_dev` | Preview and Development only |
 
@@ -92,11 +108,11 @@ Add `SUPABASE_DATABASE_PREFIX` twice with the environment scopes shown above. Th
 
 Treat `SUPABASE_SECRET_KEY` as a sensitive value if the Vercel UI offers that option. Environment-variable changes only affect new deployments, so redeploy the project after adding, editing, or rotating any value. See [Vercel's environment-variable guide](https://vercel.com/docs/environment-variables/managing-environment-variables) for the current dashboard flow.
 
-### 5. Deploy and verify
+### 6. Deploy and verify
 
 1. Select **Deploy**. Vercel should detect Next.js and run `npm run build`.
 2. Open the generated URL and confirm that the homepage loads without a Supabase configuration error.
-3. Open `/create`, publish a test campaign, and place a test bid. Use a Preview deployment for testing so the records go to the `ba_dev_*` namespace.
+3. Open `/sell`, complete the wizard, sign in with X, publish a test campaign, and place a test bid. Use a Preview deployment for testing so the records go to the `ba_dev_*` namespace.
 4. In Supabase, use **Table Editor** to confirm the new record and **Storage** to confirm uploaded images are in the matching private bucket.
 5. When ready, merge or push to the Vercel Production Branch, normally `main`. Vercel will create the Production deployment using `ba_prod`.
 
@@ -174,7 +190,11 @@ Create `.env.local` using the local output:
 SUPABASE_URL=http://127.0.0.1:54321
 SUPABASE_SECRET_KEY=<the local SECRET_KEY value>
 SUPABASE_DATABASE_PREFIX=ba_dev
+NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<the local PUBLISHABLE_KEY value>
 ```
+
+Local X OAuth additionally requires X credentials in the local Supabase Auth provider. Use `http://localhost:54321/auth/v1/callback` in the X app, uncomment the `auth.external.x` block in `supabase/config.toml`, and put `X_OAUTH_CLIENT_ID` plus `X_OAUTH_CLIENT_SECRET` in an uncommitted `.env` file. Restart the local Supabase stack after changing Auth config.
 
 Then start Next.js:
 
