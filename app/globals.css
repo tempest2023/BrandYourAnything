@@ -1439,6 +1439,14 @@ p {
   fill: currentColor;
 }
 
+.footer-support-icon .footer-support-coffee-icon {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
 .footer-support-badge {
   position: absolute;
   right: -0.32rem;

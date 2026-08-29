@@ -30,11 +30,23 @@ const SOURCE_URL = "https://github.com/tempest2023/BrandYourAnything";
 const CREATE_URL = "/create";
 const X_ACCOUNT_URL = "https://x.com/biIIIionaire";
 const X_PAYMENT_URL = "https://x.com/i/money/pay/biIIIionaire";
+const BUY_ME_A_COFFEE_URL = "https://www.buymeacoffee.com/tempes666";
 
 function XIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231L18.244 2.25Zm-1.161 17.52h1.833L7.084 4.126H5.117L17.083 19.77Z" />
+    </svg>
+  );
+}
+
+function CoffeeIcon() {
+  return (
+    <svg className="footer-support-coffee-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5 7h11v5.25A4.75 4.75 0 0 1 11.25 17H9.75A4.75 4.75 0 0 1 5 12.25V7Z" />
+      <path d="M16 9h1.25a2.75 2.75 0 0 1 0 5.5H15.7" />
+      <path d="M4 20h14" />
+      <path d="M8 4c0-1 1-1 1-2M12 4c0-1 1-1 1-2" />
     </svg>
   );
 }
@@ -575,6 +587,10 @@ export default function Home() {
               <a className="footer-support-link" href={X_ACCOUNT_URL} target="_blank" rel="noreferrer">
                 <span className="footer-support-icon"><XIcon /></span>
                 {t("home.footerFollowX")}
+              </a>
+              <a className="footer-support-link" href={BUY_ME_A_COFFEE_URL} target="_blank" rel="noreferrer">
+                <span className="footer-support-icon"><CoffeeIcon /></span>
+                {t("home.footerCoffee")}
               </a>
               <a className="footer-support-link" href={X_PAYMENT_URL} target="_blank" rel="noreferrer">
                 <span className="footer-support-icon footer-support-icon--payment">
