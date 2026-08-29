@@ -196,3 +196,13 @@ npm run test:laptop-platform
 ```
 
 The platform test verifies atomic campaign creation, ten-spot isolation, RLS, equal concurrent bids, simultaneous retries, and cross-tenant idempotency-key reuse. Run it once with `SUPABASE_DATABASE_PREFIX=ba_dev` and once with `ba_prod` when validating both namespaces.
+
+## Follow and support
+
+Follow [@biIIIionaire on X](https://x.com/biIIIionaire) for project updates and new experiments.
+
+If Brand Anything helped you launch something of your own, you can support its continued development with a tip through [X Payment](https://x.com/i/money/pay/biIIIionaire).
+
+You can also support the project through [Buy Me a Coffee](https://www.buymeacoffee.com/tempes666).
+
+<a href="https://www.buymeacoffee.com/tempes666" target="_blank" rel="noreferrer"><img src="https://www.buymeacoffee.com/assets/img/custom_images/yellow_img.png" alt="Buy Me A Coffee"></a>

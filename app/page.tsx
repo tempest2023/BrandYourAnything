@@ -28,6 +28,17 @@ type TableView = "spots" | "history";
 const CAMPAIGN_GOAL_USD = 3200;
 const SOURCE_URL = "https://github.com/tempest2023/BrandYourAnything";
 const CREATE_URL = "/create";
+const X_ACCOUNT_URL = "https://x.com/biIIIionaire";
+const X_PAYMENT_URL = "https://x.com/i/money/pay/biIIIionaire";
+const BUY_ME_A_COFFEE_URL = "https://www.buymeacoffee.com/tempes666";
+
+function XIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231L18.244 2.25Zm-1.161 17.52h1.833L7.084 4.126H5.117L17.083 19.77Z" />
+    </svg>
+  );
+}
 
 function useCountdown() {
   const { t } = useI18n();
@@ -560,6 +571,30 @@ export default function Home() {
           />
           <div>
             <p className="footer-title">{t("home.footerTitle")}</p>
+            <p className="footer-connect-copy">{t("home.footerFollow")}</p>
+            <div className="footer-support-links" aria-label={t("home.footerSupportLabel")}>
+              <a className="footer-support-link" href={X_ACCOUNT_URL} target="_blank" rel="noreferrer">
+                <span className="footer-support-icon"><XIcon /></span>
+                {t("home.footerFollowX")}
+              </a>
+              <a className="footer-coffee-link" href={BUY_ME_A_COFFEE_URL} target="_blank" rel="noreferrer">
+                <Image
+                  className="footer-coffee-image"
+                  src="/buy-me-a-coffee.png"
+                  alt={t("home.footerCoffee")}
+                  width={170}
+                  height={37}
+                  sizes="170px"
+                />
+              </a>
+              <a className="footer-support-link" href={X_PAYMENT_URL} target="_blank" rel="noreferrer">
+                <span className="footer-support-icon footer-support-icon--payment">
+                  <XIcon />
+                  <span className="footer-support-badge">$</span>
+                </span>
+                {t("home.footerTipX")}
+              </a>
+            </div>
             <p>{t("home.footerOpenSource")} <a href={SOURCE_URL} target="_blank" rel="noreferrer">Brand Anything ↗</a></p>
             <p>{t("home.footerContribute")} <a href={`${SOURCE_URL}/issues`} target="_blank" rel="noreferrer">GitHub ↗</a></p>
             <div className="footer-meta"><a href={CREATE_URL}>{t("common.listLaptop")}</a><a href={SOURCE_URL} target="_blank" rel="noreferrer">{t("home.sourceGithub")}</a></div>
