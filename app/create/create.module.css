@@ -206,6 +206,183 @@
   background: rgba(0, 113, 227, 0.04);
   box-shadow: 0 0 0 1px var(--blue);
 }
+.surfaceLayoutControls {
+  display: grid;
+  margin-top: 18px;
+  gap: 14px;
+}
+
+.surfaceRecommendation {
+  padding: 18px;
+  border: 1px solid oklch(87% 0.025 70);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 100% 0, oklch(91% 0.09 70 / 0.55), transparent 42%),
+    oklch(98% 0.012 70);
+}
+
+.surfaceRecommendation > span {
+  display: block;
+  margin-bottom: 7px;
+  color: oklch(48% 0.14 48);
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.surfaceRecommendation strong {
+  display: block;
+  font-size: 17px;
+  font-weight: 620;
+  letter-spacing: -0.025em;
+}
+
+.surfaceRecommendation p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.spotCountControl {
+  display: flex;
+  min-height: 64px;
+  padding: 10px 12px 10px 16px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.spotStepper {
+  display: grid;
+  grid-template-columns: 34px 52px 34px;
+  align-items: center;
+  border: 1px solid oklch(84% 0.025 255);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.spotStepper button,
+.spotStepper input {
+  height: 34px;
+  border: 0;
+  background: oklch(98% 0.006 255);
+  color: var(--ink);
+  font: inherit;
+  text-align: center;
+}
+
+.spotStepper button {
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: 400;
+}
+
+.spotStepper button:disabled {
+  cursor: default;
+  opacity: 0.3;
+}
+
+.spotStepper input {
+  width: 52px;
+  border-right: 1px solid oklch(88% 0.02 255);
+  border-left: 1px solid oklch(88% 0.02 255);
+  background: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  appearance: textfield;
+}
+
+.spotStepper input::-webkit-inner-spin-button,
+.spotStepper input::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+}
+
+.surfaceHint {
+  margin: -2px 2px 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.spotSelector {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.spotChip,
+.activeSpotChip {
+  display: grid;
+  min-width: 0;
+  min-height: 52px;
+  padding: 8px 5px;
+  place-items: center;
+  gap: 3px;
+  border: 1px solid var(--hairline);
+  border-radius: 11px;
+  background: #fff;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 9px;
+}
+
+.spotChip span,
+.activeSpotChip span {
+  color: var(--ink);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+}
+
+.activeSpotChip {
+  border-color: oklch(57% 0.19 42);
+  background: oklch(96% 0.045 65);
+  color: oklch(43% 0.14 42);
+  box-shadow: inset 0 0 0 1px oklch(57% 0.19 42);
+}
+
+.surfaceLayoutFooter {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.surfaceLayoutFooter p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.surfaceLayoutFooter button {
+  flex: none;
+  padding: 7px 11px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.surfaceLayoutFooter button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
 
 .fieldLabel {
   display: block;
@@ -1337,6 +1514,11 @@
   border-radius: 16px;
 }
 
+.presetModelStage {
+  min-height: 30rem;
+  border-radius: 1.75rem;
+}
+
 .modelDrop {
   position: relative;
   display: grid;
@@ -1995,6 +2177,19 @@
   .previewColumn {
     position: static;
     margin-top: 0;
+  }
+
+  .spotSelector {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .surfaceLayoutFooter {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .presetModelStage {
+    min-height: 26rem;
   }
 
   .twoCards,

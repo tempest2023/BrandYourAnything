@@ -93,6 +93,7 @@ export async function POST(request: Request) {
       mediumOpeningBidCents: input.mediumOpeningBidCents,
       largeOpeningBidCents: input.largeOpeningBidCents,
       minIncrementCents: input.minIncrementCents,
+      spotLayout: input.spotLayout,
       idempotencyKey: input.idempotencyKey,
     });
 

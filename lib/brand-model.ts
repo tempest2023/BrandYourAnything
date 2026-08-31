@@ -34,6 +34,11 @@ export type UploadedBrandModel = {
   format?: BrandModelFormat;
 };
 
+export type BrandModelPreview = {
+  sourceUrl: string;
+  format: BrandModelFormat;
+};
+
 export function isGlbFileName(fileName: string) {
   return fileName.trim().toLowerCase().endsWith(BRAND_MODEL_EXTENSION);
 }

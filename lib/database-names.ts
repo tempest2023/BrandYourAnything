@@ -38,6 +38,10 @@ export function getCreateLaptopFunction() {
   return `${getDatabasePrefix()}_create_laptop`;
 }
 
+export function getConfigureLaptopSpotsFunction() {
+  return `${getDatabasePrefix()}_configure_laptop_spots`;
+}
+
 export function getPlaceLaptopBidFunction() {
   return `${getDatabasePrefix()}_place_laptop_bid`;
 }

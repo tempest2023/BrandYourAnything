@@ -235,7 +235,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
           <p>{snapshot.campaign.tagline}</p>
           <div className={styles.heroStats}>
             <span><b>{money(totalRaised)}</b> {t("home.raised")}</span>
-            <span><b>{t("laptop.spotsClaimed", { filled })}</b></span>
+            <span><b>{t("laptop.spotsClaimed", { filled, count: snapshot.spots.length })}</b></span>
             <span><b>{countdown}</b></span>
           </div>
         </div>
@@ -245,7 +245,11 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
               sourceUrl={snapshot.campaign.modelUrl}
               format={snapshot.campaign.modelFileName ? getBrandModelFormat(snapshot.campaign.modelFileName) || undefined : undefined}
               label={t("laptop.modelAria", { object: snapshot.campaign.assetName })}
-              spots={snapshot.spots}
+              spots={snapshot.spots.map((spot) => ({
+                ...spot,
+                position: spot.surfacePosition,
+                normal: spot.surfaceNormal,
+              }))}
               selectedSpotId={selectedSpotId}
               onSelectSpot={setSelectedSpotId}
               className={styles.modelHeroStage}
@@ -264,7 +268,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
 
       <section className={styles.auctionSection} id="auction">
         <div className={styles.auctionIntro}>
-          <p>{t(isAnything ? "laptop.anythingPlacements" : "laptop.tenPlacements")}</p>
+          <p>{t(isAnything ? "laptop.anythingPlacements" : "laptop.tenPlacements", { count: snapshot.spots.length })}</p>
           <h2>{t(isAnything ? "laptop.chooseOnObject" : "laptop.chooseWhere")}</h2>
         </div>
         <div className={styles.auctionGrid}>

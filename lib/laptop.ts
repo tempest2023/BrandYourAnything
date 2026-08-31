@@ -1,5 +1,6 @@
 import type { AuctionSnapshot, PlaceBidResult } from "@/lib/auction";
 import type { CampaignAssetType } from "@/lib/brand-model";
+import type { SpotLayoutItem } from "@/lib/surface-spots";
 
 export type LaptopCampaign = {
   slug: string;
@@ -37,6 +38,7 @@ export type CreateLaptopInput = {
   mediumOpeningBidCents: number;
   largeOpeningBidCents: number;
   minIncrementCents: number;
+  spotLayout: SpotLayoutItem[];
   idempotencyKey: string;
 };
 

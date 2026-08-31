@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { ModelStage } from "@/app/model-stage";
 import {
   BRAND_MODEL_ACCEPT,
   brandModelFormatList,
@@ -12,6 +11,7 @@ import {
   MAX_BRAND_MODEL_BYTES,
   readableFileSize,
   type BrandModelFormat,
+  type BrandModelPreview,
   type UploadedBrandModel,
 } from "@/lib/brand-model";
 
@@ -37,6 +37,7 @@ type BrandAnythingSourceProps = {
   onSourceChange: (value: AnythingSource) => void;
   model: UploadedBrandModel | null;
   onModelChange: (value: UploadedBrandModel | null) => void;
+  onPreviewChange: (value: BrandModelPreview | null) => void;
   getUploadHeaders: () => Record<string, string>;
 };
 
@@ -83,12 +84,9 @@ export function BrandAnythingSource({
   onSourceChange,
   model,
   onModelChange,
+  onPreviewChange,
   getUploadHeaders,
 }: BrandAnythingSourceProps) {
-  const [localModelUrl, setLocalModelUrl] = useState<string | null>(null);
-  const [localModelFormat, setLocalModelFormat] = useState<BrandModelFormat | null>(
-    model ? getBrandModelFormat(model.fileName) : null,
-  );
   const [uploadState, setUploadState] = useState<"idle" | "uploading" | "ready" | "error">(model ? "ready" : "idle");
   const [uploadError, setUploadError] = useState("");
   const [copied, setCopied] = useState<"" | "install" | "prompt">("");
@@ -146,8 +144,7 @@ export function BrandAnythingSource({
     if (modelUrlRef.current) URL.revokeObjectURL(modelUrlRef.current);
     const nextUrl = URL.createObjectURL(file);
     modelUrlRef.current = nextUrl;
-    setLocalModelUrl(nextUrl);
-    setLocalModelFormat(format);
+    onPreviewChange({ sourceUrl: nextUrl, format });
     setUploadState("uploading");
     onModelChange(null);
     const expectedMime = getBrandModelMimeType(format)!;
@@ -231,14 +228,6 @@ export function BrandAnythingSource({
       </div>
 
       <div className={styles.modelRoute}>
-        {localModelUrl && localModelFormat && (
-          <ModelStage
-            sourceUrl={localModelUrl}
-            format={localModelFormat}
-            label={`Preview of ${assetName || "your uploaded object"}`}
-            className={styles.createModelStage}
-          />
-        )}
         <label className={`${styles.modelDrop} ${visibleUploadState === "ready" ? styles.modelDropReady : ""}`}>
           <input
             ref={modelInputRef}
@@ -261,7 +250,7 @@ export function BrandAnythingSource({
           </small>
           {visibleUploadState === "ready" && <b aria-label="Upload complete">Ready</b>}
         </label>
-        {model && !localModelUrl && (
+        {model && (
           <p className={styles.restoredModel}>✓ {model.fileName} is already uploaded and ready to publish.</p>
         )}
       </div>

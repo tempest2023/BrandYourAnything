@@ -3,6 +3,12 @@ import "server-only";
 import { isSupportedBrandModelFileName } from "@/lib/brand-model";
 import type { CampaignAssetType } from "@/lib/brand-model";
 import { isModelSizeAllowed } from "@/lib/model-upload-claim";
+import {
+  MAX_SURFACE_SPOTS,
+  MIN_SURFACE_SPOTS,
+  type SpotLayoutItem,
+  type SurfaceVector,
+} from "@/lib/surface-spots";
 
 export const MAX_LAPTOP_PHOTO_BYTES = 5 * 1024 * 1024;
 
@@ -39,6 +45,7 @@ export type ParsedLaptopForm = {
   mediumOpeningBidCents: number;
   largeOpeningBidCents: number;
   minIncrementCents: number;
+  spotLayout: SpotLayoutItem[];
   idempotencyKey: string;
   photo: File | null;
 };
@@ -72,6 +79,52 @@ function optionalText(formData: FormData, key: string, maxLength: number) {
   return value.trim();
 }
 
+function surfaceVector(value: unknown): SurfaceVector | undefined {
+  if (!Array.isArray(value) || value.length !== 3
+    || !value.every((component) => typeof component === "number" && Number.isFinite(component) && Math.abs(component) <= 20)) return undefined;
+  return [value[0], value[1], value[2]];
+}
+
+function parseSpotLayout(formData: FormData, assetType: CampaignAssetType) {
+  const layoutCount = Number(requiredText(formData, "layoutCount", 1, 2));
+  const minimum = assetType === "anything" ? MIN_SURFACE_SPOTS : 6;
+  const maximum = assetType === "anything" ? MAX_SURFACE_SPOTS : 10;
+  if (!Number.isInteger(layoutCount) || layoutCount < minimum || layoutCount > maximum
+    || (assetType === "laptop" && layoutCount !== 6 && layoutCount !== 10)) {
+    throw new LaptopValidationError("Choose a supported number of brand spots.");
+  }
+  const raw = requiredText(formData, "spotLayout", 2, 12_000);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new LaptopValidationError("The spot layout could not be read.");
+  }
+  if (!Array.isArray(parsed) || parsed.length !== layoutCount) {
+    throw new LaptopValidationError("The spot layout does not match its spot count.");
+  }
+  return parsed.map((value, index): SpotLayoutItem => {
+    if (!value || typeof value !== "object") throw new LaptopValidationError("A spot layout entry is invalid.");
+    const spot = value as Record<string, unknown>;
+    const position = surfaceVector(spot.position);
+    const normal = surfaceVector(spot.normal);
+    const name = typeof spot.name === "string" ? spot.name.trim() : "";
+    const dimensions = typeof spot.dimensions === "string" ? spot.dimensions.trim() : "";
+    if (spot.id !== index + 1 || !["S", "M", "L"].includes(String(spot.size))
+      || name.length < 2 || name.length > 80 || dimensions.length < 2 || dimensions.length > 100
+      || (assetType === "anything" && (!position || !normal))) {
+      throw new LaptopValidationError(`Spot ${index + 1} is not placed on a valid model surface.`);
+    }
+    return {
+      id: index + 1,
+      name,
+      size: spot.size as SpotLayoutItem["size"],
+      dimensions,
+      ...(position && normal ? { position, normal } : {}),
+    };
+  });
+}
+
 export function parseLaptopForm(formData: FormData): ParsedLaptopForm {
   const slug = requiredText(formData, "slug", 3, 48).toLowerCase();
   const ownerName = requiredText(formData, "ownerName", 2, 80);
@@ -86,6 +139,7 @@ export function parseLaptopForm(formData: FormData): ParsedLaptopForm {
     throw new LaptopValidationError("Choose a supported auction object type.");
   }
   const assetName = requiredText(formData, "assetName", 2, 80);
+  const spotLayout = parseSpotLayout(formData, assetType);
   const modelStoragePath = optionalText(formData, "modelStoragePath", 320);
   const modelUploadClaim = optionalText(formData, "modelUploadClaim", 64);
   const modelFileName = optionalText(formData, "modelFileName", 180);
@@ -154,6 +208,7 @@ export function parseLaptopForm(formData: FormData): ParsedLaptopForm {
     mediumOpeningBidCents,
     largeOpeningBidCents,
     minIncrementCents,
+    spotLayout,
     idempotencyKey,
     photo,
   };
