@@ -1266,14 +1266,16 @@
 
 .sourceSwitch button {
   display: grid;
-  min-height: 116px;
-  padding: 15px;
-  grid-template-rows: 24px auto 1fr;
-  align-items: start;
-  gap: 7px;
+  min-height: 82px;
+  padding: 14px 15px;
+  grid-template-columns: 28px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-content: center;
+  align-items: center;
+  gap: 3px 10px;
   border: 1px solid var(--hairline);
   border-radius: 14px;
-  background: #fff;
+  background: #fafafa;
   color: var(--ink);
   cursor: pointer;
   font: inherit;
@@ -1284,6 +1286,7 @@
   display: grid;
   width: 24px;
   height: 24px;
+  grid-row: 1 / 3;
   place-items: center;
   border-radius: 50%;
   background: #f5f5f7;
@@ -1296,12 +1299,21 @@
 .sourceSwitch button strong {
   font-size: 14px;
   font-weight: 620;
+  line-height: 1.25;
 }
 
 .sourceSwitch button small {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.4;
+}
+
+.sourceSwitch button small i {
+  display: inline-block;
+  margin-left: 2px;
+  color: oklch(52% 0.16 45);
+  font-style: normal;
+  transition: transform 180ms ease-out;
 }
 
 .sourceSwitch .activeSource {
@@ -1315,8 +1327,7 @@
   color: oklch(43% 0.15 45);
 }
 
-.modelRoute,
-.photoRoute {
+.modelRoute {
   margin-top: 14px;
 }
 
@@ -1326,8 +1337,7 @@
   border-radius: 16px;
 }
 
-.modelDrop,
-.referenceDrop {
+.modelDrop {
   position: relative;
   display: grid;
   min-height: 180px;
@@ -1342,8 +1352,7 @@
   text-align: center;
 }
 
-.modelDrop input,
-.referenceDrop input {
+.modelDrop input {
   position: absolute;
   inset: 0;
   z-index: 2;
@@ -1364,8 +1373,7 @@
   line-height: 1;
 }
 
-.modelDrop strong,
-.referenceDrop strong {
+.modelDrop strong {
   max-width: 80%;
   overflow: hidden;
   font-size: 14px;
@@ -1374,8 +1382,7 @@
   white-space: nowrap;
 }
 
-.modelDrop small,
-.referenceDrop small {
+.modelDrop small {
   color: var(--muted);
   font-size: 11px;
 }
@@ -1403,87 +1410,123 @@
   font-size: 12px;
 }
 
-.photoRoute {
+.photoGuide {
+  width: min(calc(100% - 32px), 760px);
+  max-width: none;
+  max-height: min(90dvh, 860px);
+  padding: 0;
   overflow: hidden;
-  border: 1px solid oklch(84% 0.04 65);
-  border-radius: 18px;
+  border: 1px solid oklch(77% 0.04 65);
+  border-radius: 24px;
+  background: transparent;
+  box-shadow: 0 32px 90px oklch(18% 0.02 255 / 0.32);
+  color: var(--ink);
+  opacity: 0;
+  transform: translateY(12px) scale(0.985);
+  transition:
+    opacity 220ms ease-out,
+    transform 320ms cubic-bezier(0.16, 1, 0.3, 1),
+    overlay 220ms allow-discrete,
+    display 220ms allow-discrete;
+}
+
+.photoGuide[open] {
+  opacity: 1;
+  transform: none;
+}
+
+@starting-style {
+  .photoGuide[open] {
+    opacity: 0;
+    transform: translateY(12px) scale(0.985);
+  }
+}
+
+.photoGuide::backdrop {
+  background: oklch(18% 0.015 255 / 0.46);
+  backdrop-filter: blur(8px);
+}
+
+.photoGuidePanel {
+  display: grid;
+  max-height: min(90dvh, 860px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
   background: oklch(99% 0.008 70);
 }
 
-.photoIntro {
-  padding: 22px;
-  background: radial-gradient(circle at 100% 0%, oklch(78% 0.16 65 / 0.35), transparent 36%), oklch(23% 0.02 255);
+.photoGuideHeader {
+  display: flex;
+  padding: 26px 28px 24px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  background:
+    radial-gradient(circle at 88% 10%, oklch(45% 0.055 65 / 0.34), transparent 28%),
+    oklch(22% 0.018 255);
   color: oklch(97% 0.01 70);
 }
 
-.photoIntro > span {
+.photoGuideHeader p {
+  margin: 0 0 8px;
   color: oklch(78% 0.16 65);
   font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.11em;
+  font-weight: 750;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
-.photoIntro h3 {
-  margin: 8px 0;
-  font-size: 21px;
-  font-weight: 540;
-  letter-spacing: -0.035em;
-  line-height: 1.15;
-}
-
-.photoIntro p {
+.photoGuideHeader h3 {
   margin: 0;
-  color: oklch(83% 0.02 255);
+  font-size: clamp(24px, 4.2vw, 34px);
+  font-weight: 560;
+  letter-spacing: -0.045em;
+  line-height: 1.08;
+}
+
+.photoGuideHeader div > span {
+  display: block;
+  margin-top: 9px;
+  color: oklch(81% 0.015 255);
   font-size: 12px;
-  line-height: 1.55;
+  line-height: 1.5;
 }
 
-.referenceDrop {
-  min-height: 220px;
-  margin: 14px;
-  background: oklch(96% 0.012 70);
-}
-
-.referenceDrop > span {
+.photoGuideHeader > button {
   display: grid;
-  width: 48px;
-  height: 48px;
-  margin-bottom: 8px;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
   place-items: center;
-  border: 1px solid oklch(65% 0.05 65);
+  border: 1px solid oklch(95% 0.01 70 / 0.18);
   border-radius: 50%;
-  font-size: 22px;
-}
-
-.referenceDrop img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  opacity: 0.26;
-}
-
-.referenceDrop strong,
-.referenceDrop small {
-  position: relative;
-  z-index: 1;
-  padding-inline: 12px;
+  background: oklch(96% 0.01 70 / 0.08);
+  color: oklch(96% 0.01 70);
+  cursor: pointer;
+  font: inherit;
+  font-size: 23px;
+  font-weight: 300;
+  line-height: 1;
 }
 
 .agentSteps {
+  overflow-y: auto;
   margin: 0;
-  padding: 0 14px 14px;
+  padding: 0 28px;
   list-style: none;
+  overscroll-behavior: contain;
 }
 
 .agentSteps > li {
   display: grid;
-  padding: 18px 0;
-  grid-template-columns: 28px minmax(0, 1fr);
-  gap: 0 10px;
+  padding: 24px 0;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 0 12px;
   border-top: 1px solid oklch(88% 0.025 65);
+}
+
+.agentSteps > li:first-child {
+  border-top: 0;
 }
 
 .agentSteps > li > span {
@@ -1497,104 +1540,131 @@
   font-size: 10px;
 }
 
-.agentSteps > li > div:nth-child(2) strong {
+.agentStepCopy strong {
   font-size: 14px;
   font-weight: 650;
 }
 
-.agentSteps > li > div:nth-child(2) p {
+.agentStepCopy p {
   margin: 3px 0 0;
   color: var(--muted);
   font-size: 12px;
-  line-height: 1.45;
+  line-height: 1.5;
 }
 
-.installCommands,
+.codexLink,
 .promptBox,
-.returnToModel {
+.photoPrivacy {
   grid-column: 2;
   margin-top: 12px;
 }
 
-.installCommands {
-  display: grid;
-  gap: 7px;
-}
-
-.installCommands button {
-  display: grid;
-  padding: 11px 12px;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 2px 8px;
-  border: 1px solid oklch(84% 0.025 255);
-  border-radius: 11px;
-  background: #fff;
-  color: var(--ink);
-  cursor: pointer;
-  text-align: left;
-}
-
-.installCommands b {
+.codexLink {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 42px;
+  padding: 0 16px;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  background: oklch(23% 0.018 255);
+  color: oklch(97% 0.008 70);
   font-size: 12px;
-}
-
-.installCommands code {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.installCommands em {
-  grid-column: 2;
-  grid-row: 1 / 3;
-  align-self: center;
-  color: oklch(52% 0.16 45);
-  font-size: 10px;
-  font-style: normal;
   font-weight: 650;
+  text-decoration: none;
+}
+
+.codexLink span {
+  color: oklch(78% 0.16 65);
+  transition: transform 180ms ease-out;
 }
 
 .promptBox {
   overflow: hidden;
+  border: 1px solid oklch(86% 0.022 255);
   border-radius: 12px;
-  background: oklch(22% 0.018 255);
+  background: #fff;
 }
 
 .promptBox pre {
-  max-height: 210px;
+  max-height: 180px;
   margin: 0;
   overflow: auto;
-  color: oklch(88% 0.02 80);
+  padding: 15px 16px;
+  color: oklch(29% 0.018 255);
   font-family: "SFMono-Regular", Consolas, monospace;
-  font-size: 10px;
-  line-height: 1.55;
-  padding: 14px;
+  font-size: 11px;
+  line-height: 1.6;
   white-space: pre-wrap;
 }
 
-.promptBox button,
-.returnToModel {
+.modelPromptBox pre {
+  max-height: 230px;
+}
+
+.promptBox button {
+  width: 100%;
   min-height: 42px;
   border: 0;
-  border-radius: 0;
-  background: oklch(72% 0.16 65);
-  color: oklch(18% 0.025 255);
+  border-top: 1px solid oklch(88% 0.018 255);
+  background: oklch(96% 0.012 70);
+  color: oklch(40% 0.13 45);
   cursor: pointer;
   font: inherit;
   font-size: 11px;
   font-weight: 700;
 }
 
-.promptBox button {
-  width: 100%;
+.photoPrivacy {
+  display: flex;
+  margin-bottom: 0;
+  align-items: flex-start;
+  gap: 8px;
+  color: oklch(48% 0.08 145);
+  font-size: 11px;
+  line-height: 1.5;
 }
 
-.returnToModel {
-  justify-self: start;
+.photoPrivacy span {
+  padding-top: 3px;
+  color: oklch(64% 0.15 145);
+  font-size: 7px;
+}
+
+.photoGuideFooter {
+  display: flex;
+  padding: 18px 28px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-top: 1px solid oklch(88% 0.025 65);
+  background: oklch(97% 0.012 70);
+}
+
+.photoGuideFooter p {
+  max-width: 42ch;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.photoGuideFooter p strong {
+  color: var(--ink);
+}
+
+.photoGuideFooter button {
+  min-height: 42px;
+  padding: 0 17px;
+  flex: 0 0 auto;
+  border: 0;
   border-radius: 999px;
-  padding: 0 15px;
+  background: oklch(23% 0.018 255);
+  color: oklch(97% 0.008 70);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
 }
 
 .anythingMiniStage {
@@ -1751,9 +1821,26 @@
   .objectCard:hover,
   .selectedObjectCard:hover,
   .modelChoice:hover,
-  .sourceSwitch button:hover,
-  .installCommands button:hover {
+  .sourceSwitch button:hover {
     border-color: oklch(58% 0.18 45);
+  }
+
+  .sourceSwitch button:hover small i,
+  .codexLink:hover span {
+    transform: translate(2px, -2px);
+  }
+
+  .photoGuideHeader > button:hover {
+    background: oklch(96% 0.01 70 / 0.16);
+  }
+
+  .promptBox button:hover {
+    background: oklch(93% 0.025 70);
+  }
+
+  .photoGuideFooter button:hover,
+  .codexLink:hover {
+    background: oklch(29% 0.02 255);
   }
 
   .objectCard:hover,
@@ -1767,8 +1854,11 @@
 .modelChoice:focus-visible,
 .selectedModelChoice:focus-visible,
 .sourceSwitch button:focus-visible,
-.modelDrop:focus-within,
-.referenceDrop:focus-within {
+.photoGuideHeader > button:focus-visible,
+.promptBox button:focus-visible,
+.photoGuideFooter button:focus-visible,
+.codexLink:focus-visible,
+.modelDrop:focus-within {
   outline: 3px solid rgba(0, 113, 227, 0.28);
   outline-offset: 2px;
 }
@@ -1929,7 +2019,46 @@
   }
 
   .sourceSwitch button {
-    min-height: 94px;
+    min-height: 76px;
+  }
+
+  .photoGuide {
+    width: calc(100% - 20px);
+    max-height: calc(100dvh - 20px);
+    border-radius: 18px;
+  }
+
+  .photoGuidePanel {
+    max-height: calc(100dvh - 20px);
+  }
+
+  .photoGuideHeader {
+    padding: 22px 20px 20px;
+    gap: 12px;
+  }
+
+  .photoGuideHeader > button {
+    width: 38px;
+    height: 38px;
+  }
+
+  .agentSteps {
+    padding-inline: 20px;
+  }
+
+  .agentSteps > li {
+    padding-block: 21px;
+  }
+
+  .photoGuideFooter {
+    padding: 16px 20px max(16px, env(safe-area-inset-bottom));
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .photoGuideFooter button {
+    width: 100%;
   }
 
   .optionCard,
