@@ -627,19 +627,53 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
 
         <section className="waitlist-section" id="waitlist">
           <div className="waitlist-card">
-            <div className="anything-wordrail" aria-hidden="true">
-              <span>CAR</span><i>✣</i><span>BOAT</span><i>✣</i><span>AIRCRAFT</span><i>✣</i><span>ANYTHING</span>
+            <div className="anything-visual" aria-hidden="true">
+              <div className="anything-visual-meta">
+                <span>OBJECT / OPEN FORMAT</span>
+                <span className="anything-live">READY</span>
+              </div>
+              <div className="anything-orbit">
+                <div className="anything-core">
+                  <span>BRAND</span>
+                  <strong>ANY<br />THING</strong>
+                </div>
+                <i className="anything-marker anything-marker-one">01</i>
+                <i className="anything-marker anything-marker-two">06</i>
+                <i className="anything-marker anything-marker-three">10</i>
+              </div>
+              <div className="anything-object-list">
+                <span>Car</span>
+                <span>Boat</span>
+                <span>Aircraft</span>
+                <span>Yours</span>
+              </div>
             </div>
-            <p className="eyebrow">{t("home.yourMachineMinutes")}</p>
-            <h2>{t("home.listOwnTitle")}</h2>
-            <p>{t("home.listOwnBody")}</p>
-            <div className="anything-path" aria-label="Brand Anything creation flow">
-              <span><b>01</b> Photo or GLB</span>
-              <span><b>02</b> Agent-built model</span>
-              <span><b>03</b> Live auction</span>
+            <div className="anything-content">
+              <p className="eyebrow">{t("home.yourMachineMinutes")}</p>
+              <h2>{t("home.listOwnTitle")}</h2>
+              <p className="anything-copy">{t("home.listOwnBody")}</p>
+              <ol className="anything-path" aria-label="Brand Anything creation flow">
+                <li>
+                  <b>01</b>
+                  <span><strong>{t("home.anythingBring")}</strong><small>{t("home.anythingBringDetail")}</small></span>
+                </li>
+                <li>
+                  <b>02</b>
+                  <span><strong>{t("home.anythingBuild")}</strong><small>{t("home.anythingBuildDetail")}</small></span>
+                </li>
+                <li>
+                  <b>03</b>
+                  <span><strong>{t("home.anythingAuction")}</strong><small>{t("home.anythingAuctionDetail")}</small></span>
+                </li>
+              </ol>
+              <div className="anything-actions">
+                <a className="dark-button anything-cta" href={CREATE_URL}>
+                  <span>{t("home.createLaptop")}</span>
+                  <i aria-hidden="true">↗</i>
+                </a>
+                <small><span aria-hidden="true" />{t("home.selfHost")}</small>
+              </div>
             </div>
-            <a className="dark-button" href={CREATE_URL}>{t("home.createLaptop")}</a>
-            <small>{t("home.selfHost")}</small>
           </div>
         </section>
       </main>
