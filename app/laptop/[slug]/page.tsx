@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { AuctionLandingPage } from "@/app/page";
+import { LaptopAuction } from "./laptop-auction";
 import { getLaptopSnapshot } from "@/lib/laptop-repository";
 import { laptopPath } from "@/lib/site";
-
-import { LaptopAuction } from "./laptop-auction";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +15,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const snapshot = await getLaptopSnapshot(slug).catch(() => null);
-  if (!snapshot) return { title: "Laptop not found — Brand Anything" };
+  if (!snapshot) return { title: "Auction not found — Brand Anything" };
   return {
     title: `${snapshot.campaign.title} — Brand Anything`,
     description: snapshot.campaign.tagline,
@@ -37,5 +37,7 @@ export default async function LaptopPage({
   const { slug } = await params;
   const snapshot = await getLaptopSnapshot(slug);
   if (!snapshot) notFound();
-  return <LaptopAuction initialSnapshot={snapshot} />;
+  return snapshot.campaign.assetType === "anything"
+    ? <LaptopAuction initialSnapshot={snapshot} />
+    : <AuctionLandingPage campaign={snapshot.campaign} initialSnapshot={snapshot} />;
 }

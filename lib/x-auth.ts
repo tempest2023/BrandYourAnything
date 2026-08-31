@@ -86,7 +86,7 @@ export async function getPublishingOwner(request: Request) {
 
   const fingerprint = createHash("sha256").update(managerKey).digest("hex").slice(0, 32);
   return {
-    ownerName: "Lid owner",
+    ownerName: "Campaign owner",
     ownerEmail: `lid-${fingerprint}@auth.brand-anything.vercel.app`,
   };
 }

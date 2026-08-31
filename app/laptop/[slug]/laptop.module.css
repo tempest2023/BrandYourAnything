@@ -149,6 +149,12 @@
   min-width: 0;
 }
 
+.modelHeroStage {
+  min-height: clamp(28rem, 58vw, 42rem);
+  border-radius: 1.4rem;
+  box-shadow: 0 2.2rem 4.6rem oklch(22% 0.02 250 / 0.24);
+}
+
 .lidWrap :global(.lid-stage) {
   padding-top: 0;
 }

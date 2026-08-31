@@ -1,7 +1,11 @@
 import "server-only";
 
 import type { BidHistoryItem, Spot, SpotSize } from "@/lib/auction";
+import type { CampaignAssetType } from "@/lib/brand-model";
 import {
+  getBrandModelBucket,
+  getCampaignAssetTable,
+  getConfigureLaptopSpotsFunction,
   getCreateLaptopFunction,
   getLaptopMediaBucket,
   getLaptopTable,
@@ -43,6 +47,8 @@ type LaptopSpotRow = {
   current_logo_storage_path: string | null;
   current_website: string | null;
   bid_count: number;
+  surface_position: [number, number, number] | null;
+  surface_normal: [number, number, number] | null;
 };
 
 type LaptopBidRow = {
@@ -51,6 +57,15 @@ type LaptopBidRow = {
   amount_cents: number;
   bidder_name: string;
   created_at: string;
+};
+
+type CampaignAssetRow = {
+  laptop_id: string;
+  asset_type: CampaignAssetType;
+  asset_name: string;
+  model_storage_path: string | null;
+  model_file_name: string | null;
+  idempotency_key: string;
 };
 
 type CreateLaptopRow = {
@@ -82,6 +97,15 @@ export type PlaceLaptopBidInput = {
   idempotencyKey: string;
 };
 
+export type AttachCampaignAssetInput = {
+  laptopId: string;
+  assetType: CampaignAssetType;
+  assetName: string;
+  modelStoragePath: string | null;
+  modelFileName: string | null;
+  idempotencyKey: string;
+};
+
 async function signStoragePath(bucket: string, path: string | null) {
   if (!path) return undefined;
   const supabase = getSupabaseAdmin();
@@ -106,10 +130,10 @@ export async function getLaptopSnapshot(slug: string): Promise<LaptopSnapshot | 
   if (!laptopData) return null;
   const laptop = laptopData as LaptopRow;
 
-  const [spotsResult, bidsResult, photoUrl] = await Promise.all([
+  const [spotsResult, bidsResult, assetResult, photoUrl] = await Promise.all([
     supabase
       .from(getLaptopTable("laptop_spots"))
-      .select("id,position,name,size,dimensions,opening_bid_cents,min_increment_cents,current_bid_cents,current_bidder_name,current_logo_storage_path,current_website,bid_count")
+      .select("id,position,name,size,dimensions,opening_bid_cents,min_increment_cents,current_bid_cents,current_bidder_name,current_logo_storage_path,current_website,bid_count,surface_position,surface_normal")
       .eq("laptop_id", laptop.id)
       .order("position", { ascending: true }),
     supabase
@@ -118,11 +142,24 @@ export async function getLaptopSnapshot(slug: string): Promise<LaptopSnapshot | 
       .eq("laptop_id", laptop.id)
       .order("created_at", { ascending: false })
       .limit(20),
+    supabase
+      .from(getCampaignAssetTable())
+      .select("laptop_id,asset_type,asset_name,model_storage_path,model_file_name,idempotency_key")
+      .eq("laptop_id", laptop.id)
+      .maybeSingle(),
     signStoragePath(getLaptopMediaBucket(), laptop.photo_storage_path),
   ]);
 
   if (spotsResult.error) throw spotsResult.error;
   if (bidsResult.error) throw bidsResult.error;
+  if (assetResult.error) throw assetResult.error;
+
+  const asset = assetResult.data as CampaignAssetRow | null;
+  const assetType: CampaignAssetType = asset?.asset_type === "anything" ? "anything" : "laptop";
+  const assetName = asset?.asset_name || laptop.laptop_model;
+  const modelUrl = asset?.model_storage_path
+    ? await signStoragePath(getBrandModelBucket(), asset.model_storage_path)
+    : undefined;
 
   const spotRows = spotsResult.data as LaptopSpotRow[];
   const logoUrls = await Promise.all(
@@ -143,6 +180,8 @@ export async function getLaptopSnapshot(slug: string): Promise<LaptopSnapshot | 
       bids: spot.bid_count,
       ...(logoUrls[index] ? { logo: logoUrls[index] } : {}),
       ...(hasBid && spot.current_website ? { website: spot.current_website } : {}),
+      ...(spot.surface_position ? { surfacePosition: spot.surface_position } : {}),
+      ...(spot.surface_normal ? { surfaceNormal: spot.surface_normal } : {}),
     };
   });
 
@@ -162,15 +201,49 @@ export async function getLaptopSnapshot(slug: string): Promise<LaptopSnapshot | 
       tagline: laptop.tagline,
       story: laptop.story,
       laptopModel: laptop.laptop_model,
+      assetType,
+      assetName,
       ownerName: laptop.owner_name,
       goal: laptop.goal_cents / 100,
       closesAt: laptop.auction_closes_at,
       createdAt: laptop.created_at,
       ...(photoUrl ? { photoUrl } : {}),
+      ...(modelUrl ? { modelUrl } : {}),
+      ...(asset?.model_file_name ? { modelFileName: asset.model_file_name } : {}),
     },
     spots,
     history,
   };
+}
+
+export async function attachCampaignAsset(input: AttachCampaignAssetInput) {
+  const supabase = getSupabaseAdmin();
+  const row = {
+    laptop_id: input.laptopId,
+    asset_type: input.assetType,
+    asset_name: input.assetName,
+    model_storage_path: input.modelStoragePath,
+    model_file_name: input.modelFileName,
+    idempotency_key: input.idempotencyKey,
+  };
+  const { error: insertError } = await supabase
+    .from(getCampaignAssetTable())
+    .upsert(row, { onConflict: "laptop_id", ignoreDuplicates: true });
+  if (insertError) throw insertError;
+
+  const { data, error } = await supabase
+    .from(getCampaignAssetTable())
+    .select("laptop_id,asset_type,asset_name,model_storage_path,model_file_name,idempotency_key")
+    .eq("laptop_id", input.laptopId)
+    .single();
+  if (error) throw error;
+  const stored = data as CampaignAssetRow;
+  const matches = stored.idempotency_key === input.idempotencyKey
+    && stored.asset_type === input.assetType
+    && stored.asset_name === input.assetName
+    && stored.model_storage_path === input.modelStoragePath
+    && stored.model_file_name === input.modelFileName;
+  if (!matches) throw new Error("The campaign asset conflicts with an existing idempotent request.");
 }
 
 export async function createLaptop(input: CreateLaptopInput): Promise<CreateLaptopResult> {
@@ -196,6 +269,18 @@ export async function createLaptop(input: CreateLaptopInput): Promise<CreateLapt
   if (error) throw error;
   const row = (Array.isArray(data) ? data[0] : data) as CreateLaptopRow | undefined;
   if (!row) throw new Error("The database returned no result for laptop creation.");
+  if (row.accepted && row.laptop_id) {
+    const { error: layoutError } = await supabase.rpc(getConfigureLaptopSpotsFunction(), {
+      p_laptop_id: row.laptop_id,
+      p_layout: input.spotLayout,
+      p_small_opening_bid_cents: input.smallOpeningBidCents,
+      p_medium_opening_bid_cents: input.mediumOpeningBidCents,
+      p_large_opening_bid_cents: input.largeOpeningBidCents,
+      p_min_increment_cents: input.minIncrementCents,
+      p_idempotency_key: input.idempotencyKey,
+    });
+    if (layoutError) throw layoutError;
+  }
   return {
     accepted: row.accepted,
     reason: row.reason,

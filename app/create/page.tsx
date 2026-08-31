@@ -3,8 +3,8 @@ import type { Metadata } from "next";
 import { CreateLaptopForm } from "./create-laptop-form";
 
 export const metadata: Metadata = {
-  title: "Put your lid up — Brand Anything",
-  description: "Set your machine, your prices, and publish your laptop lid for brands.",
+  title: "Brand your anything — Brand Anything",
+  description: "Upload a 3D model or build one from a photo with img2threejs, then publish a live sponsorship auction.",
 };
 
 export default function CreateLaptopPage() {
