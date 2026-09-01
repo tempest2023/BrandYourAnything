@@ -487,8 +487,8 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
             <a href="#how">{t("common.how")}</a>
             <a href="#specs">{t("common.machine")}</a>
             <a href="#faq">{t("common.faq")}</a>
-            <Link href="/manage">{t("common.manageAuctions")}</Link>
-            <a href={CREATE_URL}>{t("common.listLaptop")}</a>
+            <Link className="nav-link--manage" href="/manage">{t("common.manageAuctions")}</Link>
+            <a className="nav-link--create" href={CREATE_URL}>{t("common.listLaptop")}</a>
           </div>
           <div className="nav-actions">
             <PreferenceControls />
@@ -651,7 +651,7 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
                         <td data-label={t("common.size")}><span className={`size-tag size-tag--${spot.size.toLowerCase()}`}>{spot.size}</span>{spot.dimensions}</td>
                         <td data-label={t("common.brand")}>{spot.bids === 0 ? <span className={auctionClosed ? "auction-closed-pill" : "availability-pill"}>{auctionClosed ? t("home.noWinner") : t("common.available")}</span> : spot.website ? <a href={spot.website} target="_blank" rel="noreferrer"><Logo spot={spot} compact /></a> : <Logo spot={spot} compact />}</td>
                         <td data-label={spot.bids === 0 ? t("home.startingBid") : t("common.currentBid")}><strong>{money(spot.bids === 0 ? spot.minBid : spot.bid)}</strong><small>{spot.bids === 0 ? t("common.noBids") : `${spot.bids} ${spot.bids === 1 ? t("common.bid").toLowerCase() : t("common.bids")}`}</small></td>
-                        <td data-label={t("common.action")}>{auctionClosed ? <span className="auction-closed-pill">{t("laptop.closed")}</span> : <button className="outbid-button" type="button" onClick={() => openBidDialog(spot.id)}>{spot.bids === 0 ? t("common.placeBid") : t("common.outbid")}</button>}</td>
+                        <td data-label={t("common.action")}>{auctionClosed ? <span className="auction-closed-pill">{t("laptop.closed")}</span> : <button className={`outbid-button ${spot.bids > 0 ? "outbid-button--outbid" : ""}`.trim()} type="button" onClick={() => openBidDialog(spot.id)}>{spot.bids === 0 ? t("common.placeBid") : t("common.outbid")}</button>}</td>
                       </tr>
                     ))}
                   </tbody>

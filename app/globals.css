@@ -132,7 +132,7 @@ p {
 
 .wordmark {
   display: inline-flex;
-  min-width: 0;
+  flex: 0 0 auto;
   align-items: center;
   gap: 0.55rem;
   font-size: 0.93rem;
@@ -153,6 +153,7 @@ p {
 
 .nav-actions {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 0.5rem;
 }
@@ -221,7 +222,7 @@ p {
 
 .language-switch select {
   appearance: none;
-  width: 4rem;
+  width: 5.6rem;
   min-height: 2.3rem;
   border: 1px solid color-mix(in oklch, var(--hairline) 82%, transparent);
   border-radius: 999px;
@@ -1114,6 +1115,10 @@ p {
   padding: 0.55rem 1rem;
   font-size: 0.78rem;
   white-space: nowrap;
+}
+
+.outbid-button--outbid {
+  background: var(--ink);
 }
 
 .history-row {
@@ -2191,6 +2196,11 @@ p {
     transform: translateY(-1px);
   }
 
+  .outbid-button--outbid:hover {
+    background: oklch(30% 0.01 255);
+    box-shadow: 0 0.75rem 1.8rem oklch(20% 0.01 255 / 0.22);
+  }
+
   .lid-spot:not(:disabled):hover {
     z-index: 4;
     border-color: var(--blue);
@@ -2265,14 +2275,6 @@ p {
 }
 
 @media (min-width: 48rem) {
-  .nav-links {
-    display: flex;
-    align-items: center;
-    gap: clamp(1.1rem, 2.5vw, 2rem);
-    color: var(--ink-2);
-    font-size: 0.78rem;
-  }
-
   .hero {
     padding-top: 4.25rem;
   }
@@ -2394,6 +2396,45 @@ p {
   }
 }
 
+@media (min-width: 64rem) {
+  .nav-links {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(0.75rem, 1.2vw, 1.1rem);
+    color: var(--ink-2);
+    font-size: 0.78rem;
+  }
+
+  .nav-links a {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .nav-link--manage,
+  .nav-link--create {
+    display: none;
+  }
+}
+
+@media (min-width: 72rem) {
+  .nav-link--manage {
+    display: inline;
+  }
+}
+
+@media (min-width: 88rem) {
+  .nav-inner {
+    width: min(100% - 3rem, 88rem);
+  }
+
+  .nav-link--create {
+    display: inline;
+  }
+}
+
 @media (max-width: 26rem) {
   .wordmark span {
     display: none;
@@ -2417,7 +2458,7 @@ p {
   }
 }
 
-@media (max-width: 34rem) {
+@media (max-width: 39.99rem) {
   .nav-actions > .dark-button {
     display: none;
   }
