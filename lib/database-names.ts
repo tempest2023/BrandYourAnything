@@ -35,15 +35,27 @@ export function getLaptopTable(name: "laptops" | "laptop_spots" | "laptop_bids")
 }
 
 export function getCreateLaptopFunction() {
-  return `${getDatabasePrefix()}_create_laptop`;
+  return `${getDatabasePrefix()}_create_owned_laptop`;
 }
 
 export function getConfigureLaptopSpotsFunction() {
   return `${getDatabasePrefix()}_configure_laptop_spots`;
 }
 
+export function getClaimAuctionFunction() {
+  return `${getDatabasePrefix()}_claim_auction`;
+}
+
 export function getPlaceLaptopBidFunction() {
   return `${getDatabasePrefix()}_place_laptop_bid`;
+}
+
+export function getLaptopBidPaymentTable() {
+  return `${getDatabasePrefix()}_laptop_bid_payments`;
+}
+
+export function getSettleLaptopBidPaymentFunction() {
+  return `${getDatabasePrefix()}_settle_laptop_bid_payment`;
 }
 
 export function getLaptopMediaBucket() {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -21,13 +21,30 @@ if (!["ba_dev", "ba_prod"].includes(databasePrefix)) {
 const laptopsTable = `${databasePrefix}_laptops`;
 const spotsTable = `${databasePrefix}_laptop_spots`;
 const bidsTable = `${databasePrefix}_laptop_bids`;
-const createFunction = `${databasePrefix}_create_laptop`;
+const createFunction = `${databasePrefix}_create_owned_laptop`;
 const bidFunction = `${databasePrefix}_place_laptop_bid`;
 const service = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
+
+const { data: defaultCampaigns, error: defaultCampaignError } = await service
+  .from(laptopsTable)
+  .select("id,slug")
+  .eq("is_default", true);
+if (defaultCampaignError) throw defaultCampaignError;
+assert.equal(defaultCampaigns.length, 1, "the environment has exactly one homepage auction");
+assert.equal(defaultCampaigns[0].slug, "brand-my-mac", "the homepage points to the seeded Mac auction");
+
+const { count: defaultSpotCount, error: defaultSpotCountError } = await service
+  .from(spotsTable)
+  .select("id", { count: "exact", head: true })
+  .eq("laptop_id", defaultCampaigns[0].id);
+if (defaultSpotCountError) throw defaultSpotCountError;
+assert.equal(defaultSpotCount, 10, "the homepage auction has all ten bid positions");
 
 function createLaptop(args) {
   return service.rpc(createFunction, {
     p_slug: args.slug,
+    p_owner_user_id: args.ownerUserId ?? null,
+    p_manager_key_hash: args.managerKeyHash ?? null,
     p_owner_name: args.ownerName,
     p_owner_email: args.ownerEmail,
     p_title: args.title,
@@ -60,11 +77,14 @@ function placeBid(args) {
 }
 
 const unique = randomUUID().slice(0, 8);
+const managerKeyHash = createHash("sha256").update(`test-manager-${randomUUID()}`).digest("hex");
 const closesAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
 const base = {
   slug: `platform-${databasePrefix.replace("_", "-")}-${unique}`,
   ownerName: "Platform Owner",
   ownerEmail: `owner-${unique}@example.com`,
+  ownerUserId: null,
+  managerKeyHash,
   title: "Concurrency Laptop",
   tagline: "A real multi-tenant laptop auction.",
   story: "This campaign exists to prove that creation and bidding are isolated and atomic.",
@@ -121,6 +141,7 @@ const second = {
   ...base,
   slug: `${base.slug}-two`,
   ownerEmail: `owner-two-${unique}@example.com`,
+  managerKeyHash: createHash("sha256").update(`test-manager-${randomUUID()}`).digest("hex"),
   title: "Second Isolated Laptop",
   idempotencyKey: randomUUID(),
 };
@@ -170,4 +191,10 @@ if (anonKey) {
   assert.ok(anonRead.error, "anonymous clients cannot read owner emails or tables directly");
 }
 
-console.log(`Laptop platform checks passed for ${databasePrefix}: creation, tenancy, RLS, row locking, and idempotency work.`);
+const { error: cleanupError } = await service
+  .from(laptopsTable)
+  .delete()
+  .in("slug", [base.slug, second.slug]);
+if (cleanupError) throw cleanupError;
+
+console.log(`Laptop platform checks passed for ${databasePrefix}: default homepage data, creation, tenancy, RLS, row locking, and idempotency work.`);

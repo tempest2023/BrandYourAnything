@@ -1,8 +1,11 @@
 import { createHash } from "node:crypto";
 
+import Stripe from "stripe";
+
 import { BidValidationError, parseBidForm } from "@/lib/bid-validation";
 import { getLogoBucket } from "@/lib/database-names";
-import { getLaptopSnapshot, placeLaptopBid } from "@/lib/laptop-repository";
+import { createLaptopBidCheckout, StripeBidError } from "@/lib/stripe-bids";
+import { isStripeConfigured } from "@/lib/stripe";
 import { getSupabaseAdmin, isSupabaseConfigured } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
@@ -45,56 +48,48 @@ export async function POST(
   }
 
   let logoStoragePath: string | null = null;
-  let databaseAccepted = false;
-
   try {
     const { slug } = await context.params;
+    if (!isStripeConfigured()) {
+      return Response.json(
+        { error: "Stripe Checkout is not configured for this deployment." },
+        { status: 503 },
+      );
+    }
     const input = parseBidForm(await request.formData());
     if (input.logo) {
       logoStoragePath = await uploadLogo(input.logo, slug, input.spotId, input.idempotencyKey);
     }
 
-    const result = await placeLaptopBid({
-      slug,
-      spotPosition: input.spotId,
-      amountCents: input.amountCents,
-      brandName: input.brandName,
-      email: input.email,
-      website: input.website,
-      xHandle: input.xHandle,
-      logoStoragePath,
-      idempotencyKey: input.idempotencyKey,
-    });
-
-    if (!result.accepted) {
-      await removeLogo(logoStoragePath);
-      const snapshot = await getLaptopSnapshot(slug).catch(() => null);
-      const status = result.reason === "campaign_not_found" ? 404 : 409;
-      const error = result.reason === "bid_too_low"
-        ? `Another bidder moved first. The new minimum is $${result.minimumNextBid.toLocaleString("en-US")}.`
-        : result.reason === "auction_closed"
-          ? "This laptop auction has closed."
-          : result.reason === "campaign_not_found"
-            ? "This laptop auction does not exist."
-            : "This request conflicts with a bid that was already processed.";
-      return Response.json({ error, result, snapshot }, { status });
-    }
-
-    databaseAccepted = true;
-    const snapshot = await getLaptopSnapshot(slug).catch((error) => {
-      console.error("Laptop bid succeeded but its snapshot could not be refreshed", error);
-      return null;
-    });
-    return Response.json(
-      { result, snapshot },
-      { status: result.reason === "accepted" ? 201 : 200 },
-    );
+    const checkout = await createLaptopBidCheckout(slug, input, logoStoragePath);
+    return Response.json(checkout, { status: 201 });
   } catch (error) {
-    if (!databaseAccepted) await removeLogo(logoStoragePath);
     if (error instanceof BidValidationError) {
+      await removeLogo(logoStoragePath);
       return Response.json({ error: error.message }, { status: 400 });
     }
-    console.error("Failed to place laptop bid", error);
-    return Response.json({ error: "The bid could not be saved. Please try again." }, { status: 500 });
+    if (error instanceof StripeBidError) {
+      if (["campaign_not_found", "spot_not_found", "auction_closed", "payments_not_ready", "bid_too_low", "idempotency_conflict"].includes(error.code)) {
+        await removeLogo(logoStoragePath);
+      }
+      const status = error.code === "campaign_not_found" || error.code === "spot_not_found"
+        ? 404
+        : error.code === "payments_not_ready"
+          ? 503
+          : 409;
+      return Response.json({ error: error.message, code: error.code }, { status });
+    }
+    if (error instanceof Stripe.errors.StripePermissionError) {
+      console.error("Stripe Checkout key is missing permissions", {
+        code: error.code,
+        requestId: error.requestId,
+      });
+      return Response.json(
+        { error: "The Stripe key needs Checkout Sessions: Write permission." },
+        { status: 503 },
+      );
+    }
+    console.error("Failed to start Stripe Checkout for laptop bid", error);
+    return Response.json({ error: "Stripe Checkout could not be started. Please try again." }, { status: 500 });
   }
 }

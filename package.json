@@ -4,18 +4,28 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:sandbox": "node scripts/dev-sandbox.mjs",
+    "dev:clear-default-auction": "bun --env-file=.env.local scripts/clear-default-auction.ts",
+    "sandbox:check": "node --env-file=.env.local scripts/check-dev-sandbox.mjs",
+    "sandbox:attach-account": "node --env-file=.env.local scripts/attach-sandbox-account.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test:concurrency": "node scripts/test-concurrent-bids.mjs",
-    "test:laptop-platform": "node scripts/test-laptop-platform.mjs"
+    "test:laptop-platform": "node scripts/test-laptop-platform.mjs",
+    "test:sandbox-checkout": "node --env-file=.env.local scripts/test-stripe-sandbox-checkout.mjs",
+    "test:sandbox-regression": "node --env-file=.env.local scripts/test-laptop-platform.mjs && node --env-file=.env.local scripts/test-auction-ownership.mjs && node --env-file=.env.local scripts/test-auction-ownership-api.mjs",
+    "test:ownership": "node scripts/test-auction-ownership.mjs",
+    "test:ownership-api": "node scripts/test-auction-ownership-api.mjs",
+    "auction:bind-default": "node scripts/bind-default-auction.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",
     "next": "16.3.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "stripe": "^22.6.0",
     "three": "^0.185.1"
   },
   "devDependencies": {

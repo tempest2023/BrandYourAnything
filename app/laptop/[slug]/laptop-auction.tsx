@@ -26,6 +26,13 @@ type BidResponse = {
   error?: string;
   result?: LaptopBidResult;
   snapshot?: LaptopSnapshot | null;
+  checkoutUrl?: string;
+};
+
+type CheckoutStatusResponse = {
+  error?: string;
+  status?: "pending" | "accepted" | "refunded" | "expired" | "failed";
+  snapshot?: LaptopSnapshot | null;
 };
 
 function useCountdown(closesAt: string) {
@@ -87,11 +94,13 @@ function BidPanel({
   slug,
   spot,
   isAnything,
+  paymentsEnabled,
   onSnapshot,
 }: {
   slug: string;
   spot: Spot;
   isAnything: boolean;
+  paymentsEnabled: boolean;
   onSnapshot: (snapshot: LaptopSnapshot) => void;
 }) {
   const { currency, locale, t } = useI18n();
@@ -121,8 +130,12 @@ function BidPanel({
       });
       const payload = await response.json() as BidResponse;
       if (payload.snapshot) onSnapshot(payload.snapshot);
+      if (response.ok && payload.checkoutUrl) {
+        window.location.assign(payload.checkoutUrl);
+        return;
+      }
       if (!response.ok || !payload.result?.accepted) {
-        setErrorMessage(t("home.bidError"));
+        setErrorMessage(payload.error || t("home.bidError"));
         if (response.status === 409) {
           setIdempotencyKey(crypto.randomUUID());
           if (payload.result?.minimumNextBid) setAmount(String(minimumDisplayAmount(payload.result.minimumNextBid, currency)));
@@ -157,6 +170,11 @@ function BidPanel({
         <span>{spot.bids > 0 ? t("laptop.leadingLine", { holder: spot.holder, amount: money(spot.bid) }) : `${t("common.openingBid")} ${money(spot.minBid)}`}</span>
       </div>
       <label>{t("laptop.yourBid", { currency: currencyDisplayName(currency) })}<input type="number" min={minimumDisplayAmount(spot.minBid, currency)} step="1" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>
+      <div className={styles.depositSummary}>
+        <span>{t("home.expectedDeposit", { amount: money(amountToUsd(Number(amount) || 0, currency)) })}</span>
+        <strong>{money(amountToUsd(Number(amount) || 0, currency) * 0.2)}</strong>
+        <small>{t("home.stripeDepositNote")}</small>
+      </div>
       <div className={styles.fieldPair}>
         <label>{t("common.brandName")}<input name="brandName" type="text" maxLength={80} placeholder={t("common.brand")} required /></label>
         <label>{t("common.email")}<input name="email" type="email" maxLength={254} placeholder="you@company.com" required /></label>
@@ -171,7 +189,8 @@ function BidPanel({
         <span>{logoName || t("laptop.chooseLogo")}</span>
       </label>
       {errorMessage && <p className={styles.bidError} role="alert">{errorMessage}</p>}
-      <button type="submit" disabled={submitting}>{submitting ? t("home.savingBid") : spot.bids > 0 ? `${t("common.outbid")} ${spot.holder} →` : `${t("common.placeFirstBid")} →`}</button>
+      {!paymentsEnabled && <p className={styles.bidError} role="status">{t("home.paymentsNotReady")}</p>}
+      <button type="submit" disabled={submitting || !paymentsEnabled}>{submitting ? t("home.openingStripe") : t("home.continueStripe")}</button>
       <small>{t(isAnything ? "laptop.bidFinalCampaign" : "laptop.bidFinal")}</small>
     </form>
   );
@@ -183,6 +202,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [selectedSpotId, setSelectedSpotId] = useState(initialSnapshot.spots[0]?.id ?? 1);
   const [backendStatus, setBackendStatus] = useState<"live" | "offline">("live");
+  const [paymentNotice, setPaymentNotice] = useState<"idle" | "checking" | "accepted" | "refunded" | "cancelled" | "error">("idle");
   const countdown = useCountdown(snapshot.campaign.closesAt);
   const selectedSpot = snapshot.spots.find((spot) => spot.id === selectedSpotId) ?? snapshot.spots[0];
   const totalRaised = useMemo(
@@ -219,6 +239,59 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
     return () => window.clearInterval(timer);
   }, [refresh]);
 
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const payment = url.searchParams.get("payment");
+    const sessionId = url.searchParams.get("session_id");
+    if (payment === "cancelled") {
+      const cancelledTimer = window.setTimeout(() => {
+        setPaymentNotice("cancelled");
+        url.searchParams.delete("payment");
+        window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+      }, 0);
+      return () => window.clearTimeout(cancelledTimer);
+    }
+    if (payment !== "success" || !sessionId) return;
+
+    let active = true;
+    let timer: number | undefined;
+    let attempt = 0;
+    const check = async () => {
+      attempt += 1;
+      try {
+        const response = await fetch(`/api/stripe/checkout/${encodeURIComponent(sessionId)}`, { cache: "no-store" });
+        const payload = await response.json() as CheckoutStatusResponse;
+        if (!response.ok) throw new Error(payload.error || "Payment confirmation failed.");
+        if (!active) return;
+        if (payload.snapshot) setSnapshot(payload.snapshot);
+        if (payload.status === "accepted") setPaymentNotice("accepted");
+        else if (payload.status === "refunded" || payload.status === "expired") setPaymentNotice("refunded");
+        else if (attempt < 8) {
+          timer = window.setTimeout(() => void check(), 1_250);
+          return;
+        } else setPaymentNotice("error");
+      } catch {
+        if (!active) return;
+        if (attempt < 4) {
+          timer = window.setTimeout(() => void check(), 1_500);
+          return;
+        }
+        setPaymentNotice("error");
+      }
+      url.searchParams.delete("payment");
+      url.searchParams.delete("session_id");
+      window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    };
+    timer = window.setTimeout(() => {
+      setPaymentNotice("checking");
+      void check();
+    }, 0);
+    return () => {
+      active = false;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, []);
+
   return (
     <main className={styles.page}>
       <nav className={styles.nav}>
@@ -235,6 +308,15 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
           <p className={styles.ownerLine}>{t(isAnything ? "laptop.byCampaignOwner" : "laptop.byOwner", { owner: snapshot.campaign.ownerName })}</p>
           <h1>{snapshot.campaign.title}</h1>
           <p>{snapshot.campaign.tagline}</p>
+          {paymentNotice !== "idle" && (
+            <p className={`${styles.paymentNotice} ${styles[`paymentNotice_${paymentNotice}`]}`} role="status" aria-live="polite">
+              {paymentNotice === "checking" ? t("home.paymentChecking")
+                : paymentNotice === "accepted" ? t("home.paymentAccepted")
+                  : paymentNotice === "refunded" ? t("home.paymentRefunded")
+                    : paymentNotice === "cancelled" ? t("home.paymentCancelled")
+                      : t("home.paymentPending")}
+            </p>
+          )}
           <div className={styles.heroStats}>
             <span><b>{money(totalRaised)}</b> {t("home.raised")}</span>
             <span><b>{t("laptop.spotsClaimed", { filled, count: snapshot.spots.length })}</b></span>
@@ -303,6 +385,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
                 slug={snapshot.campaign.slug}
                 spot={selectedSpot}
                 isAnything={isAnything}
+                paymentsEnabled={snapshot.campaign.paymentsEnabled}
                 onSnapshot={setSnapshot}
               />
             )}

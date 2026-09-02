@@ -329,6 +329,12 @@ p {
   box-shadow: 0 0 0 0.23rem var(--green-soft);
 }
 
+.live-visitors--closed span,
+.auction-status--closed span {
+  background: var(--ink-3);
+  box-shadow: 0 0 0 0.23rem color-mix(in oklch, var(--ink-3) 14%, transparent);
+}
+
 .total-visits {
   margin-bottom: 1.25rem;
   color: var(--ink-2);
@@ -355,6 +361,34 @@ p {
   margin: 0 auto;
   color: var(--ink-2);
   font-size: clamp(0.96rem, 2.3vw, 1.06rem);
+}
+
+.payment-notice {
+  width: min(100%, 34rem);
+  margin: 1rem auto 0;
+  border: 1px solid var(--hairline);
+  border-radius: 0.8rem;
+  background: var(--surface-raised);
+  color: var(--ink-2);
+  padding: 0.75rem 1rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.payment-notice--accepted {
+  border-color: color-mix(in oklch, var(--green) 35%, var(--hairline));
+  background: color-mix(in oklch, var(--green-soft) 62%, var(--surface-raised));
+  color: var(--green);
+}
+
+.payment-notice--refunded,
+.payment-notice--cancelled {
+  background: var(--surface);
+}
+
+.payment-notice--error {
+  border-color: color-mix(in oklch, var(--danger) 28%, var(--hairline));
+  color: var(--danger);
 }
 
 .funding {
@@ -527,7 +561,9 @@ p {
   font-family: -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: clamp(3rem, 14vw, 8.5rem);
   line-height: 1;
+  pointer-events: none;
   text-shadow: 0 1px 0 oklch(99% 0 0 / 0.35);
+  user-select: none;
 }
 
 .lid-spot {
@@ -549,6 +585,10 @@ p {
 
 .lid-spot--available {
   background: oklch(99% 0.004 250 / 0.22);
+}
+
+.lid-spot:disabled {
+  cursor: default;
 }
 
 .lid-spot-number {
@@ -1038,6 +1078,20 @@ p {
   padding: 0.3rem 0.65rem;
   font-size: 0.72rem;
   font-weight: 600;
+}
+
+.auction-closed-pill {
+  display: inline-flex;
+  min-height: 1.8rem;
+  align-items: center;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-3);
+  padding: 0.3rem 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .spots-table td:nth-child(4) strong {
@@ -2137,7 +2191,7 @@ p {
     transform: translateY(-1px);
   }
 
-  .lid-spot:hover {
+  .lid-spot:not(:disabled):hover {
     z-index: 4;
     border-color: var(--blue);
     background: oklch(99% 0.005 255 / 0.58);
@@ -2145,7 +2199,7 @@ p {
     transform: translateY(-0.15rem);
   }
 
-  .lid-spot:hover .lid-outbid {
+  .lid-spot:not(:disabled):hover .lid-outbid {
     opacity: 1;
   }
 

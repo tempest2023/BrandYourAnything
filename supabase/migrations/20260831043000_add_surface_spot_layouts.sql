@@ -5,6 +5,12 @@ alter table public.ba_dev_laptops add column spot_layout jsonb;
 alter table public.ba_prod_laptops add column spot_layout jsonb;
 
 alter table public.ba_dev_laptop_spots
+  drop constraint if exists ba_dev_laptop_spots_position_check;
+alter table public.ba_prod_laptop_spots
+  drop constraint if exists ba_prod_laptop_spots_position_check,
+  drop constraint if exists ba_dev_laptop_spots_position_check;
+alter table public.ba_dev_laptop_spots
+  add constraint ba_dev_laptop_spots_position_check check (position between 1 and 16),
   add column surface_position jsonb,
   add column surface_normal jsonb,
   add constraint ba_dev_laptop_spots_surface_position_check check (
@@ -19,7 +25,16 @@ alter table public.ba_dev_laptop_spots
       and jsonb_array_length(surface_normal) = 3
     )
   );
+
+alter table public.ba_dev_laptop_bid_payments
+  drop constraint if exists ba_dev_laptop_bid_payments_spot_position_check,
+  add constraint ba_dev_laptop_bid_payments_spot_position_check check (spot_position between 1 and 16);
+alter table public.ba_prod_laptop_bid_payments
+  drop constraint if exists ba_prod_laptop_bid_payments_spot_position_check,
+  drop constraint if exists ba_dev_laptop_bid_payments_spot_position_check,
+  add constraint ba_prod_laptop_bid_payments_spot_position_check check (spot_position between 1 and 16);
 alter table public.ba_prod_laptop_spots
+  add constraint ba_prod_laptop_spots_position_check check (position between 1 and 16),
   add column surface_position jsonb,
   add column surface_normal jsonb,
   add constraint ba_prod_laptop_spots_surface_position_check check (
@@ -63,7 +78,7 @@ begin
     raise exception 'Spot layout must be an array.' using errcode = '22023';
   end if;
   v_count := jsonb_array_length(p_layout);
-  if v_count not between 4 and 10 then
+  if v_count not between 4 and 16 then
     raise exception 'Spot layout count is invalid.' using errcode = '22023';
   end if;
   if p_small_opening_bid_cents not between 1000 and 10000000

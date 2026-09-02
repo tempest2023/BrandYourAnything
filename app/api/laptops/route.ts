@@ -80,6 +80,8 @@ export async function POST(request: Request) {
 
     const result = await createLaptop({
       slug: input.slug,
+      ownerUserId: owner.ownerUserId,
+      managerKeyHash: owner.managerKeyHash,
       ownerName: input.ownerName,
       ownerEmail: input.ownerEmail,
       title: input.title,

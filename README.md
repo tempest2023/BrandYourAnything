@@ -4,7 +4,7 @@ An open-source Next.js 16 platform for auctioning brand placements on almost any
 
 <a href="https://www.buymeacoffee.com/tempes666" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/yellow_img.png" alt="Buy Me A Coffee"></a>
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/clone?repository-url=https%3A%2F%2Fgithub.com%2Ftempest2023%2FBrandYourAnything&env=SUPABASE_URL%2CSUPABASE_SECRET_KEY%2CNEXT_PUBLIC_SUPABASE_URL%2CNEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY%2CNEXT_PUBLIC_SITE_URL&envDescription=Enter%20the%20Supabase%20credentials%20and%20the%20public%20site%20URL.%20Apply%20the%20database%20migrations%20before%20using%20the%20app.&envLink=https%3A%2F%2Fgithub.com%2Ftempest2023%2FBrandYourAnything%2Fblob%2Fmain%2FREADME.md%23production-deployment&project-name=brand-anything&repository-name=brand-anything)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/clone?repository-url=https%3A%2F%2Fgithub.com%2Ftempest2023%2FBrandYourAnything&env=SUPABASE_URL%2CSUPABASE_SECRET_KEY%2CNEXT_PUBLIC_SUPABASE_URL%2CNEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY%2CNEXT_PUBLIC_SITE_URL%2CSTRIPE_SECRET_KEY%2CSTRIPE_WEBHOOK_SECRET&envDescription=Enter%20the%20Supabase%20and%20Stripe%20server%20credentials%20plus%20the%20public%20site%20URL.%20Apply%20the%20database%20migrations%20before%20using%20the%20app.&envLink=https%3A%2F%2Fgithub.com%2Ftempest2023%2FBrandYourAnything%2Fblob%2Fmain%2FREADME.md%23production-deployment&project-name=brand-anything&repository-name=brand-anything)
 
 ## Production deployment
 
@@ -30,6 +30,9 @@ Open the project's **Connect** dialog or go to **Project Settings > API Keys**. 
 | `NEXT_PUBLIC_SUPABASE_URL` | Project URL | `https://your-project-ref.supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | A browser-safe Publishable key | `sb_publishable_...` |
 | `NEXT_PUBLIC_SITE_URL` | Public site origin | `https://brand-anything.vercel.app` |
+| `STRIPE_SECRET_KEY` | Stripe test/live secret key | `sk_test_...` |
+| `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret | `whsec_...` |
+| `STRIPE_CONNECT_WEBHOOK_SECRET` | Optional connected-account webhook secret | `whsec_...` |
 
 The Publishable key is intended for browser Auth. The Secret key has elevated access and bypasses Row Level Security, so never commit it, expose it to browser code, or prefix it with `NEXT_PUBLIC_`. If a legacy project has only a `service_role` and `anon` key, set them as `SUPABASE_SERVICE_ROLE_KEY` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`; the application supports both fallbacks.
 
@@ -75,12 +78,12 @@ Do not create these tables or buckets manually, and do not run `supabase db rese
 
 ### 4. Configure X sign in
 
-When X / Twitter OAuth 2.0 is configured, `POST /api/laptops` sends the access token back to Supabase, verifies the user, and derives the public owner identity on the server. If X sign-in is unavailable, the creator uses a browser-generated management key stored in `localStorage`; the server hashes that key into a stable private owner identity and applies the same creation rate limit.
+When X / Twitter OAuth 2.0 is configured, `POST /api/laptops` sends the access token back to Supabase, verifies the user, and binds the auction to the immutable Supabase Auth `user.id`. If X sign-in is unavailable, the creator receives a different high-entropy recovery code for each auction. The raw code is kept only in that browser's `localStorage` (and wherever the creator backs it up); Supabase stores only its SHA-256 hash. The `/manage` page can verify and import a recovery code, manage several auctions, and atomically attach an accountless auction to an X identity. Claiming keeps the recovery code as a backup by default; the X owner can rotate it (invalidating every older code), disable it, or create a new backup for an X-only auction. Public names and email metadata are never used for authorization.
 
 1. In the [X Developer Portal](https://developer.x.com/), create an OAuth 2.0 Web App and enable **Request email from users**.
 2. Add `https://<project-ref>.supabase.co/auth/v1/callback` as the X app callback URL. For a local Supabase stack, also add `http://localhost:54321/auth/v1/callback`.
 3. In **Supabase Dashboard > Authentication > Sign In / Providers**, enable **X / Twitter (OAuth 2.0)** and enter the X Client ID and Client Secret.
-4. In **Authentication > URL Configuration**, set the production Site URL and allow the production `/sell` URL plus every preview URL that should support sign in. The repository's local config already allows both `http://127.0.0.1:3000/sell` and `http://localhost:3000/sell`.
+4. In **Authentication > URL Configuration**, set the production Site URL and allow both production `/sell` and `/manage` URLs plus every preview URL that should support sign in. The repository's local config already allows those two routes on both `http://127.0.0.1:3000` and `http://localhost:3000`.
 5. Keep new-user signups enabled in Supabase Auth; a first X login creates the corresponding Supabase user.
 
 The app intentionally uses the OAuth 2.0 provider name `x`, not the legacy OAuth 1.0a provider name `twitter`.
@@ -103,6 +106,9 @@ In **Project Settings > Environment Variables**, configure:
 | `NEXT_PUBLIC_SUPABASE_URL` | The Supabase Project URL | Production, Preview, Development |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | The Supabase `sb_publishable_...` key | Production, Preview, Development |
 | `NEXT_PUBLIC_SITE_URL` | `https://brand-anything.vercel.app` | Production, Preview, Development |
+| `STRIPE_SECRET_KEY` | Stripe test/live secret key | Production, Preview, Development |
+| `STRIPE_WEBHOOK_SECRET` | Signing secret for `/api/stripe/webhook` | Production, Preview, Development |
+| `STRIPE_CONNECT_WEBHOOK_SECRET` | Signing secret for connected-account events, when separate | Production, Preview, Development |
 | `SUPABASE_DATABASE_PREFIX` | `ba_prod` | Production only |
 | `SUPABASE_DATABASE_PREFIX` | `ba_dev` | Preview and Development only |
 
@@ -111,6 +117,21 @@ Optionally add a high-entropy `MODEL_UPLOAD_SIGNING_SECRET` to every environment
 Add `SUPABASE_DATABASE_PREFIX` twice with the environment scopes shown above. This keeps preview bids and test campaigns out of the production tables. The variable is optional on Vercel because the application falls back to `ba_prod` when `VERCEL_ENV=production` and `ba_dev` otherwise, but setting it explicitly makes the isolation visible in the project configuration.
 
 Treat `SUPABASE_SECRET_KEY` as a sensitive value if the Vercel UI offers that option. Environment-variable changes only affect new deployments, so redeploy the project after adding, editing, or rotating any value. See [Vercel's environment-variable guide](https://vercel.com/docs/environment-variables/managing-environment-variables) for the current dashboard flow.
+
+### Stripe Connect and local webhook setup
+
+The platform uses Stripe Connect Accounts v2 merchants with the Express Dashboard and Stripe-hosted Checkout. Each bid deposit is a direct charge on the seller's connected account: Stripe transfers 10% of the full bid to the platform as an application fee, while the rest of the 20% deposit (less Stripe processing fees) remains with the seller. The database publishes the bid only after Stripe confirms payment; a stale bid is fully refunded, including the application fee, and the previous leader's deposit is refunded when a new paid bid takes the lead. The winning brand later pays the remaining 80% to the seller.
+
+Enable Connect on the Stripe platform account, then add a sandbox `STRIPE_SECRET_KEY` to `.env.local`. For a restricted key, grant the platform **Accounts v2: Write** and **Core: Write**, then grant connected accounts **Checkout Sessions: Write** and **Charges and Refunds: Write**. Start the complete local stack with:
+
+```bash
+stripe login
+npm run dev:sandbox
+```
+
+`dev:sandbox` refuses non-test Stripe keys and any database prefix other than `ba_dev`. It applies pending local Supabase migrations, starts Stripe CLI forwarding for platform and Connect events, keeps the ephemeral `whsec_...` value out of files and logs, injects it only into the Next.js process, and shuts both processes down together. Never commit the Stripe key. Use a Stripe test card for local bidding.
+
+For production, create platform and connected-account event destinations at `https://brand-anything.vercel.app/api/stripe/webhook`. Subscribe the platform destination to the Checkout events and the Connect destination to `account.updated`. Store their signing secrets as `STRIPE_WEBHOOK_SECRET` and `STRIPE_CONNECT_WEBHOOK_SECRET`; when one destination handles both, the second variable can be omitted. Test and live mode have different API keys, connected accounts, webhook endpoints, and signing secrets.
 
 ### 6. Deploy and verify
 
@@ -160,45 +181,44 @@ The browser requests a signed upload ticket, uploads the model straight to a pri
 
 `POST /api/laptops` validates the multipart creation form, stores an optional laptop photo privately, and creates the campaign plus all ten spots in one database transaction. Brand Anything campaigns attach the already-uploaded model metadata immediately afterward using the same idempotency key. Each campaign is published at `/<slug>` and exposes only public fields; the former `/laptop/<slug>` route remains compatible.
 
-Every environment adds four compact tables:
+Every environment adds five compact tables:
 
 - `ba_<env>_laptops` stores the campaign, owner contact, deadline, pricing policy, and private photo path.
 - `ba_<env>_laptop_spots` stores the ten positions and their current winning state.
 - `ba_<env>_laptop_bids` is the append-only bid ledger.
+- `ba_<env>_laptop_bid_payments` keeps private Checkout, deposit, refund, and idempotency state.
 - `ba_<env>_campaign_assets` records whether a campaign is a laptop or arbitrary object and, for arbitrary objects, its private GLB path and display metadata.
 
 The owner email, bidder emails, and Storage paths are never returned by the public API. Public images use short-lived signed URLs. `anon` and `authenticated` have no direct access to the tables, buckets, or write functions.
 
-Creation goes through `ba_<env>_create_laptop(...)`. It uses advisory locks for slug and idempotency races, creates the laptop and ten spots atomically, and applies a small per-email creation limit. Tenant bids go through `ba_<env>_place_laptop_bid(...)`; it locks the exact campaign spot, re-checks the live minimum, appends the bid, and updates the winner in one transaction. Idempotency keys make network retries safe.
+Creation goes through `ba_<env>_create_owned_laptop(...)`. It requires exactly one credential—an X `owner_user_id` or a browser `manager_key_hash`—uses advisory locks for slug and idempotency races, and creates the laptop plus ten spots atomically. Browser-to-X claims go through `ba_<env>_claim_auction(...)`, which locks the auction row so two X identities can never win the same recovery-code claim. Paid tenant bids start in Stripe Checkout and are finalized by `ba_<env>_settle_laptop_bid_payment(...)`; it locks the exact campaign spot, re-checks the live minimum, appends the paid bid, and updates the winner in one transaction. Idempotency keys make creation, Checkout, webhook, refund, and network retries safe.
 
 The browser only calls Next.js Route Handlers:
 
 - `POST /api/models/upload-ticket` validates a GLB request and returns a one-use signed upload URL plus a signed metadata claim.
 - `POST /api/laptops` publishes a campaign.
 - `GET /api/laptops/<slug>` returns its public snapshot.
-- `POST /api/laptops/<slug>/bids` places a concurrency-safe bid and optionally stores a private logo.
+- `POST /api/laptops/<slug>/stripe/connect` starts or resumes seller payout onboarding.
+- `GET/PATCH /api/laptops/<slug>/manage` verifies ownership and reads or closes an auction; `POST` atomically attaches a recovery-owned auction to X.
+- `GET /api/laptops/mine` lists auctions attached to the current X user.
+- `POST /api/laptops/<slug>/bids` creates a Stripe Checkout Session and optionally stores a private logo.
+- `POST /api/stripe/webhook` verifies Stripe signatures and settles or refunds paid bids.
 
-## Included starter auction
+## Homepage auction
 
-The original single-laptop homepage remains available and uses two application tables per environment:
+The homepage is not a separate demo ledger. It server-renders the single `ba_<env>_laptops` row marked `is_default = true`, using the same campaign, spot, bid, Stripe Checkout, and refund flow as every public auction URL. Migration `20260831023000_add_default_mac_auction.sql` creates the `brand-my-mac` campaign and its ten positions in both `ba_dev` and `ba_prod`.
 
-- `ba_<env>_spots` stores the ten auction slots and their current winning state.
-- `ba_<env>_bids` is an append-only bid ledger. Bidder emails and private logo paths are never returned by the public API.
+The development default is attached to the sandbox Connected Account. The production record intentionally remains payment-disabled until a live Connected Account completes onboarding; database flags must never claim that test-mode or live-mode payouts are available when Stripe cannot actually deliver them.
+
+After its deadline—or when its status is explicitly changed to `closed`—the homepage remains public as an archive of the winning brands and final bid amounts. Bid controls disappear, while the database settlement functions independently reject and refund any payment that races the close time.
 
 `ba_dev_*` and `ba_prod_*` can safely share a Supabase project with each other and with unrelated applications. `SUPABASE_DATABASE_PREFIX` selects the environment. Production uses `ba_prod`; local development and Vercel previews use `ba_dev`.
-
-All writes go through `public.ba_<env>_place_bid(...)`. The function takes a PostgreSQL row lock on the selected spot, re-checks the latest minimum, inserts the bid, and updates the winner inside one transaction. An advisory transaction lock plus a unique key makes retries idempotent, including accidental key reuse across different spots.
-
-Its browser flow uses these Route Handlers:
-
-- `GET /api/auction` returns public spots and recent bid history.
-- `POST /api/bids` validates multipart form data, stores an optional logo in the private `ba_<env>_bid_logos` bucket, and calls the atomic database function.
 
 Supabase secret keys are server-only for both flows.
 
 ## Local development
 
-Requirements: Node.js 20+, Docker, and the Supabase CLI.
+Requirements: Node.js 20+, Docker, the Supabase CLI, and the Stripe CLI.
 
 ```bash
 npm install
@@ -214,15 +234,52 @@ SUPABASE_SECRET_KEY=<the local SECRET_KEY value>
 SUPABASE_DATABASE_PREFIX=ba_dev
 NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<the local PUBLISHABLE_KEY value>
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
+NEXT_PUBLIC_X_AUTH_DEV_MOCK=1
+STRIPE_SECRET_KEY=<a sandbox sk_test_ or restricted rk_test_ key>
 ```
 
-Local X OAuth additionally requires X credentials in the local Supabase Auth provider. Use `http://localhost:54321/auth/v1/callback` in the X app, uncomment the `auth.external.x` block in `supabase/config.toml`, and put `X_OAUTH_CLIENT_ID` plus `X_OAUTH_CLIENT_SECRET` in an uncommitted `.env` file. Restart the local Supabase stack after changing Auth config.
+`NEXT_PUBLIC_X_AUTH_DEV_MOCK=1` replaces X OAuth only while Next.js is running in development against local Supabase with the `ba_dev` prefix. Clicking **Sign in with X** creates or reuses a fixed local test identity, stores a real Supabase session in the browser, and exercises the same immutable user-ID ownership checks as a real X callback. The mock endpoint returns 404 in production builds, for hosted Supabase URLs, and for non-development database prefixes.
 
-Then start Next.js:
+To test real local X OAuth instead, remove the mock variable, use `http://localhost:54321/auth/v1/callback` in the X app, uncomment the `auth.external.x` block in `supabase/config.toml`, and put `X_OAUTH_CLIENT_ID` plus `X_OAUTH_CLIENT_SECRET` in an uncommitted `.env` file. Restart the local Supabase stack after changing Auth config.
+
+Then start Next.js together with Stripe sandbox webhook forwarding:
 
 ```bash
-npm run dev
+stripe login
+npm run dev:sandbox
 ```
+
+With the stack running, verify the homepage auction, connected account, Storage limits, webhook listener, and local API from a second terminal:
+
+```bash
+npm run sandbox:check
+npm run test:sandbox-checkout
+npm run test:sandbox-regression
+```
+
+Reset only the local homepage auction after bid testing. This keeps the default auction, its owner, connected Stripe account, and spot pricing, while expiring open Checkout Sessions, refunding refundable sandbox deposits, removing bid logos, and clearing its bid/payment history:
+
+```bash
+bun run dev:clear-default-auction --dry-run
+bun run dev:clear-default-auction
+```
+
+The command refuses hosted Supabase, prefixes other than `ba_dev`, and non-test Stripe keys.
+
+The complete manual test matrix for the homepage bid, a second auction, Stripe-hosted Checkout, outbids, refunds, and local management is in [Local Stripe sandbox testing](docs/local-stripe-sandbox-testing.md). For a fast second-auction test, the local-only helper can reuse the homepage sandbox account:
+
+```bash
+npm run sandbox:attach-account -- --slug=your-second-auction
+```
+
+The seeded `brand-my-mac` homepage row is real auction data, not a privileged demo. Bind it to its creator once per environment. With no code supplied, the command generates one and prints it exactly so you can save it in `/manage`; only the hash reaches Supabase:
+
+```bash
+npm run auction:bind-default -- --environment=dev
+```
+
+For a hosted database, first verify `.env.local` targets the intended project and set `ALLOW_REMOTE_DEFAULT_BIND=1`. Use `--environment=prod` for the production row. Supplying `DEFAULT_AUCTION_MANAGER_RECOVERY_CODE` makes a controlled rerun deterministic; changing an existing owner requires the explicit `--replace` flag.
 
 Reset the local database and replay all migrations:
 
@@ -235,6 +292,8 @@ Run the real concurrency test against local Postgres:
 ```bash
 npm run test:concurrency
 npm run test:laptop-platform
+npm run test:ownership
+npm run test:ownership-api
 ```
 
 The platform test verifies atomic campaign creation, ten-spot isolation, RLS, equal concurrent bids, simultaneous retries, and cross-tenant idempotency-key reuse. Run it once with `SUPABASE_DATABASE_PREFIX=ba_dev` and once with `ba_prod` when validating both namespaces.

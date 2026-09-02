@@ -4,6 +4,8 @@ import type { SpotLayoutItem } from "@/lib/surface-spots";
 
 export type LaptopCampaign = {
   slug: string;
+  status: "published" | "closed";
+  isDefault: boolean;
   title: string;
   tagline: string;
   story: string;
@@ -14,6 +16,7 @@ export type LaptopCampaign = {
   goal: number;
   closesAt: string;
   createdAt: string;
+  paymentsEnabled: boolean;
   photoUrl?: string;
   modelUrl?: string;
   modelFileName?: string;
@@ -25,6 +28,8 @@ export type LaptopSnapshot = AuctionSnapshot & {
 
 export type CreateLaptopInput = {
   slug: string;
+  ownerUserId: string | null;
+  managerKeyHash: string | null;
   ownerName: string;
   ownerEmail: string;
   title: string;
@@ -52,3 +57,12 @@ export type CreateLaptopResult = {
 export type LaptopBidResult = Omit<PlaceBidResult, "reason"> & {
   reason: PlaceBidResult["reason"] | "campaign_not_found";
 };
+
+export type LaptopBidPaymentStatus =
+  | "pending"
+  | "paid"
+  | "accepted"
+  | "refund_pending"
+  | "refunded"
+  | "expired"
+  | "failed";

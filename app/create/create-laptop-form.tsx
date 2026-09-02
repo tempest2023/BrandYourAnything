@@ -9,6 +9,12 @@ import { ModelStage } from "@/app/model-stage";
 import type { BrandModelPreview, UploadedBrandModel } from "@/lib/brand-model";
 import { LOCALES, type Locale } from "@/lib/i18n";
 import {
+  generateManagerRecoveryCode,
+  loadManagedAuctions,
+  rememberManagedAuction,
+  type ManagedAuction,
+} from "@/lib/managed-auctions";
+import {
   getPresetModel,
   type PresetModelId,
 } from "@/lib/preset-models";
@@ -25,6 +31,7 @@ import {
   type SurfaceSpotPlacement,
 } from "@/lib/surface-spots";
 import { getSupabaseBrowser, isSupabaseBrowserConfigured } from "@/lib/supabase-browser";
+import { isDevXAuthMockEnabled, signInWithX } from "@/lib/x-auth-browser";
 import { BrandAnythingSource, type AnythingSource } from "./brand-anything-source";
 import styles from "./create.module.css";
 
@@ -32,10 +39,8 @@ const STEPS = ["Object", "Ownership", "Showcase", "Layout", "Prices", "Listing",
 const DRAFT_STORAGE_KEY = "brand-anything-sell-draft";
 const LEGACY_DRAFT_STORAGE_KEY = "brandmylaptop-sell-draft";
 const PUBLISH_AFTER_AUTH_KEY = "brand-anything-publish-after-auth";
-const MANAGER_KEY_STORAGE_KEY = "brand-anything-lid-manager-key";
-const MANAGED_LID_STORAGE_KEY = "brand-anything-managed-lid";
 const X_COMPOSE_URL = "https://x.com/compose/post";
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,46}[a-z0-9])$/;
 const SHARE_LANGUAGE_LABELS: Record<Locale, string> = {
   en: "English",
   zh: "中文",
@@ -99,6 +104,12 @@ type TeslaModel = "Model 3" | "Model Y" | "Model S" | "Model X" | "Cybertruck";
 type ModelMode = "preset" | "custom";
 type Ownership = "own" | "fund";
 type LayoutCount = number;
+type AddressAvailability = "checking" | "available" | "taken" | "published" | "invalid" | "unknown";
+type CreationRequest = {
+  fingerprint: string;
+  idempotencyKey: string;
+  auctionClosesAt: string;
+};
 type SellDraft = {
   step: number;
   furthestStep: number;
@@ -165,15 +176,23 @@ function ObjectIcon({ kind }: { kind: (typeof OBJECT_PRESETS)[number]["icon"] })
   );
 }
 
-type ManagedLid = {
-  slug: string;
-  title: string;
-};
-
 type CreateResponse = {
   error?: string;
   location?: string;
   result?: { reason: string; slug: string };
+};
+
+type StripeConnectResponse = {
+  error?: string;
+  connected?: boolean;
+  ready?: boolean;
+  onboardingUrl?: string;
+};
+
+type ModelPreviewResponse = {
+  error?: string;
+  sourceUrl?: string;
+  format?: BrandModelPreview["format"];
 };
 
 const moneyFormatter = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
@@ -213,12 +232,16 @@ function isUnavailableXAuthError(message: string) {
   return /provider|not configured|not enabled|unsupported|disabled/i.test(message);
 }
 
-function getOrCreateManagerKey() {
-  const saved = window.localStorage.getItem(MANAGER_KEY_STORAGE_KEY);
-  if (saved && UUID_PATTERN.test(saved)) return saved;
-  const key = crypto.randomUUID();
-  window.localStorage.setItem(MANAGER_KEY_STORAGE_KEY, key);
-  return key;
+function fingerprintCreation(formData: FormData, listingDays: number) {
+  const entries = Array.from(formData.entries(), ([key, value]) => [
+    key,
+    typeof value === "string"
+      ? value
+      : `${value.name}:${value.type}:${value.size}:${value.lastModified}`,
+  ] as const).sort(([leftKey, leftValue], [rightKey, rightValue]) => (
+    leftKey.localeCompare(rightKey) || leftValue.localeCompare(rightValue)
+  ));
+  return JSON.stringify({ entries, listingDays });
 }
 
 async function copyText(text: string) {
@@ -265,7 +288,7 @@ function SiteFooter() {
             <h2>Marketplace</h2>
             <Link href="/">All auctions</Link>
             <Link href="/sell">Brand your anything</Link>
-            <Link href="/">Your dashboard</Link>
+            <Link href="/manage">Your dashboard</Link>
           </div>
           <div>
             <h2>About</h2>
@@ -290,6 +313,8 @@ function SiteFooter() {
 export function CreateLaptopForm() {
   const { locale } = useI18n();
   const formRef = useRef<HTMLFormElement>(null);
+  const addressInputRef = useRef<HTMLInputElement>(null);
+  const creationRequestRef = useRef<CreationRequest | null>(null);
   const surfaceSpotsRef = useRef<SurfaceSpotPlacement[]>([]);
   const [step, setStep] = useState(0);
   const [furthestStep, setFurthestStep] = useState(0);
@@ -300,6 +325,7 @@ export function CreateLaptopForm() {
   const [anythingSource, setAnythingSource] = useState<AnythingSource>("model");
   const [brandModel, setBrandModel] = useState<UploadedBrandModel | null>(null);
   const [brandModelPreview, setBrandModelPreview] = useState<BrandModelPreview | null>(null);
+  const [modelPreviewRestoreState, setModelPreviewRestoreState] = useState<"idle" | "restoring" | "error">("idle");
   const [screenSize, setScreenSize] = useState<13 | 14 | 16>(14);
   const [ownership, setOwnership] = useState<Ownership>("own");
   const [machineCost, setMachineCost] = useState("");
@@ -330,10 +356,14 @@ export function CreateLaptopForm() {
   const [errorMessage, setErrorMessage] = useState("");
   const [createdLocation, setCreatedLocation] = useState<string | null>(null);
   const [publishedLocation, setPublishedLocation] = useState<string | null>(null);
-  const [managedLid, setManagedLid] = useState<ManagedLid | null>(null);
+  const [managerRecoveryCode, setManagerRecoveryCode] = useState(() => generateManagerRecoveryCode());
+  const [managedAuctions, setManagedAuctions] = useState<ManagedAuction[]>([]);
+  const [publishedRecoveryCode, setPublishedRecoveryCode] = useState<string | null>(null);
   const [shareLocale, setShareLocale] = useState<Locale>(locale);
   const [copyFeedback, setCopyFeedback] = useState<"idle" | "copied">("idle");
-  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+  const [stripeStatus, setStripeStatus] = useState<"idle" | "checking" | "connecting" | "ready" | "action" | "error">("idle");
+  const [stripeError, setStripeError] = useState("");
+  const [addressAvailability, setAddressAvailability] = useState<AddressAvailability>("checking");
 
   useEffect(() => {
     if (copyFeedback !== "copied") return;
@@ -344,6 +374,44 @@ export function CreateLaptopForm() {
   useEffect(() => {
     surfaceSpotsRef.current = surfaceSpots;
   }, [surfaceSpots]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      if (!SLUG_PATTERN.test(slug)) {
+        setAddressAvailability("invalid");
+        return;
+      }
+      if (publishedLocation === laptopPath(slug)) {
+        setAddressAvailability("published");
+        return;
+      }
+      try {
+        const response = await fetch(`/api/laptops/${encodeURIComponent(slug)}`, {
+          method: "GET",
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (response.status === 404) setAddressAvailability("available");
+        else if (response.ok) setAddressAvailability("taken");
+        else setAddressAvailability("unknown");
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setAddressAvailability("unknown");
+        }
+      }
+    }, 320);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [publishedLocation, slug]);
+
+  useEffect(() => {
+    addressInputRef.current?.setCustomValidity(
+      addressAvailability === "taken" ? "This address is already used by another auction." : "",
+    );
+  }, [addressAvailability]);
 
   useEffect(() => {
     let draft: Partial<SellDraft> = {};
@@ -402,17 +470,50 @@ export function CreateLaptopForm() {
   }, []);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(MANAGED_LID_STORAGE_KEY);
-    if (!saved) return;
+    if (!authReady) return;
+    const parameters = new URLSearchParams(window.location.search);
+    const stripeReturn = parameters.get("stripe");
+    const returnedSlug = parameters.get("slug")?.trim().toLowerCase();
+    if ((stripeReturn !== "return" && stripeReturn !== "refresh") || !returnedSlug) return;
+
+    let active = true;
+    const managedAuction = loadManagedAuctions().find((auction) => auction.slug === returnedSlug);
+    const headers: Record<string, string> = accessToken
+      ? { Authorization: `Bearer ${accessToken}` }
+      : managedAuction
+        ? { "X-Lid-Manager-Key": managedAuction.recoveryCode }
+        : {};
+    const endpoint = `/api/laptops/${encodeURIComponent(returnedSlug)}/stripe/connect`;
     const timer = window.setTimeout(() => {
-      try {
-        const candidate = JSON.parse(saved) as Partial<ManagedLid>;
-        if (typeof candidate.slug === "string" && typeof candidate.title === "string") {
-          setManagedLid({ slug: candidate.slug, title: candidate.title });
-        }
-      } catch {
-        window.localStorage.removeItem(MANAGED_LID_STORAGE_KEY);
-      }
+      setCreatedLocation(laptopPath(returnedSlug));
+      setStripeStatus("checking");
+      setStripeError("");
+      void fetch(endpoint, { method: stripeReturn === "refresh" ? "POST" : "GET", headers })
+        .then(async (response) => {
+          const payload = await response.json() as StripeConnectResponse;
+          if (!response.ok) throw new Error(payload.error || "Stripe status could not be loaded.");
+          if (!active) return;
+          if (payload.onboardingUrl) {
+            window.location.assign(payload.onboardingUrl);
+            return;
+          }
+          setStripeStatus(payload.ready ? "ready" : "action");
+        })
+        .catch((error: unknown) => {
+          if (!active) return;
+          setStripeStatus("error");
+          setStripeError(error instanceof Error ? error.message : "Stripe status could not be loaded.");
+        });
+    }, 0);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [accessToken, authReady]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setManagedAuctions(loadManagedAuctions());
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
@@ -446,6 +547,40 @@ export function CreateLaptopForm() {
       slug,
     }));
   }, [anythingSource, assetName, brandModel, draftReady, extraNote, furthestStep, largePrice, layoutCount, listingDays, machine, machineCost, mediumPrice, modelMode, ownership, screenSize, showcase, slug, smallPrice, specialPrice, specialSpot, step, stickerMonths, surfaceSpots, teslaModel, title]);
+
+  useEffect(() => {
+    if (!draftReady || !brandModel || brandModelPreview) return;
+
+    const controller = new AbortController();
+    const restore = async () => {
+      setModelPreviewRestoreState("restoring");
+      try {
+        const response = await fetch("/api/models/preview-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            path: brandModel.storagePath,
+            fileName: brandModel.fileName,
+            size: brandModel.size,
+            uploadClaim: brandModel.uploadClaim,
+          }),
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const payload = await response.json() as ModelPreviewResponse;
+        if (!response.ok || !payload.sourceUrl || !payload.format) {
+          throw new Error(payload.error || "The saved model preview could not be restored.");
+        }
+        setBrandModelPreview({ sourceUrl: payload.sourceUrl, format: payload.format });
+        setModelPreviewRestoreState("idle");
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setModelPreviewRestoreState("error");
+      }
+    };
+    void restore();
+    return () => controller.abort();
+  }, [brandModel, brandModelPreview, draftReady]);
 
   useEffect(() => {
     let active = true;
@@ -549,6 +684,7 @@ export function CreateLaptopForm() {
     && surfaceSpots.every((spot) => spot.position.length === 3 && spot.normal.length === 3));
   const desiredPublicLocation = laptopPath(slug);
   const sharePost = X_SHARE_POSTS[shareLocale](laptopUrl(slug), objectName, isAnything);
+  const addressUnavailable = addressAvailability === "taken";
 
   const selectLayout = (count: LayoutCount) => {
     setLayoutCount(count);
@@ -613,6 +749,7 @@ export function CreateLaptopForm() {
     const nextPresetId = presetIdFor(nextMachine, teslaModel);
     setBrandModel(null);
     setBrandModelPreview(null);
+    setModelPreviewRestoreState("idle");
     clearSurfaceLayout();
     setModelMode(nextPresetId ? "preset" : "custom");
     setMachine(nextMachine);
@@ -628,6 +765,7 @@ export function CreateLaptopForm() {
   const selectTeslaModel = (model: TeslaModel) => {
     setBrandModel(null);
     setBrandModelPreview(null);
+    setModelPreviewRestoreState("idle");
     clearSurfaceLayout();
     setModelMode(presetIdFor("tesla", model) ? "preset" : "custom");
     setTeslaModel(model);
@@ -664,15 +802,26 @@ export function CreateLaptopForm() {
       : [...current, option]);
   };
 
-  const rememberManagedLid = (location: string) => {
-    const entry = { slug, title };
-    window.localStorage.setItem(MANAGED_LID_STORAGE_KEY, JSON.stringify(entry));
-    setManagedLid(entry);
+  const rememberBrowserAuction = (location: string) => {
+    const recoveryCode = managerRecoveryCode;
+    const entry = { slug, title, recoveryCode };
+    setPublishedRecoveryCode(recoveryCode);
     setPublishedLocation(location);
+    setManagerRecoveryCode(generateManagerRecoveryCode());
+    try {
+      setManagedAuctions(rememberManagedAuction(entry));
+    } catch {
+      setErrorMessage("Your auction is live, but this browser blocked local saving. Copy the recovery code below before leaving this page.");
+    }
   };
 
   const publishLaptop = async (form: HTMLFormElement, mode: "x" | "browser") => {
     if (publishedLocation === desiredPublicLocation) return publishedLocation;
+    if (addressUnavailable) {
+      setErrorMessage("That public address is already used by another auction. Choose a different address.");
+      addressInputRef.current?.reportValidity();
+      return null;
+    }
 
     setSubmitting(true);
     setErrorMessage("");
@@ -714,28 +863,43 @@ export function CreateLaptopForm() {
     formData.set("mediumOpeningBidCents", String(Math.round(prices.medium * 100)));
     formData.set("largeOpeningBidCents", String(Math.round(prices.large * 100)));
     formData.set("minIncrementCents", "1000");
-    formData.set("auctionClosesAt", new Date(Date.now() + listingDays * 86_400_000).toISOString());
-    formData.set("idempotencyKey", idempotencyKey);
+    const fingerprint = fingerprintCreation(formData, listingDays);
+    let creationRequest = creationRequestRef.current;
+    if (!creationRequest || creationRequest.fingerprint !== fingerprint) {
+      creationRequest = {
+        fingerprint,
+        idempotencyKey: crypto.randomUUID(),
+        auctionClosesAt: new Date(Date.now() + listingDays * 86_400_000).toISOString(),
+      };
+      creationRequestRef.current = creationRequest;
+    }
+    formData.set("auctionClosesAt", creationRequest.auctionClosesAt);
+    formData.set("idempotencyKey", creationRequest.idempotencyKey);
 
     const headers: Record<string, string> = mode === "x" && accessToken
       ? { Authorization: `Bearer ${accessToken}` }
-      : { "X-Lid-Manager-Key": getOrCreateManagerKey() };
+      : { "X-Lid-Manager-Key": managerRecoveryCode };
 
     try {
       const response = await fetch("/api/laptops", { method: "POST", headers, body: formData });
       const payload = await response.json() as CreateResponse;
       if (!response.ok || !payload.location) {
         setErrorMessage(payload.error || "We could not publish this auction. Please try again.");
-        if (payload.result?.reason === "idempotency_conflict") setIdempotencyKey(crypto.randomUUID());
+        if (payload.result?.reason === "idempotency_conflict") creationRequestRef.current = null;
         if (response.status === 401 && mode === "x" && isSupabaseBrowserConfigured()) {
           await getSupabaseBrowser().auth.signOut({ scope: "local" });
           setAccessToken(null);
         }
         return null;
       }
+      creationRequestRef.current = null;
       window.sessionStorage.removeItem(DRAFT_STORAGE_KEY);
       window.sessionStorage.removeItem(LEGACY_DRAFT_STORAGE_KEY);
-      rememberManagedLid(payload.location);
+      if (mode === "browser") {
+        rememberBrowserAuction(payload.location);
+      } else {
+        setPublishedLocation(payload.location);
+      }
       return payload.location;
     } catch {
       setErrorMessage("The network did not confirm publication. Try again safely with the same details.");
@@ -745,35 +909,94 @@ export function CreateLaptopForm() {
     }
   };
 
-  const handleShareCopy = async (openX: boolean) => {
+  const handleCopySharePost = async () => {
+    setCopyFeedback("idle");
+    setErrorMessage("");
+    try {
+      await copyText(sharePost);
+      setCopyFeedback("copied");
+    } catch {
+      setErrorMessage("Your browser blocked copying. Select the post text and copy it manually.");
+    }
+  };
+
+  const handlePublishAndPost = async () => {
     const form = formRef.current;
     if (!form || submitting || !form.reportValidity()) return;
     setCopyFeedback("idle");
-    const composeWindow = openX ? window.open("about:blank", "_blank") : null;
+    setErrorMessage("");
+    const composeWindow = window.open("about:blank", "_blank");
     if (composeWindow) composeWindow.opener = null;
+
+    let copyWarning = "";
+    try {
+      await copyText(sharePost);
+      setCopyFeedback("copied");
+    } catch {
+      copyWarning = "Your browser blocked copying, but you can still use the text already filled in on X.";
+    }
 
     const location = await publishLaptop(form, "browser");
     if (!location) {
       composeWindow?.close();
       return;
     }
+    if (copyWarning) setErrorMessage(copyWarning);
     const post = X_SHARE_POSTS[shareLocale](`${SITE_URL}${location}`, objectName, isAnything);
-
-    if (openX) {
-      const composeUrl = `${X_COMPOSE_URL}?text=${encodeURIComponent(post)}`;
-      if (composeWindow) {
-        composeWindow.location.replace(composeUrl);
-      } else {
-        window.open(composeUrl, "_self");
-      }
-      return;
+    const composeUrl = `${X_COMPOSE_URL}?text=${encodeURIComponent(post)}`;
+    if (composeWindow) {
+      composeWindow.location.replace(composeUrl);
+    } else {
+      window.open(composeUrl, "_self");
     }
+  };
+
+  const startAnotherAuction = () => {
+    creationRequestRef.current = null;
+    setCreatedLocation(null);
+    setPublishedLocation(null);
+    setPublishedRecoveryCode(null);
+    setManagerRecoveryCode(generateManagerRecoveryCode());
+    setSlug("");
+    setTitle("Your brand, on my Mac.");
+    setStep(0);
+    setFurthestStep(0);
+    setCopyFeedback("idle");
+    setStripeStatus("idle");
+    setStripeError("");
+    setErrorMessage("");
+    setAddressAvailability("invalid");
+    window.sessionStorage.removeItem(DRAFT_STORAGE_KEY);
+    window.sessionStorage.removeItem(LEGACY_DRAFT_STORAGE_KEY);
+  };
+
+  const handleStripeConnect = async (location: string) => {
+    if (stripeStatus === "connecting" || stripeStatus === "checking") return;
+    const campaignSlug = location.replace(/^\/+|\/+$/g, "");
+    if (!campaignSlug) return;
+    setStripeStatus("connecting");
+    setStripeError("");
+    const managedAuction = loadManagedAuctions().find((auction) => auction.slug === campaignSlug);
+    const headers: Record<string, string> = accessToken
+      ? { Authorization: `Bearer ${accessToken}` }
+      : { "X-Lid-Manager-Key": managedAuction?.recoveryCode ?? managerRecoveryCode };
 
     try {
-      await copyText(post);
-      setCopyFeedback("copied");
-    } catch {
-      setErrorMessage("Your browser blocked copying. Select the post text and copy it manually.");
+      const response = await fetch(`/api/laptops/${encodeURIComponent(campaignSlug)}/stripe/connect`, {
+        method: "POST",
+        headers,
+      });
+      const payload = await response.json() as StripeConnectResponse;
+      if (!response.ok) throw new Error(payload.error || "Stripe onboarding could not be started.");
+      if (payload.ready) {
+        setStripeStatus("ready");
+        return;
+      }
+      if (!payload.onboardingUrl) throw new Error("Stripe did not return an onboarding link.");
+      window.location.assign(payload.onboardingUrl);
+    } catch (error) {
+      setStripeStatus("error");
+      setStripeError(error instanceof Error ? error.message : "Stripe onboarding could not be started.");
     }
   };
 
@@ -798,16 +1021,17 @@ export function CreateLaptopForm() {
       setErrorMessage("");
 
       try {
-        const { error } = await getSupabaseBrowser().auth.signInWithOAuth({
-          provider: "x",
-          options: { redirectTo: `${window.location.origin}/sell` },
-        });
-        if (error) throw error;
-      } catch {
+        await signInWithX(`${window.location.origin}/sell`);
+        if (isDevXAuthMockEnabled()) setAuthRedirecting(false);
+      } catch (error) {
         window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
         setAuthRedirecting(false);
-        setXSignInUnavailable(true);
-        setErrorMessage("");
+        if (isDevXAuthMockEnabled()) {
+          setErrorMessage(error instanceof Error ? error.message : "The local X sign-in mock failed.");
+        } else {
+          setXSignInUnavailable(true);
+          setErrorMessage("");
+        }
       }
       return;
     }
@@ -818,22 +1042,36 @@ export function CreateLaptopForm() {
   };
 
   useEffect(() => {
-    if (!draftReady || !authReady || !accessToken || submitting || step !== STEPS.length - 1) return;
+    if (!draftReady || !authReady || !accessToken || authRedirecting || submitting || step !== STEPS.length - 1) return;
     if (window.sessionStorage.getItem(PUBLISH_AFTER_AUTH_KEY) !== "1") return;
 
     const timer = window.setTimeout(() => formRef.current?.requestSubmit(), 0);
     return () => window.clearTimeout(timer);
-  }, [accessToken, authReady, draftReady, step, submitting]);
+  }, [accessToken, authReady, authRedirecting, draftReady, step, submitting]);
 
   if (createdLocation) {
     return (
       <main className={`${styles.page} ${styles.successPage}`}>
         <div className={styles.successMark} aria-hidden="true">✓</div>
         <p className={styles.successEyebrow}>Published</p>
-        <h1>Your {isAnything ? "object" : "lid"} is live.</h1>
-        <p>Brands can now explore {objectName}, see every spot, and join the auction.</p>
+        <h1>Your auction is live.</h1>
+        <p>Connect Stripe payouts before brands can place paid bids.</p>
         <div className={styles.successActions}>
+          {stripeStatus !== "ready" && (
+            <button
+              className={styles.primaryButton}
+              type="button"
+              disabled={stripeStatus === "checking" || stripeStatus === "connecting"}
+              onClick={() => void handleStripeConnect(createdLocation)}
+            >
+              {stripeStatus === "checking" ? "Checking Stripe…" : stripeStatus === "connecting" ? "Opening Stripe…" : stripeStatus === "action" ? "Finish Stripe onboarding" : "Connect Stripe payouts"}
+            </button>
+          )}
+          {stripeStatus === "ready" && <p className={styles.stripeReady} role="status">✓ Stripe payouts are ready. Brands can now bid.</p>}
+          {stripeError && <p className={styles.error} role="alert">{stripeError}</p>}
           <Link className={styles.primaryButton} href={createdLocation}>Open your public auction</Link>
+          <button className={styles.secondaryButton} type="button" onClick={startAnotherAuction}>Publish another object</button>
+          <Link className={styles.secondaryButton} href="/manage">Manage your auctions</Link>
           <Link className={styles.secondaryButton} href="/">Back to Brand Anything</Link>
         </div>
       </main>
@@ -849,10 +1087,10 @@ export function CreateLaptopForm() {
           <p className={styles.heroKicker}>From Mac lids to moving machines</p>
           <h1>Put anything up.</h1>
           <p>You bring the object and set the prices; Brand Anything turns it into a live sponsorship auction.</p>
-          {xSignInUnavailable ? managedLid && (
-            <p className={styles.signIn}>Your auction is saved in this browser. <Link href={laptopPath(managedLid.slug)}>Manage {managedLid.title}</Link>.</p>
+          {xSignInUnavailable ? managedAuctions.length > 0 && (
+            <p className={styles.signIn}>{managedAuctions.length} {managedAuctions.length === 1 ? "auction is" : "auctions are"} saved in this browser. <Link href="/manage">Manage them</Link>.</p>
           ) : (
-            <p className={styles.signIn}>Already published an auction? <Link href="/">Sign in to manage it</Link>.</p>
+            <p className={styles.signIn}>Already published an auction? <Link href="/manage">Sign in or use a recovery code</Link>.</p>
           )}
 
           <ol className={styles.steps} aria-label="Listing steps">
@@ -933,6 +1171,7 @@ export function CreateLaptopForm() {
                           onClick={() => {
                             setBrandModel(null);
                             setBrandModelPreview(null);
+                            setModelPreviewRestoreState("idle");
                             clearSurfaceLayout();
                             setModelMode("custom");
                           }}
@@ -949,6 +1188,7 @@ export function CreateLaptopForm() {
                             onClick={() => {
                               setBrandModel(null);
                               setBrandModelPreview(null);
+                              setModelPreviewRestoreState("idle");
                               clearSurfaceLayout();
                               setModelMode("preset");
                               setAssetName(selectedPreset.assetName);
@@ -968,12 +1208,18 @@ export function CreateLaptopForm() {
                           source={anythingSource}
                           onSourceChange={setAnythingSource}
                           model={brandModel}
-                          onModelChange={setBrandModel}
+                          onModelChange={(model) => {
+                            setBrandModel(model);
+                            setModelPreviewRestoreState("idle");
+                          }}
                           onPreviewChange={(preview) => {
                             setBrandModelPreview(preview);
+                            setModelPreviewRestoreState("idle");
                             clearSurfaceLayout();
                           }}
-                          getUploadHeaders={() => ({ "X-Lid-Manager-Key": getOrCreateManagerKey() })}
+                          getUploadHeaders={(): Record<string, string> => accessToken
+                            ? { Authorization: `Bearer ${accessToken}` }
+                            : { "X-Lid-Manager-Key": managerRecoveryCode }}
                         />
                       </>
                     )}
@@ -987,7 +1233,7 @@ export function CreateLaptopForm() {
                     <p className={styles.supporting}>A large sticker prints at <strong>9.5 × 5.5 cm</strong> on this one. Pick the nearest if yours is in between.</p>
                   </>
                 )}
-                <div className={styles.stripeNote}>One thing before you build: buyers pay into your own <strong>Stripe</strong> account, so you need one — free, three clicks if you have it already, and <a href="https://stripe.com/global" target="_blank" rel="noreferrer">available in these countries</a>.<button type="button">Stripe isn&apos;t available in my country →</button></div>
+                <div className={styles.stripeNote}>One thing before you build: paid bid deposits land in your own <strong>Stripe</strong> account, so you need one. Setup starts after publishing; check the <a href="https://stripe.com/global" target="_blank" rel="noreferrer">supported countries</a>.<a className={styles.stripeAvailability} href="https://docs.stripe.com/connect/how-connect-works#availability" target="_blank" rel="noreferrer">Stripe isn&apos;t available in my country →</a></div>
               </fieldset>
             )}
 
@@ -1078,7 +1324,7 @@ export function CreateLaptopForm() {
             {step === 4 && (
               <fieldset>
                 <legend>What does a spot start at?</legend>
-                <p className={styles.introCopy}>One price each, paid in full by whoever takes the spot. The figures below are what we suggest — change any of them. The ones around the centre carry a premium on top.</p>
+                <p className={styles.introCopy}>One committed price for each winning spot. Stripe collects a 20% deposit with every live bid; the winning brand settles the remaining balance after the auction. The figures below are suggestions — change any of them.</p>
                 <div className={styles.priceList}>
                   <PriceField label={`${spotCountBySize.large} × Large`} dimensions={isAnything ? "Hero placement" : "9.5 × 5.5 cm printed"} value={largePrice} onChange={setLargePrice} />
                   <PriceField label={`${spotCountBySize.medium} × Medium`} dimensions={isAnything ? "Profile placement" : "9.5 × 4 cm printed"} value={mediumPrice} onChange={setMediumPrice} />
@@ -1116,7 +1362,12 @@ export function CreateLaptopForm() {
               <fieldset>
                 <legend>Name it, and put it up.</legend>
                 <label className={styles.inputLabel}>Title<input type="text" value={title} minLength={3} maxLength={80} onChange={(event) => setTitle(event.target.value)} placeholder="Ten spots on my MacBook Pro" required /></label>
-                <label className={styles.inputLabel}>Address<span className={styles.addressField}><b>{SITE_HOST}/</b><input value={slug} minLength={3} maxLength={48} onChange={(event) => setSlug(slugify(event.target.value))} placeholder="your-name" required /><i aria-label="Address is available">✓</i></span></label>
+                <label className={styles.inputLabel}>Address<span className={styles.addressField}><b>{SITE_HOST}/</b><input ref={addressInputRef} value={slug} minLength={3} maxLength={48} aria-invalid={addressUnavailable || undefined} onChange={(event) => {
+                  event.currentTarget.setCustomValidity("");
+                  setSlug(slugify(event.target.value));
+                  setAddressAvailability("checking");
+                  setErrorMessage("");
+                }} placeholder="your-name" required /><i className={addressUnavailable ? styles.addressTaken : addressAvailability === "checking" ? styles.addressChecking : undefined} aria-label={addressAvailability === "available" ? "Address is available" : addressAvailability === "published" ? "This auction is published" : addressAvailability === "taken" ? "Address is already taken" : addressAvailability === "checking" ? "Checking address" : "Address status unavailable"}>{addressAvailability === "checking" ? "…" : addressUnavailable ? "×" : addressAvailability === "invalid" || addressAvailability === "unknown" ? "" : "✓"}</i></span><small className={addressUnavailable ? styles.addressStatusError : styles.addressStatus}>{addressAvailability === "taken" ? "Already used by another auction. Choose a different address." : addressAvailability === "published" ? "This is your published auction." : addressAvailability === "available" ? "Available — this address will identify one auction." : addressAvailability === "checking" ? "Checking availability…" : addressAvailability === "invalid" ? "Use 3–48 letters, numbers or hyphens." : "Availability will be confirmed when you publish."}</small></label>
                 <dl className={styles.summary}>
                   <div><dt>Object</dt><dd>{objectName}</dd></div>
                   <div><dt>Ownership</dt><dd>{ownership === "own" ? "You own it" : `Funding ${formatMoney(fundingCost || 0)}`}</dd></div>
@@ -1125,7 +1376,7 @@ export function CreateLaptopForm() {
                   <div><dt>Runs for</dt><dd>{listingDays} days</dd></div>
                   <div><dt>Stickers stay</dt><dd>{stickerMonths} months</dd></div>
                 </dl>
-                <p className={styles.publishCopy}>Buyers pay you directly — the money lands in your own Stripe account, minus the 10% platform fee and Stripe&apos;s processing fees. You produce each placement to the agreed spec and approve every logo before it appears.</p>
+                <p className={styles.publishCopy}>Stripe collects a 20% bid deposit: half goes to your connected account and half reserves the platform&apos;s 10% of the full bid. If that brand wins, you collect the remaining 80% directly, for 90% total. Outbid deposits are refunded automatically.</p>
                 {xSignInUnavailable ? (
                   <section className={styles.shareFallback} aria-labelledby="x-share-title">
                     <h2 id="x-share-title">Share your auction instead.</h2>
@@ -1149,21 +1400,53 @@ export function CreateLaptopForm() {
                       </div>
                     </div>
                     <div className={styles.shareCopyBox}>
-                      <button type="button" className={styles.copyPostButton} disabled={submitting} onClick={() => void handleShareCopy(false)}>
-                        {submitting ? "Publishing…" : copyFeedback === "copied" ? "Copied" : "Copy"}
+                      <button type="button" className={styles.copyPostButton} onClick={() => void handleCopySharePost()}>
+                        {copyFeedback === "copied" ? "Copied" : "Copy"}
                       </button>
                       <blockquote className={styles.shareCopy} lang={shareLocale}>{sharePost}</blockquote>
                     </div>
                     {copyFeedback === "copied" && (
                       <p className={styles.copyToast} role="status" aria-live="polite">Copied to your clipboard</p>
                     )}
+                    {publishedRecoveryCode && (
+                      <section className={styles.recoveryPanel} aria-labelledby="recovery-code-title">
+                        <div>
+                          <p className={styles.recoveryEyebrow}>Auction owner key</p>
+                          <h3 id="recovery-code-title">Save this recovery code.</h3>
+                          <p>It is the only way to manage this auction from another browser before you connect an X account.</p>
+                        </div>
+                        <code>{publishedRecoveryCode}</code>
+                        <div className={styles.recoveryActions}>
+                          <button
+                            type="button"
+                            onClick={() => void copyText(publishedRecoveryCode).then(() => setCopyFeedback("copied"))}
+                          >
+                            Copy recovery code
+                          </button>
+                          <Link href="/manage">Manage auctions</Link>
+                        </div>
+                      </section>
+                    )}
                     {errorMessage && <p className={styles.error} role="alert">{errorMessage}</p>}
-                    <button type="button" className={styles.xShareButton} disabled={submitting} onClick={() => void handleShareCopy(true)}>
+                    <button type="button" className={styles.xShareButton} disabled={submitting || addressUnavailable} onClick={() => void handlePublishAndPost()}>
                       {submitting ? "Publishing…" : "Post on X"}<span aria-hidden="true">↗</span>
                     </button>
                     <p className={styles.shareNote}>{publishedLocation
                       ? "Your auction is live and saved in this browser. Copy the post again whenever you need it."
-                      : "Copy or open X to publish your auction and save it in this browser. X opens in a new tab so this page stays here."}</p>
+                      : "Copy only copies the post. Post on X copies it, publishes this auction, and opens X in a new tab."}</p>
+                    {publishedLocation && stripeStatus !== "ready" && (
+                      <button
+                        type="button"
+                        className={styles.publishButton}
+                        disabled={stripeStatus === "checking" || stripeStatus === "connecting"}
+                        onClick={() => void handleStripeConnect(publishedLocation)}
+                      >
+                        {stripeStatus === "connecting" ? "Opening Stripe…" : stripeStatus === "action" ? "Finish Stripe onboarding" : "Connect Stripe payouts"}
+                      </button>
+                    )}
+                    {stripeStatus === "ready" && <p className={styles.stripeReady} role="status">✓ Stripe payouts are ready. Brands can now bid.</p>}
+                    {stripeError && <p className={styles.error} role="alert">{stripeError}</p>}
+                    {publishedLocation && <button type="button" className={styles.secondaryButton} onClick={startAnotherAuction}>Publish another object</button>}
                   </section>
                 ) : (
                   <>
@@ -1219,7 +1502,13 @@ export function CreateLaptopForm() {
                   <span className={styles.miniOrbit} aria-hidden="true" />
                   <div className={styles.miniObject} data-kind={machine} aria-hidden="true"><i /><i /><i /></div>
                   <strong>{objectName}</strong>
-                  <small>{brandModel ? `${brandModel.fileName} · uploaded — choose it again to edit the layout` : "Your 3D model appears here"}</small>
+                  <small>{brandModel
+                    ? modelPreviewRestoreState === "restoring"
+                      ? `${brandModel.fileName} · restoring private preview…`
+                      : modelPreviewRestoreState === "error"
+                        ? `${brandModel.fileName} · uploaded — choose the file again to restore its preview`
+                        : `${brandModel.fileName} · uploaded`
+                    : "Your 3D model appears here"}</small>
                 </div>
               )
             ) : (
