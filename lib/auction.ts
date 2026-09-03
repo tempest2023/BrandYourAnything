@@ -1,4 +1,5 @@
 export type { Currency } from "@/lib/money";
+import type { SurfaceVector } from "@/lib/surface-spots";
 export type SpotSize = "S" | "M" | "L";
 
 export type Spot = {
@@ -12,6 +13,8 @@ export type Spot = {
   bids: number;
   logo?: string;
   website?: string;
+  surfacePosition?: SurfaceVector;
+  surfaceNormal?: SurfaceVector;
 };
 
 export type BidHistoryItem = {
