@@ -1,11 +1,27 @@
 import "server-only";
 
+import { isSupportedBrandModelFileName } from "@/lib/brand-model";
+import type { CampaignAssetType } from "@/lib/brand-model";
+import { isModelSizeAllowed } from "@/lib/model-upload-claim";
+import {
+  MAX_SURFACE_SPOTS,
+  MIN_SURFACE_SPOTS,
+  type SpotLayoutItem,
+  type SurfaceVector,
+} from "@/lib/surface-spots";
+import {
+  getPresetModel,
+  getPresetModelStoragePath,
+  type PresetModelId,
+} from "@/lib/preset-models";
+
 export const MAX_LAPTOP_PHOTO_BYTES = 5 * 1024 * 1024;
 
 const ACCEPTED_PHOTO_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9_-]{1,46}[a-z0-9_-])$/;
+const MODEL_PATH_PATTERN = /^[a-f0-9]{16}\/[a-f0-9-]{36}-[a-zA-Z0-9_-]+\.(?:glb|gltf|obj|fbx|stl|ply)$/i;
 
 export class LaptopValidationError extends Error {
   constructor(message: string) {
@@ -22,12 +38,20 @@ export type ParsedLaptopForm = {
   tagline: string;
   story: string;
   laptopModel: string;
+  assetType: CampaignAssetType;
+  assetName: string;
+  presetModelId: PresetModelId | null;
+  modelStoragePath: string | null;
+  modelUploadClaim: string | null;
+  modelFileName: string | null;
+  modelFileSize: number | null;
   goalCents: number;
   auctionClosesAt: string;
   smallOpeningBidCents: number;
   mediumOpeningBidCents: number;
   largeOpeningBidCents: number;
   minIncrementCents: number;
+  spotLayout: SpotLayoutItem[];
   idempotencyKey: string;
   photo: File | null;
 };
@@ -52,6 +76,61 @@ function cents(formData: FormData, key: string, minimum: number, maximum: number
   return value;
 }
 
+function optionalText(formData: FormData, key: string, maxLength: number) {
+  const value = formData.get(key);
+  if (value === null || value === "") return null;
+  if (typeof value !== "string" || value.trim().length > maxLength) {
+    throw new LaptopValidationError(`${key} is not valid.`);
+  }
+  return value.trim();
+}
+
+function surfaceVector(value: unknown): SurfaceVector | undefined {
+  if (!Array.isArray(value) || value.length !== 3
+    || !value.every((component) => typeof component === "number" && Number.isFinite(component) && Math.abs(component) <= 20)) return undefined;
+  return [value[0], value[1], value[2]];
+}
+
+function parseSpotLayout(formData: FormData, assetType: CampaignAssetType) {
+  const layoutCount = Number(requiredText(formData, "layoutCount", 1, 2));
+  const minimum = assetType === "anything" ? MIN_SURFACE_SPOTS : 6;
+  const maximum = assetType === "anything" ? MAX_SURFACE_SPOTS : 10;
+  if (!Number.isInteger(layoutCount) || layoutCount < minimum || layoutCount > maximum
+    || (assetType === "laptop" && layoutCount !== 6 && layoutCount !== 10)) {
+    throw new LaptopValidationError("Choose a supported number of brand spots.");
+  }
+  const raw = requiredText(formData, "spotLayout", 2, 12_000);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new LaptopValidationError("The spot layout could not be read.");
+  }
+  if (!Array.isArray(parsed) || parsed.length !== layoutCount) {
+    throw new LaptopValidationError("The spot layout does not match its spot count.");
+  }
+  return parsed.map((value, index): SpotLayoutItem => {
+    if (!value || typeof value !== "object") throw new LaptopValidationError("A spot layout entry is invalid.");
+    const spot = value as Record<string, unknown>;
+    const position = surfaceVector(spot.position);
+    const normal = surfaceVector(spot.normal);
+    const name = typeof spot.name === "string" ? spot.name.trim() : "";
+    const dimensions = typeof spot.dimensions === "string" ? spot.dimensions.trim() : "";
+    if (spot.id !== index + 1 || !["S", "M", "L"].includes(String(spot.size))
+      || name.length < 2 || name.length > 80 || dimensions.length < 2 || dimensions.length > 100
+      || (assetType === "anything" && (!position || !normal))) {
+      throw new LaptopValidationError(`Spot ${index + 1} is not placed on a valid model surface.`);
+    }
+    return {
+      id: index + 1,
+      name,
+      size: spot.size as SpotLayoutItem["size"],
+      dimensions,
+      ...(position && normal ? { position, normal } : {}),
+    };
+  });
+}
+
 export function parseLaptopForm(formData: FormData): ParsedLaptopForm {
   const slug = requiredText(formData, "slug", 3, 48).toLowerCase();
   const ownerName = requiredText(formData, "ownerName", 2, 80);
@@ -60,12 +139,26 @@ export function parseLaptopForm(formData: FormData): ParsedLaptopForm {
   const tagline = requiredText(formData, "tagline", 3, 160);
   const story = requiredText(formData, "story", 20, 1200);
   const laptopModel = requiredText(formData, "laptopModel", 2, 100);
+  const assetTypeValue = requiredText(formData, "assetType", 3, 20);
+  const assetType: CampaignAssetType = assetTypeValue === "anything" ? "anything" : "laptop";
+  if (assetTypeValue !== assetType) {
+    throw new LaptopValidationError("Choose a supported auction object type.");
+  }
+  const assetName = requiredText(formData, "assetName", 2, 80);
+  const spotLayout = parseSpotLayout(formData, assetType);
+  const presetModelIdValue = optionalText(formData, "presetModelId", 64);
+  const presetModel = getPresetModel(presetModelIdValue);
+  const modelStoragePath = optionalText(formData, "modelStoragePath", 320);
+  const modelUploadClaim = optionalText(formData, "modelUploadClaim", 64);
+  const modelFileName = optionalText(formData, "modelFileName", 180);
+  const modelFileSizeText = optionalText(formData, "modelFileSize", 12);
+  const modelFileSize = modelFileSizeText === null ? null : Number(modelFileSizeText);
   const idempotencyKey = requiredText(formData, "idempotencyKey", 36, 36).toLowerCase();
   const goalCents = cents(formData, "goalCents", 100, 100_000_000_000);
   const smallOpeningBidCents = cents(formData, "smallOpeningBidCents", 100, 100_000_000_000);
   const mediumOpeningBidCents = cents(formData, "mediumOpeningBidCents", 100, 100_000_000_000);
   const largeOpeningBidCents = cents(formData, "largeOpeningBidCents", 100, 100_000_000_000);
-  const minIncrementCents = cents(formData, "minIncrementCents", 100, 1_000_000);
+  const minIncrementCents = cents(formData, "minIncrementCents", 100, 100_000_000);
   const auctionClosesAtInput = requiredText(formData, "auctionClosesAt", 10, 40);
   const auctionClosesAtDate = new Date(auctionClosesAtInput);
   const minimumClose = Date.now() + 60 * 60 * 1000;
@@ -76,6 +169,20 @@ export function parseLaptopForm(formData: FormData): ParsedLaptopForm {
   }
   if (!EMAIL_PATTERN.test(ownerEmail)) {
     throw new LaptopValidationError("Owner email needs a valid address, for example you@company.com.");
+  }
+  if (presetModelIdValue && !presetModel) {
+    throw new LaptopValidationError("Choose a supported built-in 3D model.");
+  }
+  if (presetModel && assetType !== "anything") {
+    throw new LaptopValidationError("Built-in 3D models are only available for Brand Anything auctions.");
+  }
+  if (assetType === "anything") {
+    if (!presetModel && (!modelStoragePath || !MODEL_PATH_PATTERN.test(modelStoragePath)
+      || !modelUploadClaim || !/^[a-f0-9]{64}$/i.test(modelUploadClaim)
+      || !modelFileName || !isSupportedBrandModelFileName(modelFileName)
+      || modelFileSize === null || !isModelSizeAllowed(modelFileSize))) {
+      throw new LaptopValidationError("Upload a valid single-file 3D model before publishing this auction.");
+    }
   }
   if (!UUID_PATTERN.test(idempotencyKey)) {
     throw new LaptopValidationError("The creation request is missing a valid idempotency key.");
@@ -103,12 +210,22 @@ export function parseLaptopForm(formData: FormData): ParsedLaptopForm {
     tagline,
     story,
     laptopModel,
+    assetType,
+    assetName,
+    presetModelId: assetType === "anything" ? presetModel?.id ?? null : null,
+    modelStoragePath: assetType === "anything"
+      ? (presetModel ? getPresetModelStoragePath(presetModel.id) : modelStoragePath)
+      : null,
+    modelUploadClaim: assetType === "anything" && !presetModel ? modelUploadClaim : null,
+    modelFileName: assetType === "anything" ? presetModel?.fileName ?? modelFileName : null,
+    modelFileSize: assetType === "anything" && !presetModel ? modelFileSize : null,
     goalCents,
     auctionClosesAt: auctionClosesAtDate.toISOString(),
     smallOpeningBidCents,
     mediumOpeningBidCents,
     largeOpeningBidCents,
     minIncrementCents,
+    spotLayout,
     idempotencyKey,
     photo,
   };

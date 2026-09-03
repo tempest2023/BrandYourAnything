@@ -636,6 +636,18 @@ p {
   filter: drop-shadow(0 1.6rem 1.6rem oklch(20% 0.01 255 / 0.16));
 }
 
+.final-pc-shell {
+  width: 76%;
+  aspect-ratio: 1.45 / 1;
+  margin: 0 auto;
+  border: 1px solid oklch(72% 0.01 255);
+  border-radius: 1.4rem;
+  background:
+    radial-gradient(circle at 50% 4%, oklch(99% 0 0 / 0.72), transparent 42%),
+    linear-gradient(155deg, oklch(94% 0.008 255), oklch(78% 0.012 255));
+  box-shadow: 0 2rem 3rem oklch(20% 0.01 255 / 0.18), inset 0 1px oklch(100% 0 0 / 0.82);
+}
+
 .final-sticker {
   position: absolute;
   z-index: 2;
@@ -1323,33 +1335,324 @@ p {
 }
 
 .waitlist-section {
-  padding: 5rem 1rem;
-  background: var(--paper);
+  container-type: inline-size;
+  padding: clamp(4.5rem, 10vw, 8rem) 1rem;
+  background:
+    linear-gradient(180deg, color-mix(in oklch, var(--paper) 68%, var(--surface)), var(--paper));
 }
 
 .waitlist-card {
-  width: min(100%, 43rem);
+  --anything-accent: oklch(76% 0.17 67);
+  display: grid;
+  width: min(100%, 68rem);
   margin: 0 auto;
-  padding: 1.5rem;
-  border: 1px solid var(--hairline);
-  border-radius: 1.2rem;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklch, var(--hairline) 76%, var(--anything-accent));
+  border-radius: 1.75rem;
   background: var(--surface-raised);
-  box-shadow: 0 1rem 3rem oklch(25% 0.01 255 / 0.05);
+  box-shadow:
+    0 1px 0 color-mix(in oklch, var(--paper) 80%, transparent) inset,
+    0 2rem 5rem oklch(25% 0.015 255 / 0.1);
 }
 
-.waitlist-card > p:not(.eyebrow) {
-  max-width: 58ch;
+.anything-visual {
+  position: relative;
+  display: grid;
+  min-height: 21rem;
+  overflow: hidden;
+  padding: 1.35rem;
+  grid-template-rows: auto 1fr auto;
+  background:
+    radial-gradient(circle at 78% 18%, oklch(40% 0.03 255 / 0.5), transparent 31%),
+    linear-gradient(145deg, oklch(24% 0.012 255), oklch(17% 0.012 255));
+  color: oklch(95% 0.008 255);
+  isolation: isolate;
+}
+
+.anything-visual::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(oklch(92% 0.01 255 / 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(92% 0.01 255 / 0.045) 1px, transparent 1px);
+  background-size: 2rem 2rem;
+  content: "";
+  mask-image: linear-gradient(to bottom right, black, transparent 78%);
+}
+
+.anything-visual-meta,
+.anything-object-list {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: oklch(72% 0.012 255);
+  font-size: 0.63rem;
+  font-weight: 650;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.anything-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.anything-live::before {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--anything-accent);
+  box-shadow: 0 0 0 0.25rem color-mix(in oklch, var(--anything-accent) 16%, transparent);
+  content: "";
+}
+
+.anything-orbit {
+  position: relative;
+  width: min(100%, 20rem);
+  aspect-ratio: 1.7;
+  margin: auto;
+}
+
+.anything-orbit::before,
+.anything-orbit::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 92%;
+  height: 58%;
+  border: 1px solid oklch(88% 0.01 255 / 0.2);
+  border-radius: 50%;
+  content: "";
+  transform: translate(-50%, -50%) rotate(-8deg);
+}
+
+.anything-orbit::after {
+  width: 72%;
+  height: 86%;
+  border-color: oklch(88% 0.01 255 / 0.12);
+  transform: translate(-50%, -50%) rotate(54deg);
+}
+
+.anything-core {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 1;
+  display: flex;
+  width: 7.1rem;
+  height: 7.6rem;
+  padding: 1rem;
+  flex-direction: column;
+  justify-content: space-between;
+  border-radius: 42% 58% 48% 52% / 54% 44% 56% 46%;
+  background:
+    radial-gradient(circle at 78% 18%, var(--anything-accent) 0 0.52rem, transparent 0.56rem),
+    linear-gradient(145deg, oklch(98% 0.015 68), oklch(89% 0.055 68));
+  box-shadow: 0 1.5rem 3rem oklch(6% 0.01 255 / 0.46), inset 0 1px 0 oklch(100% 0 0 / 0.65);
+  color: oklch(20% 0.012 255);
+  transform: translate(-50%, -50%) rotate(3deg);
+  transition: transform 480ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.anything-core span {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.anything-core strong {
+  font-size: 1.62rem;
+  font-weight: 720;
+  letter-spacing: -0.075em;
+  line-height: 0.82;
+}
+
+.anything-marker {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 1px solid oklch(96% 0.005 255 / 0.42);
+  border-radius: 50%;
+  background: oklch(25% 0.014 255 / 0.9);
+  box-shadow: 0 0.5rem 1rem oklch(5% 0.01 255 / 0.35);
+  color: oklch(94% 0.006 255);
+  font-size: 0.58rem;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+}
+
+.anything-marker-one { top: 14%; left: 13%; }
+.anything-marker-two { top: 2%; right: 18%; }
+.anything-marker-three { right: 7%; bottom: 7%; }
+
+.anything-object-list {
+  justify-content: flex-start;
+  gap: 1rem;
+  color: oklch(83% 0.01 255);
+  letter-spacing: 0.06em;
+}
+
+.anything-object-list span:last-child {
+  color: var(--anything-accent);
+}
+
+.anything-content {
+  padding: clamp(1.75rem, 7vw, 3.75rem);
+}
+
+.anything-content .eyebrow {
+  margin-bottom: 1rem;
+  color: oklch(50% 0.13 60);
+}
+
+.anything-content h2 {
+  max-width: 11ch;
+  margin-bottom: 1.25rem;
+  font-size: clamp(2.4rem, 9vw, 4rem);
+  font-weight: 610;
+  letter-spacing: -0.065em;
+  line-height: 0.96;
+}
+
+.anything-copy {
+  max-width: 42rem;
+  margin: 0;
   color: var(--ink-2);
+  font-size: clamp(1rem, 2.5vw, 1.12rem);
+  line-height: 1.65;
 }
 
-.waitlist-card .dark-button {
-  margin: 0.4rem 0 1.1rem;
-  padding-inline: 1.25rem;
+.anything-path {
+  display: grid;
+  margin: 2rem 0 2.25rem;
+  padding: 0;
+  border-top: 1px solid var(--hairline);
+  list-style: none;
 }
 
-.waitlist-card small {
+.anything-path li {
+  display: grid;
+  min-height: 4.6rem;
+  padding: 0.85rem 0;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.anything-path b {
+  align-self: start;
+  padding-top: 0.2rem;
+  color: oklch(50% 0.13 60);
+  font-size: 0.62rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+}
+
+.anything-path strong,
+.anything-path small {
   display: block;
+}
+
+.anything-path strong {
+  color: var(--ink);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.anything-path small {
+  margin-top: 0.12rem;
   color: var(--ink-3);
+  font-size: 0.72rem;
+}
+
+.anything-actions {
+  display: grid;
+  gap: 1rem;
+}
+
+.anything-cta {
+  width: fit-content;
+  min-height: 3.35rem;
+  padding: 0.42rem 0.45rem 0.42rem 1.25rem;
+  gap: 1.1rem;
+  font-size: 0.83rem;
+}
+
+.anything-cta i {
+  display: grid;
+  width: 2.45rem;
+  height: 2.45rem;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--anything-accent);
+  color: oklch(20% 0.012 255);
+  font-size: 1rem;
+  font-style: normal;
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.anything-actions > small {
+  display: flex;
+  max-width: 43rem;
+  align-items: flex-start;
+  gap: 0.6rem;
+  color: var(--ink-3);
+  font-size: 0.72rem;
+  line-height: 1.55;
+}
+
+.anything-actions > small > span {
+  width: 0.42rem;
+  height: 0.42rem;
+  margin-top: 0.35rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--anything-accent);
+}
+
+@container (min-width: 52rem) {
+  .waitlist-card {
+    grid-template-columns: minmax(21rem, 0.84fr) minmax(0, 1.16fr);
+  }
+
+  .anything-visual {
+    min-height: 100%;
+    padding: 1.6rem;
+  }
+
+  .anything-content {
+    padding: clamp(2.75rem, 5cqi, 4.25rem);
+  }
+
+  .anything-path {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .anything-path li {
+    min-height: 6.7rem;
+    padding: 1rem 0.9rem 0.9rem;
+    grid-template-columns: 1fr;
+    align-content: start;
+    border-bottom: 0;
+  }
+
+  .anything-path li:first-child {
+    padding-left: 0;
+  }
+
+  .anything-path li + li {
+    border-left: 1px solid var(--hairline);
+  }
 }
 
 .traffic-section {
@@ -1818,6 +2121,14 @@ p {
     background: oklch(30% 0.01 255);
   }
 
+  .waitlist-card:hover .anything-core {
+    transform: translate(-50%, -50%) rotate(-2deg) scale(1.035);
+  }
+
+  .anything-cta:hover i {
+    transform: translate(0.12rem, -0.12rem);
+  }
+
   .primary-button:hover,
   .outbid-button:hover,
   .floating-cta:hover {
@@ -2022,14 +2333,6 @@ p {
   .specs-section,
   .faq-section {
     padding-block: 6rem;
-  }
-
-  .waitlist-section {
-    padding-block: 6rem;
-  }
-
-  .waitlist-card {
-    padding: 2.2rem;
   }
 
   .traffic-section {

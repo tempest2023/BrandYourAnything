@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 
-import { getLaptopMediaBucket } from "@/lib/database-names";
-import { createLaptop, getLaptopSnapshot } from "@/lib/laptop-repository";
+import { getBrandModelMimeType } from "@/lib/brand-model";
+import { getBrandModelBucket, getLaptopMediaBucket } from "@/lib/database-names";
+import { attachCampaignAsset, createLaptop, getLaptopSnapshot } from "@/lib/laptop-repository";
 import { LaptopValidationError, parseLaptopForm } from "@/lib/laptop-validation";
+import { normalizeModelClaimInput, verifyModelUploadClaim } from "@/lib/model-upload-claim";
 import { getSupabaseAdmin, isSupabaseConfigured } from "@/lib/supabase-admin";
 import { getPublishingOwner, XAuthenticationError } from "@/lib/x-auth";
 
@@ -50,6 +52,28 @@ export async function POST(request: Request) {
     formData.set("ownerName", owner.ownerName);
     formData.set("ownerEmail", owner.ownerEmail);
     const input = parseLaptopForm(formData);
+    if (input.assetType === "anything" && !input.presetModelId) {
+      const claimInput = normalizeModelClaimInput({
+        path: input.modelStoragePath!,
+        fileName: input.modelFileName!,
+        size: input.modelFileSize!,
+      });
+      if (!verifyModelUploadClaim(claimInput, input.modelUploadClaim!)) {
+        throw new LaptopValidationError("This model upload ticket is invalid or expired. Upload the model again.");
+      }
+      const { data: modelInfo, error: modelError } = await getSupabaseAdmin().storage
+        .from(getBrandModelBucket())
+        .info(input.modelStoragePath!);
+      if (modelError || !modelInfo) {
+        throw new LaptopValidationError("The uploaded 3D model could not be found. Upload it again before publishing.");
+      }
+      const expectedModelMime = getBrandModelMimeType(input.modelFileName!);
+      const storedModelMime = modelInfo.contentType?.split(";", 1)[0]?.toLowerCase();
+      if (modelInfo.size !== input.modelFileSize
+        || (storedModelMime && storedModelMime !== expectedModelMime && storedModelMime !== "application/octet-stream")) {
+        throw new LaptopValidationError("The uploaded 3D model does not match its upload ticket. Upload it again.");
+      }
+    }
     if (input.photo) {
       photoStoragePath = await uploadPhoto(input.photo, input.slug, input.idempotencyKey);
     }
@@ -69,6 +93,7 @@ export async function POST(request: Request) {
       mediumOpeningBidCents: input.mediumOpeningBidCents,
       largeOpeningBidCents: input.largeOpeningBidCents,
       minIncrementCents: input.minIncrementCents,
+      spotLayout: input.spotLayout,
       idempotencyKey: input.idempotencyKey,
     });
 
@@ -84,8 +109,17 @@ export async function POST(request: Request) {
     }
 
     databaseAccepted = true;
+    if (!result.laptopId) throw new Error("The database accepted the campaign without an id.");
+    await attachCampaignAsset({
+      laptopId: result.laptopId,
+      assetType: input.assetType,
+      assetName: input.assetName,
+      modelStoragePath: input.modelStoragePath,
+      modelFileName: input.modelFileName,
+      idempotencyKey: input.idempotencyKey,
+    });
     const snapshot = await getLaptopSnapshot(result.slug).catch((error) => {
-      console.error("Laptop was created but its first snapshot could not be loaded", error);
+      console.error("Campaign was created but its first snapshot could not be loaded", error);
       return null;
     });
 

@@ -10,18 +10,18 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: "Brand Anything — Put your brand on my laptop",
+  title: "Brand Anything — Turn any object into a brand auction",
   description:
-    "Publish your own 10-spot laptop sponsorship auction, accept live bids, and share a page built around the machine you carry.",
+    "Upload a 3D model, publish a finite sponsorship auction, and let brands bid for placements on the object you carry, drive, sail, or fly.",
   openGraph: {
-    title: "Brand Anything — Put your brand on my laptop",
-    description: "Create and share a live 10-spot laptop sponsorship auction.",
+    title: "Brand Anything — Turn any object into a brand auction",
+    description: "Create and share a live 3D sponsorship auction for almost any object.",
     images: [{ url: "/macbook.webp", width: 1536, height: 1024 }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Brand Anything — Put your brand on my laptop",
-    description: "Create and share a live 10-spot laptop sponsorship auction.",
+    title: "Brand Anything — Turn any object into a brand auction",
+    description: "Create and share a live 3D sponsorship auction for almost any object.",
     images: ["/macbook.webp"],
   },
 };

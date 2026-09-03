@@ -38,10 +38,22 @@ export function getCreateLaptopFunction() {
   return `${getDatabasePrefix()}_create_laptop`;
 }
 
+export function getConfigureLaptopSpotsFunction() {
+  return `${getDatabasePrefix()}_configure_laptop_spots`;
+}
+
 export function getPlaceLaptopBidFunction() {
   return `${getDatabasePrefix()}_place_laptop_bid`;
 }
 
 export function getLaptopMediaBucket() {
   return `${getDatabasePrefix()}_laptop_media`;
+}
+
+export function getBrandModelBucket() {
+  return `${getDatabasePrefix()}_brand_models`;
+}
+
+export function getCampaignAssetTable() {
+  return `${getDatabasePrefix()}_campaign_assets`;
 }

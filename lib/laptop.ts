@@ -1,4 +1,6 @@
 import type { AuctionSnapshot, PlaceBidResult } from "@/lib/auction";
+import type { CampaignAssetType } from "@/lib/brand-model";
+import type { SpotLayoutItem } from "@/lib/surface-spots";
 
 export type LaptopCampaign = {
   slug: string;
@@ -6,11 +8,15 @@ export type LaptopCampaign = {
   tagline: string;
   story: string;
   laptopModel: string;
+  assetType: CampaignAssetType;
+  assetName: string;
   ownerName: string;
   goal: number;
   closesAt: string;
   createdAt: string;
   photoUrl?: string;
+  modelUrl?: string;
+  modelFileName?: string;
 };
 
 export type LaptopSnapshot = AuctionSnapshot & {
@@ -32,6 +38,7 @@ export type CreateLaptopInput = {
   mediumOpeningBidCents: number;
   largeOpeningBidCents: number;
   minIncrementCents: number;
+  spotLayout: SpotLayoutItem[];
   idempotencyKey: string;
 };
 
