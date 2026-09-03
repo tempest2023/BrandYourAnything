@@ -33,12 +33,12 @@ enabled = false
 
 [storage]
 enabled = true
-file_size_limit = "2MiB"
+file_size_limit = "30MiB"
 
 [auth]
 enabled = true
-site_url = "http://127.0.0.1:3000"
-additional_redirect_urls = ["http://127.0.0.1:3000/sell", "http://localhost:3000/sell"]
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://127.0.0.1:3000/sell", "http://localhost:3000/sell", "http://127.0.0.1:3000/manage", "http://localhost:3000/manage"]
 enable_signup = true
 
 # Uncomment for local X OAuth after adding the matching values to an uncommitted .env file.

@@ -116,6 +116,32 @@
   line-height: 1.55;
 }
 
+.paymentNotice {
+  margin: 1rem 0 0 !important;
+  border: 1px solid var(--campaign-line);
+  border-radius: 0.35rem;
+  background: oklch(24% 0.02 250);
+  color: oklch(84% 0.02 250) !important;
+  padding: 0.75rem 0.9rem;
+  font-size: 0.72rem !important;
+  line-height: 1.5 !important;
+}
+
+.paymentNotice_accepted {
+  border-color: oklch(55% 0.1 145);
+  color: oklch(80% 0.12 145) !important;
+}
+
+.paymentNotice_refunded,
+.paymentNotice_cancelled {
+  color: oklch(78% 0.02 250) !important;
+}
+
+.paymentNotice_error {
+  border-color: oklch(55% 0.12 28);
+  color: oklch(82% 0.1 28) !important;
+}
+
 .heroStats {
   display: grid;
   margin-top: 2.5rem;
@@ -424,6 +450,29 @@
 .logoUpload:focus-within > span {
   border-color: oklch(70% 0.14 252);
   box-shadow: 0 0 0 3px oklch(58% 0.19 252 / 0.18);
+}
+
+.depositSummary {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.35rem 1rem;
+  border: 1px solid oklch(36% 0.016 250);
+  border-radius: 0.3rem;
+  background: oklch(23% 0.012 250);
+  padding: 0.85rem;
+  color: oklch(74% 0.012 250);
+  font-size: 0.72rem;
+}
+
+.depositSummary strong {
+  color: oklch(92% 0.008 250);
+  font-variant-numeric: tabular-nums;
+}
+
+.depositSummary small {
+  grid-column: 1 / -1;
+  color: oklch(62% 0.012 250);
+  line-height: 1.5;
 }
 
 .bidForm > button {

@@ -212,6 +212,7 @@
   background: rgba(0, 113, 227, 0.04);
   box-shadow: 0 0 0 1px var(--blue);
 }
+
 .surfaceLayoutControls {
   display: grid;
   margin-top: 18px;
@@ -389,7 +390,6 @@
   opacity: 0.45;
 }
 
-
 .fieldLabel {
   display: block;
   margin-top: 28px;
@@ -464,16 +464,17 @@
   text-underline-offset: 2px;
 }
 
-.stripeNote button {
+.stripeAvailability {
   display: block;
   margin-top: 10px;
   padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--ink);
-  cursor: pointer;
-  font: inherit;
+  color: var(--ink) !important;
   font-weight: 500;
+  text-decoration: none !important;
+}
+
+.stripeAvailability:hover {
+  text-decoration: underline !important;
 }
 
 .inputLabel,
@@ -552,6 +553,27 @@
   padding-right: 14px;
   color: #2e7d32;
   font-style: normal;
+}
+
+.addressField .addressChecking {
+  color: var(--muted);
+}
+
+.addressField .addressTaken {
+  color: #b42318;
+  font-weight: 600;
+}
+
+.addressStatus,
+.addressStatusError {
+  min-height: 18px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.addressStatusError {
+  color: #b42318;
 }
 
 .validation,
@@ -989,6 +1011,80 @@
   text-align: center;
 }
 
+.recoveryPanel {
+  display: grid;
+  margin-top: 18px;
+  padding: 18px;
+  gap: 14px;
+  border: 1px solid oklch(82% 0.075 80);
+  border-radius: 16px;
+  background: oklch(98% 0.022 80);
+}
+
+.recoveryPanel h3,
+.recoveryPanel p {
+  margin: 0;
+}
+
+.recoveryPanel h3 {
+  font-size: 16px;
+  font-weight: 620;
+  letter-spacing: -0.02em;
+}
+
+.recoveryPanel div > p:last-child {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.recoveryPanel .recoveryEyebrow {
+  margin-bottom: 5px;
+  color: oklch(47% 0.12 70);
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.recoveryPanel code {
+  display: block;
+  padding: 11px 12px;
+  overflow-wrap: anywhere;
+  border: 1px solid oklch(87% 0.04 80);
+  border-radius: 10px;
+  background: color-mix(in oklch, white 72%, transparent);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.5;
+  user-select: all;
+}
+
+.recoveryActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.recoveryActions button,
+.recoveryActions a {
+  display: inline-flex;
+  min-height: 34px;
+  padding: 7px 12px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid oklch(78% 0.06 75);
+  border-radius: 999px;
+  background: white;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
 .publishButton,
 .continueButton,
 .backButton,
@@ -1027,6 +1123,14 @@
 .continueButton:disabled {
   cursor: default;
   opacity: 0.6;
+}
+
+.stripeReady {
+  margin: 12px 0 0;
+  color: #1f873e;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
 }
 
 .authNote {
@@ -1624,11 +1728,6 @@
   min-height: 22rem;
   margin-bottom: 10px;
   border-radius: 16px;
-}
-
-.presetModelStage {
-  min-height: 30rem;
-  border-radius: 1.75rem;
 }
 
 .modelDrop {
@@ -2329,10 +2428,6 @@
   .surfaceLayoutFooter {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .presetModelStage {
-    min-height: 26rem;
   }
 
   .twoCards,

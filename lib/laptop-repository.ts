@@ -24,6 +24,8 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 type LaptopRow = {
   id: string;
   slug: string;
+  status: "published" | "closed";
+  is_default: boolean;
   owner_name: string;
   title: string;
   tagline: string;
@@ -32,6 +34,8 @@ type LaptopRow = {
   goal_cents: number;
   auction_closes_at: string;
   photo_storage_path: string | null;
+  stripe_charges_enabled: boolean;
+  stripe_payouts_enabled: boolean;
   created_at: string;
 };
 
@@ -118,14 +122,18 @@ async function signStoragePath(bucket: string, path: string | null) {
   return data.signedUrl;
 }
 
-export async function getLaptopSnapshot(slug: string): Promise<LaptopSnapshot | null> {
+async function getLaptopSnapshotByLookup(
+  lookup: { slug: string } | { isDefault: true },
+): Promise<LaptopSnapshot | null> {
   const supabase = getSupabaseAdmin();
-  const { data: laptopData, error: laptopError } = await supabase
+  let laptopQuery = supabase
     .from(getLaptopTable("laptops"))
-    .select("id,slug,owner_name,title,tagline,story,laptop_model,goal_cents,auction_closes_at,photo_storage_path,created_at")
-    .eq("slug", slug.toLowerCase())
-    .eq("status", "published")
-    .maybeSingle();
+    .select("id,slug,status,is_default,owner_name,title,tagline,story,laptop_model,goal_cents,auction_closes_at,photo_storage_path,stripe_charges_enabled,stripe_payouts_enabled,created_at")
+    .in("status", ["published", "closed"]);
+  laptopQuery = "slug" in lookup
+    ? laptopQuery.eq("slug", lookup.slug.toLowerCase())
+    : laptopQuery.eq("is_default", true);
+  const { data: laptopData, error: laptopError } = await laptopQuery.maybeSingle();
 
   if (laptopError) throw laptopError;
   if (!laptopData) return null;
@@ -199,6 +207,8 @@ export async function getLaptopSnapshot(slug: string): Promise<LaptopSnapshot | 
   return {
     campaign: {
       slug: laptop.slug,
+      status: laptop.status,
+      isDefault: laptop.is_default,
       title: laptop.title,
       tagline: laptop.tagline,
       story: laptop.story,
@@ -209,6 +219,7 @@ export async function getLaptopSnapshot(slug: string): Promise<LaptopSnapshot | 
       goal: laptop.goal_cents / 100,
       closesAt: laptop.auction_closes_at,
       createdAt: laptop.created_at,
+      paymentsEnabled: laptop.stripe_charges_enabled && laptop.stripe_payouts_enabled,
       ...(photoUrl ? { photoUrl } : {}),
       ...(modelUrl ? { modelUrl } : {}),
       ...(asset?.model_file_name ? { modelFileName: asset.model_file_name } : {}),
@@ -216,6 +227,14 @@ export async function getLaptopSnapshot(slug: string): Promise<LaptopSnapshot | 
     spots,
     history,
   };
+}
+
+export async function getLaptopSnapshot(slug: string): Promise<LaptopSnapshot | null> {
+  return getLaptopSnapshotByLookup({ slug });
+}
+
+export async function getDefaultLaptopSnapshot(): Promise<LaptopSnapshot | null> {
+  return getLaptopSnapshotByLookup({ isDefault: true });
 }
 
 export async function attachCampaignAsset(input: AttachCampaignAssetInput) {
@@ -252,6 +271,8 @@ export async function createLaptop(input: CreateLaptopInput): Promise<CreateLapt
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase.rpc(getCreateLaptopFunction(), {
     p_slug: input.slug,
+    p_owner_user_id: input.ownerUserId,
+    p_manager_key_hash: input.managerKeyHash,
     p_owner_name: input.ownerName,
     p_owner_email: input.ownerEmail,
     p_title: input.title,

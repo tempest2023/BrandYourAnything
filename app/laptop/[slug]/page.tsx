@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
-import { AuctionLandingPage } from "@/app/page";
+import { AuctionLandingPage } from "@/app/auction-landing-page";
 import { LaptopAuction } from "./laptop-auction";
 import { getLaptopSnapshot } from "@/lib/laptop-repository";
 import { laptopPath } from "@/lib/site";

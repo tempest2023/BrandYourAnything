@@ -1,5 +1,5 @@
 export const MIN_SURFACE_SPOTS = 4;
-export const MAX_SURFACE_SPOTS = 10;
+export const MAX_SURFACE_SPOTS = 16;
 
 export type SurfaceVector = [number, number, number];
 
