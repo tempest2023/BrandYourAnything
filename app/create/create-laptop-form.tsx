@@ -129,8 +129,8 @@ type SellDraft = {
 const TESLA_MODELS: TeslaModel[] = ["Model 3", "Model Y", "Model S", "Model X", "Cybertruck"];
 
 function presetIdFor(machine: Machine, teslaModel: TeslaModel): PresetModelId | null {
-  if (machine === "tesla" && teslaModel === "Model 3") return "tesla-model-3";
   if (machine === "tesla" && teslaModel === "Cybertruck") return "tesla-cybertruck";
+  if (machine === "tesla") return "tesla-model-3";
   if (machine === "yacht") return "flybridge-yacht";
   if (machine === "jet") return "private-jet";
   return null;
@@ -144,7 +144,7 @@ const OBJECT_PRESETS: Array<{
 }> = [
   { id: "mac", title: "Mac", description: "A familiar lid, ready for a finite set of sponsors.", icon: "laptop" },
   { id: "pc", title: "PC laptop", description: "A clean laptop lid without a maker mark in the preview.", icon: "pc" },
-  { id: "tesla", title: "Tesla", description: "Model 3 and Cybertruck include ready-to-use 3D models.", icon: "car" },
+  { id: "tesla", title: "Tesla", description: "Every listed Tesla includes a ready-to-use 3D preview.", icon: "car" },
   { id: "yacht", title: "Private yacht", description: "Start with a licensed flybridge motor-yacht model.", icon: "yacht" },
   { id: "jet", title: "Private jet", description: "Start with a licensed long-range business-jet model.", icon: "jet" },
   { id: "anything", title: "Anything else", description: "Bring a robot, instrument, sculpture or another one-of-one object.", icon: "anything" },
