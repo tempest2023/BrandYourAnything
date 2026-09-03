@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "@/app/i18n-provider";
 import { PreferenceControls } from "@/app/preference-controls";
+import { useHasManagedAuctions } from "@/app/use-has-managed-auctions";
 import {
   STARTER_HISTORY,
   STARTER_SPOTS,
@@ -313,6 +314,7 @@ function BidDialog({
 
 export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLandingProps) {
   const { currency, locale, t, formatDate } = useI18n();
+  const hasManagedAuctions = useHasManagedAuctions();
   const money = (amount: number) => formatCurrency(amount, currency, locale);
   const campaignGoal = campaign?.goal ?? CAMPAIGN_GOAL_USD;
   const auctionEndpoint = campaign
@@ -483,12 +485,8 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
             <span>Brand Anything</span>
           </a>
           <div className="nav-links">
-            <a href="#spots">{t("common.liveAuction")}</a>
-            <a href="#how">{t("common.how")}</a>
-            <a href="#specs">{t("common.machine")}</a>
-            <a href="#faq">{t("common.faq")}</a>
-            <Link href="/manage">{t("common.manageAuctions")}</Link>
-            <a href={CREATE_URL}>{t("common.listLaptop")}</a>
+            <a className="nav-link--how" href="#how">{t("common.how")}</a>
+            <a className="nav-link--faq" href="#faq">{t("common.faq")}</a>
           </div>
           <div className="nav-actions">
             <PreferenceControls />
@@ -651,7 +649,7 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
                         <td data-label={t("common.size")}><span className={`size-tag size-tag--${spot.size.toLowerCase()}`}>{spot.size}</span>{spot.dimensions}</td>
                         <td data-label={t("common.brand")}>{spot.bids === 0 ? <span className={auctionClosed ? "auction-closed-pill" : "availability-pill"}>{auctionClosed ? t("home.noWinner") : t("common.available")}</span> : spot.website ? <a href={spot.website} target="_blank" rel="noreferrer"><Logo spot={spot} compact /></a> : <Logo spot={spot} compact />}</td>
                         <td data-label={spot.bids === 0 ? t("home.startingBid") : t("common.currentBid")}><strong>{money(spot.bids === 0 ? spot.minBid : spot.bid)}</strong><small>{spot.bids === 0 ? t("common.noBids") : `${spot.bids} ${spot.bids === 1 ? t("common.bid").toLowerCase() : t("common.bids")}`}</small></td>
-                        <td data-label={t("common.action")}>{auctionClosed ? <span className="auction-closed-pill">{t("laptop.closed")}</span> : <button className="outbid-button" type="button" onClick={() => openBidDialog(spot.id)}>{spot.bids === 0 ? t("common.placeBid") : t("common.outbid")}</button>}</td>
+                        <td data-label={t("common.action")}>{auctionClosed ? <span className="auction-closed-pill">{t("laptop.closed")}</span> : <button className={`outbid-button ${spot.bids > 0 ? "outbid-button--outbid" : ""}`.trim()} type="button" onClick={() => openBidDialog(spot.id)}>{spot.bids === 0 ? t("common.placeBid") : t("common.outbid")}</button>}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -829,7 +827,7 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
             </div>
             <p>{t("home.footerOpenSource")} <a href={SOURCE_URL} target="_blank" rel="noreferrer">Brand Anything ↗</a></p>
             <p>{t("home.footerContribute")} <a href={`${SOURCE_URL}/issues`} target="_blank" rel="noreferrer">GitHub ↗</a></p>
-            <div className="footer-meta"><a href={CREATE_URL}>{t("common.listLaptop")}</a><Link href="/manage">{t("common.manageAuctions")}</Link><a href={SOURCE_URL} target="_blank" rel="noreferrer">{t("home.sourceGithub")}</a></div>
+            <div className="footer-meta"><a href={CREATE_URL}>{t("common.listLaptop")}</a>{hasManagedAuctions && <Link href="/manage">{t("common.manageAuctions")}</Link>}<a href={SOURCE_URL} target="_blank" rel="noreferrer">{t("home.sourceGithub")}</a></div>
             <p className="legal">{t("home.legal")}</p>
           </div>
         </div>

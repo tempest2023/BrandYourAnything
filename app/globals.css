@@ -132,7 +132,7 @@ p {
 
 .wordmark {
   display: inline-flex;
-  min-width: 0;
+  flex: 0 0 auto;
   align-items: center;
   gap: 0.55rem;
   font-size: 0.93rem;
@@ -148,11 +148,38 @@ p {
 }
 
 .nav-links {
+  container: auction-nav / inline-size;
+  display: flex;
+  min-width: 0;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(0.75rem, 1.2vw, 1.1rem);
+  color: var(--ink-2);
+  font-size: 0.78rem;
+}
+
+.nav-links a {
   display: none;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+@container auction-nav (min-width: 6.5rem) {
+  .nav-links .nav-link--how {
+    display: inline;
+  }
+}
+
+@container auction-nav (min-width: 10.75rem) {
+  .nav-links .nav-link--faq {
+    display: inline;
+  }
 }
 
 .nav-actions {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 0.5rem;
 }
@@ -221,7 +248,7 @@ p {
 
 .language-switch select {
   appearance: none;
-  width: 4rem;
+  width: 5.6rem;
   min-height: 2.3rem;
   border: 1px solid color-mix(in oklch, var(--hairline) 82%, transparent);
   border-radius: 999px;
@@ -1114,6 +1141,10 @@ p {
   padding: 0.55rem 1rem;
   font-size: 0.78rem;
   white-space: nowrap;
+}
+
+.outbid-button--outbid {
+  background: var(--ink);
 }
 
 .history-row {
@@ -2191,6 +2222,11 @@ p {
     transform: translateY(-1px);
   }
 
+  .outbid-button--outbid:hover {
+    background: oklch(30% 0.01 255);
+    box-shadow: 0 0.75rem 1.8rem oklch(20% 0.01 255 / 0.22);
+  }
+
   .lid-spot:not(:disabled):hover {
     z-index: 4;
     border-color: var(--blue);
@@ -2265,14 +2301,6 @@ p {
 }
 
 @media (min-width: 48rem) {
-  .nav-links {
-    display: flex;
-    align-items: center;
-    gap: clamp(1.1rem, 2.5vw, 2rem);
-    color: var(--ink-2);
-    font-size: 0.78rem;
-  }
-
   .hero {
     padding-top: 4.25rem;
   }
@@ -2417,7 +2445,7 @@ p {
   }
 }
 
-@media (max-width: 34rem) {
+@media (max-width: 63.99rem) {
   .nav-actions > .dark-button {
     display: none;
   }
