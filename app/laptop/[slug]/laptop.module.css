@@ -170,6 +170,22 @@
   text-align: center;
 }
 
+.lidWrap > .modelAttribution {
+  margin-top: 0.8rem;
+}
+
+.modelAttribution a {
+  color: var(--campaign-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--campaign-line);
+  text-underline-offset: 0.18rem;
+}
+
+.modelAttribution span {
+  display: block;
+  margin-top: 0.2rem;
+}
+
 .progressSection {
   width: min(100% - 2rem, 80rem);
   margin: 0 auto;

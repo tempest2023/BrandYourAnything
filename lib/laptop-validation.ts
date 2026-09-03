@@ -9,6 +9,11 @@ import {
   type SpotLayoutItem,
   type SurfaceVector,
 } from "@/lib/surface-spots";
+import {
+  getPresetModel,
+  getPresetModelStoragePath,
+  type PresetModelId,
+} from "@/lib/preset-models";
 
 export const MAX_LAPTOP_PHOTO_BYTES = 5 * 1024 * 1024;
 
@@ -35,6 +40,7 @@ export type ParsedLaptopForm = {
   laptopModel: string;
   assetType: CampaignAssetType;
   assetName: string;
+  presetModelId: PresetModelId | null;
   modelStoragePath: string | null;
   modelUploadClaim: string | null;
   modelFileName: string | null;
@@ -140,6 +146,8 @@ export function parseLaptopForm(formData: FormData): ParsedLaptopForm {
   }
   const assetName = requiredText(formData, "assetName", 2, 80);
   const spotLayout = parseSpotLayout(formData, assetType);
+  const presetModelIdValue = optionalText(formData, "presetModelId", 64);
+  const presetModel = getPresetModel(presetModelIdValue);
   const modelStoragePath = optionalText(formData, "modelStoragePath", 320);
   const modelUploadClaim = optionalText(formData, "modelUploadClaim", 64);
   const modelFileName = optionalText(formData, "modelFileName", 180);
@@ -162,11 +170,17 @@ export function parseLaptopForm(formData: FormData): ParsedLaptopForm {
   if (!EMAIL_PATTERN.test(ownerEmail)) {
     throw new LaptopValidationError("Owner email needs a valid address, for example you@company.com.");
   }
+  if (presetModelIdValue && !presetModel) {
+    throw new LaptopValidationError("Choose a supported built-in 3D model.");
+  }
+  if (presetModel && assetType !== "anything") {
+    throw new LaptopValidationError("Built-in 3D models are only available for Brand Anything auctions.");
+  }
   if (assetType === "anything") {
-    if (!modelStoragePath || !MODEL_PATH_PATTERN.test(modelStoragePath)
+    if (!presetModel && (!modelStoragePath || !MODEL_PATH_PATTERN.test(modelStoragePath)
       || !modelUploadClaim || !/^[a-f0-9]{64}$/i.test(modelUploadClaim)
       || !modelFileName || !isSupportedBrandModelFileName(modelFileName)
-      || modelFileSize === null || !isModelSizeAllowed(modelFileSize)) {
+      || modelFileSize === null || !isModelSizeAllowed(modelFileSize))) {
       throw new LaptopValidationError("Upload a valid single-file 3D model before publishing this auction.");
     }
   }
@@ -198,10 +212,13 @@ export function parseLaptopForm(formData: FormData): ParsedLaptopForm {
     laptopModel,
     assetType,
     assetName,
-    modelStoragePath: assetType === "anything" ? modelStoragePath : null,
-    modelUploadClaim: assetType === "anything" ? modelUploadClaim : null,
-    modelFileName: assetType === "anything" ? modelFileName : null,
-    modelFileSize: assetType === "anything" ? modelFileSize : null,
+    presetModelId: assetType === "anything" ? presetModel?.id ?? null : null,
+    modelStoragePath: assetType === "anything"
+      ? (presetModel ? getPresetModelStoragePath(presetModel.id) : modelStoragePath)
+      : null,
+    modelUploadClaim: assetType === "anything" && !presetModel ? modelUploadClaim : null,
+    modelFileName: assetType === "anything" ? presetModel?.fileName ?? modelFileName : null,
+    modelFileSize: assetType === "anything" && !presetModel ? modelFileSize : null,
     goalCents,
     auctionClosesAt: auctionClosesAtDate.toISOString(),
     smallOpeningBidCents,

@@ -18,6 +18,7 @@ import type {
   LaptopBidResult,
   LaptopSnapshot,
 } from "@/lib/laptop";
+import { getPresetModelFromStoragePath } from "@/lib/preset-models";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 type LaptopRow = {
@@ -157,9 +158,10 @@ export async function getLaptopSnapshot(slug: string): Promise<LaptopSnapshot | 
   const asset = assetResult.data as CampaignAssetRow | null;
   const assetType: CampaignAssetType = asset?.asset_type === "anything" ? "anything" : "laptop";
   const assetName = asset?.asset_name || laptop.laptop_model;
-  const modelUrl = asset?.model_storage_path
+  const presetModel = getPresetModelFromStoragePath(asset?.model_storage_path);
+  const modelUrl = presetModel?.publicPath || (asset?.model_storage_path
     ? await signStoragePath(getBrandModelBucket(), asset.model_storage_path)
-    : undefined;
+    : undefined);
 
   const spotRows = spotsResult.data as LaptopSpotRow[];
   const logoUrls = await Promise.all(

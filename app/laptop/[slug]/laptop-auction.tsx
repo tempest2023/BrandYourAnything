@@ -11,6 +11,7 @@ import type { Spot } from "@/lib/auction";
 import { getBrandModelFormat } from "@/lib/brand-model";
 import { formatRelativeTime, SPOT_NAME_KEYS } from "@/lib/i18n";
 import type { LaptopBidResult, LaptopSnapshot } from "@/lib/laptop";
+import { getPresetModelFromPublicPath } from "@/lib/preset-models";
 import {
   amountToUsd,
   amountToUsdCents,
@@ -191,6 +192,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
   const filled = useMemo(() => snapshot.spots.filter((spot) => spot.bids > 0).length, [snapshot.spots]);
   const progress = Math.min(100, Math.round((totalRaised / snapshot.campaign.goal) * 100));
   const isAnything = snapshot.campaign.assetType === "anything";
+  const presetModel = getPresetModelFromPublicPath(snapshot.campaign.modelUrl);
 
   const refresh = useCallback(async () => {
     try {
@@ -256,6 +258,15 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
             />
           ) : (
             <LaptopLid spots={snapshot.spots} onSelect={(spot) => setSelectedSpotId(spot.id)} />
+          )}
+          {presetModel && (
+            <p className={styles.modelAttribution}>
+              Model by <a href={presetModel.sourceUrl} target="_blank" rel="noreferrer">{presetModel.author}</a>
+              {" · "}<a href={presetModel.licenseUrl} target="_blank" rel="noreferrer">{presetModel.licenseName}</a>
+              {(presetModel.id === "flybridge-yacht" || presetModel.id === "private-jet") && (
+                <span>Representative preview — not an official manufacturer digital twin.</span>
+              )}
+            </p>
           )}
           <p>{isAnything ? t("laptop.orbitObject", { object: snapshot.campaign.assetName }) : t("laptop.tap", { model: snapshot.campaign.laptopModel })}</p>
         </div>
