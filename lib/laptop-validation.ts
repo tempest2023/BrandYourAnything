@@ -154,11 +154,11 @@ export function parseLaptopForm(formData: FormData): ParsedLaptopForm {
   const modelFileSizeText = optionalText(formData, "modelFileSize", 12);
   const modelFileSize = modelFileSizeText === null ? null : Number(modelFileSizeText);
   const idempotencyKey = requiredText(formData, "idempotencyKey", 36, 36).toLowerCase();
-  const goalCents = cents(formData, "goalCents", 10_000, 100_000_000);
-  const smallOpeningBidCents = cents(formData, "smallOpeningBidCents", 1_000, 10_000_000);
-  const mediumOpeningBidCents = cents(formData, "mediumOpeningBidCents", 1_000, 10_000_000);
-  const largeOpeningBidCents = cents(formData, "largeOpeningBidCents", 1_000, 10_000_000);
-  const minIncrementCents = cents(formData, "minIncrementCents", 100, 1_000_000);
+  const goalCents = cents(formData, "goalCents", 10_000, 10_000_000_000);
+  const smallOpeningBidCents = cents(formData, "smallOpeningBidCents", 1_000, 1_000_000_000);
+  const mediumOpeningBidCents = cents(formData, "mediumOpeningBidCents", 1_000, 1_000_000_000);
+  const largeOpeningBidCents = cents(formData, "largeOpeningBidCents", 1_000, 1_000_000_000);
+  const minIncrementCents = cents(formData, "minIncrementCents", 100, 100_000_000);
   const auctionClosesAtInput = requiredText(formData, "auctionClosesAt", 10, 40);
   const auctionClosesAtDate = new Date(auctionClosesAtInput);
   const minimumClose = Date.now() + 60 * 60 * 1000;

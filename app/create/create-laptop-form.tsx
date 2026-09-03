@@ -543,7 +543,7 @@ export function CreateLaptopForm() {
   const fundingCost = Number(machineCost);
   const needsCustomModel = isAnything && !usingPresetModel;
   const objectName = isAnything ? assetName.trim() || "your object" : `${machine === "mac" ? "Mac" : "PC"} · ${screenSize}″`;
-  const machineIsValid = ownership === "own" || (Number.isFinite(fundingCost) && fundingCost >= 100 && fundingCost <= 20_000);
+  const machineIsValid = ownership === "own" || (Number.isFinite(fundingCost) && fundingCost >= 100 && fundingCost <= 20_000_000);
   const objectIsValid = !isAnything || (assetName.trim().length >= 2 && (usingPresetModel || brandModel !== null));
   const layoutIsValid = !isAnything || (surfaceSpots.length === layoutCount
     && surfaceSpots.every((spot) => spot.position.length === 3 && spot.normal.length === 3));
@@ -748,6 +748,10 @@ export function CreateLaptopForm() {
   const handleShareCopy = async (openX: boolean) => {
     const form = formRef.current;
     if (!form || submitting || !form.reportValidity()) return;
+    if (!machineIsValid || !layoutIsValid || !objectIsValid) {
+      setErrorMessage("Please complete all required steps before publishing.");
+      return;
+    }
     setCopyFeedback("idle");
     const composeWindow = openX ? window.open("about:blank", "_blank") : null;
     if (composeWindow) composeWindow.opener = null;
@@ -780,6 +784,11 @@ export function CreateLaptopForm() {
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (submitting || authRedirecting) return;
+
+    if (!machineIsValid || !layoutIsValid || !objectIsValid) {
+      setErrorMessage("Please complete all required steps before publishing.");
+      return;
+    }
 
     if (!authReady) {
       setErrorMessage("Checking your X session. Please try again in a moment.");
@@ -1002,8 +1011,8 @@ export function CreateLaptopForm() {
                     <strong>I&apos;m funding it</strong><span>What the spots sell for pays for the machine, and the page carries a progress bar towards its price. If the goal is not reached, you still owe every sold sticker — topping the machine up yourself, or refunding the buyers you cannot deliver.</span>
                   </button>
                 </div>
-                {ownership === "fund" && <label className={styles.inputLabel}>What does the machine cost?<span className={styles.moneyField}><input type="number" min="100" max="20000" value={machineCost} onChange={(event) => setMachineCost(event.target.value)} /><b>€</b></span><small>The maker&apos;s own price for the exact machine, so the bar means something.</small></label>}
-                {!machineIsValid && <p className={styles.validation} role="alert">Give what the machine costs, between 100 € and 20 000 €.</p>}
+                {ownership === "fund" && <label className={styles.inputLabel}>What does the machine cost?<span className={styles.moneyField}><input type="number" min="100" max="20000000" value={machineCost} onChange={(event) => setMachineCost(event.target.value)} /><b>€</b></span><small>The maker&apos;s own price for the exact machine, so the bar means something.</small></label>}
+                {!machineIsValid && <p className={styles.validation} role="alert">Give what the machine costs, between 100 € and 20 000 000 €.</p>}
               </fieldset>
             )}
 
@@ -1128,7 +1137,7 @@ export function CreateLaptopForm() {
                 <p className={styles.publishCopy}>Buyers pay you directly — the money lands in your own Stripe account, minus the 10% platform fee and Stripe&apos;s processing fees. You produce each placement to the agreed spec and approve every logo before it appears.</p>
                 {xSignInUnavailable ? (
                   <section className={styles.shareFallback} aria-labelledby="x-share-title">
-                    <h2 id="x-share-title">Share your auction instead.</h2>
+                    <h2 id="x-share-title">Share your auction.</h2>
                     <div className={styles.shareLanguageRow}>
                       <span>Post language</span>
                       <div role="group" aria-label="Post language">
