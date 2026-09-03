@@ -5,6 +5,7 @@ export type ManagedAuction = {
 };
 
 export const MANAGED_AUCTIONS_STORAGE_KEY = "brand-anything-managed-auctions-v2";
+export const MANAGED_AUCTIONS_CHANGE_EVENT = "brand-anything-managed-auctions-change";
 const LEGACY_MANAGER_KEY_STORAGE_KEY = "brand-anything-lid-manager-key";
 const LEGACY_MANAGED_LID_STORAGE_KEY = "brand-anything-managed-lid";
 
@@ -80,6 +81,7 @@ export function loadManagedAuctions() {
 
 export function saveManagedAuctions(auctions: ManagedAuction[]) {
   window.localStorage.setItem(MANAGED_AUCTIONS_STORAGE_KEY, JSON.stringify(auctions));
+  window.dispatchEvent(new Event(MANAGED_AUCTIONS_CHANGE_EVENT));
 }
 
 export function rememberManagedAuction(entry: ManagedAuction) {

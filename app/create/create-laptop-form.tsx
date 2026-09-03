@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "@/app/i18n-provider";
 import { ModelStage } from "@/app/model-stage";
+import { useHasManagedAuctions } from "@/app/use-has-managed-auctions";
 import type { BrandModelPreview, UploadedBrandModel } from "@/lib/brand-model";
 import { LOCALES, type Locale } from "@/lib/i18n";
 import {
@@ -270,7 +271,7 @@ function Logo() {
   );
 }
 
-function SiteFooter() {
+function SiteFooter({ showDashboard }: { showDashboard: boolean }) {
   return (
     <footer className={styles.footer}>
       <div className={styles.footerInner}>
@@ -288,7 +289,7 @@ function SiteFooter() {
             <h2>Marketplace</h2>
             <Link href="/">All auctions</Link>
             <Link href="/sell">Brand your anything</Link>
-            <Link href="/manage">Your dashboard</Link>
+            {showDashboard && <Link href="/manage">Your dashboard</Link>}
           </div>
           <div>
             <h2>About</h2>
@@ -312,6 +313,7 @@ function SiteFooter() {
 
 export function CreateLaptopForm() {
   const { locale } = useI18n();
+  const hasManagedAuctions = useHasManagedAuctions();
   const formRef = useRef<HTMLFormElement>(null);
   const addressInputRef = useRef<HTMLInputElement>(null);
   const creationRequestRef = useRef<CreationRequest | null>(null);
@@ -1087,10 +1089,10 @@ export function CreateLaptopForm() {
           <p className={styles.heroKicker}>From Mac lids to moving machines</p>
           <h1>Put anything up.</h1>
           <p>You bring the object and set the prices; Brand Anything turns it into a live sponsorship auction.</p>
-          {xSignInUnavailable ? managedAuctions.length > 0 && (
+          {managedAuctions.length > 0 ? (
             <p className={styles.signIn}>{managedAuctions.length} {managedAuctions.length === 1 ? "auction is" : "auctions are"} saved in this browser. <Link href="/manage">Manage them</Link>.</p>
-          ) : (
-            <p className={styles.signIn}>Already published an auction? <Link href="/manage">Sign in or use a recovery code</Link>.</p>
+          ) : hasManagedAuctions && (
+            <p className={styles.signIn}>Your auctions are connected to X. <Link href="/manage">Manage them</Link>.</p>
           )}
 
           <ol className={styles.steps} aria-label="Listing steps">
@@ -1532,7 +1534,7 @@ export function CreateLaptopForm() {
         </form>
       </main>
 
-      <SiteFooter />
+      <SiteFooter showDashboard={hasManagedAuctions} />
     </div>
   );
 }

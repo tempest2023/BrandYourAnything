@@ -148,7 +148,33 @@ p {
 }
 
 .nav-links {
+  container: auction-nav / inline-size;
+  display: flex;
+  min-width: 0;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(0.75rem, 1.2vw, 1.1rem);
+  color: var(--ink-2);
+  font-size: 0.78rem;
+}
+
+.nav-links a {
   display: none;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+@container auction-nav (min-width: 6.5rem) {
+  .nav-links .nav-link--how {
+    display: inline;
+  }
+}
+
+@container auction-nav (min-width: 10.75rem) {
+  .nav-links .nav-link--faq {
+    display: inline;
+  }
 }
 
 .nav-actions {
@@ -2396,45 +2422,6 @@ p {
   }
 }
 
-@media (min-width: 64rem) {
-  .nav-links {
-    display: flex;
-    min-width: 0;
-    flex: 1 1 auto;
-    align-items: center;
-    justify-content: center;
-    gap: clamp(0.75rem, 1.2vw, 1.1rem);
-    color: var(--ink-2);
-    font-size: 0.78rem;
-  }
-
-  .nav-links a {
-    flex: 0 0 auto;
-    white-space: nowrap;
-  }
-
-  .nav-link--manage,
-  .nav-link--create {
-    display: none;
-  }
-}
-
-@media (min-width: 72rem) {
-  .nav-link--manage {
-    display: inline;
-  }
-}
-
-@media (min-width: 88rem) {
-  .nav-inner {
-    width: min(100% - 3rem, 88rem);
-  }
-
-  .nav-link--create {
-    display: inline;
-  }
-}
-
 @media (max-width: 26rem) {
   .wordmark span {
     display: none;
@@ -2458,7 +2445,7 @@ p {
   }
 }
 
-@media (max-width: 39.99rem) {
+@media (max-width: 63.99rem) {
   .nav-actions > .dark-button {
     display: none;
   }
