@@ -5,7 +5,7 @@ export const MAX_LAPTOP_PHOTO_BYTES = 5 * 1024 * 1024;
 const ACCEPTED_PHOTO_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,46}[a-z0-9])$/;
+const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9_-]{1,46}[a-z0-9_-])$/;
 
 export class LaptopValidationError extends Error {
   constructor(message: string) {
@@ -61,10 +61,10 @@ export function parseLaptopForm(formData: FormData): ParsedLaptopForm {
   const story = requiredText(formData, "story", 20, 1200);
   const laptopModel = requiredText(formData, "laptopModel", 2, 100);
   const idempotencyKey = requiredText(formData, "idempotencyKey", 36, 36).toLowerCase();
-  const goalCents = cents(formData, "goalCents", 10_000, 100_000_000);
-  const smallOpeningBidCents = cents(formData, "smallOpeningBidCents", 1_000, 10_000_000);
-  const mediumOpeningBidCents = cents(formData, "mediumOpeningBidCents", 1_000, 10_000_000);
-  const largeOpeningBidCents = cents(formData, "largeOpeningBidCents", 1_000, 10_000_000);
+  const goalCents = cents(formData, "goalCents", 100, 100_000_000_000);
+  const smallOpeningBidCents = cents(formData, "smallOpeningBidCents", 100, 100_000_000_000);
+  const mediumOpeningBidCents = cents(formData, "mediumOpeningBidCents", 100, 100_000_000_000);
+  const largeOpeningBidCents = cents(formData, "largeOpeningBidCents", 100, 100_000_000_000);
   const minIncrementCents = cents(formData, "minIncrementCents", 100, 1_000_000);
   const auctionClosesAtInput = requiredText(formData, "auctionClosesAt", 10, 40);
   const auctionClosesAtDate = new Date(auctionClosesAtInput);

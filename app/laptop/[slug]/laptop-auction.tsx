@@ -8,16 +8,35 @@ import { useI18n } from "@/app/i18n-provider";
 import { PreferenceControls } from "@/app/preference-controls";
 import type { Spot } from "@/lib/auction";
 import { formatRelativeTime, SPOT_NAME_KEYS } from "@/lib/i18n";
+import type { Locale } from "@/lib/i18n";
 import type { LaptopBidResult, LaptopSnapshot } from "@/lib/laptop";
 import {
+  amountFromUsd,
   amountToUsd,
   amountToUsdCents,
   currencyDisplayName,
+  currencySymbol,
   formatMoney as formatCurrency,
   minimumDisplayAmount,
 } from "@/lib/money";
+import type { Currency } from "@/lib/money";
 
 import styles from "./laptop.module.css";
+
+function compactMoney(amountUsd: number, currency: Currency, locale: Locale) {
+  const converted = amountFromUsd(amountUsd, currency);
+  const rounded = Math.round(converted);
+  const sym = currencySymbol(currency);
+  if (rounded >= 1_000_000) {
+    const m = rounded / 1_000_000;
+    return `${sym}${Number.isInteger(m) ? m : m.toFixed(1).replace(/\.0$/, "")}M`;
+  }
+  if (rounded >= 10_000) {
+    const k = rounded / 1_000;
+    return `${sym}${Number.isInteger(k) ? k : k.toFixed(1).replace(/\.0$/, "")}K`;
+  }
+  return formatCurrency(amountUsd, currency, locale, 0);
+}
 
 type BidResponse = {
   error?: string;
@@ -47,6 +66,7 @@ function useCountdown(closesAt: string) {
 function LaptopLid({ spots, onSelect }: { spots: Spot[]; onSelect: (spot: Spot) => void }) {
   const { currency, locale, t } = useI18n();
   const money = (amount: number) => formatCurrency(amount, currency, locale, 0);
+  const compact = (amount: number) => compactMoney(amount, currency, locale);
 
   return (
     <div className="lid-stage" aria-label={t("laptop.layoutAria")}>
@@ -70,7 +90,7 @@ function LaptopLid({ spots, onSelect }: { spots: Spot[]; onSelect: (spot: Spot) 
                 <span className="lid-spot-number">{spot.id}</span>
               )}
               <span className="lid-holder">{hasBid ? spot.holder : t("common.available")}</span>
-              <span className="lid-price">{hasBid ? money(spot.bid) : t("common.starts", { amount: money(spot.minBid) })}</span>
+              <span className="lid-price">{hasBid ? compact(spot.bid) : t("common.starts", { amount: compact(spot.minBid) })}</span>
               <span className="lid-outbid">{hasBid ? t("common.outbid") : t("common.placeBid")}</span>
             </button>
           );
@@ -251,7 +271,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
               >
                 <span>{String(spot.id).padStart(2, "0")}</span>
                 <p><b>{SPOT_NAME_KEYS[spot.id] ? t(SPOT_NAME_KEYS[spot.id]!) : spot.name}</b><small>{spot.size} · {spot.dimensions}</small></p>
-                <strong>{money(spot.bids > 0 ? spot.bid : spot.minBid)}<small>{spot.bids > 0 ? `${spot.bids} ${t("common.bids")}` : t("laptop.opening")}</small></strong>
+                <strong>{compactMoney(spot.bids > 0 ? spot.bid : spot.minBid, currency, locale)}<small>{spot.bids > 0 ? `${spot.bids} ${t("common.bids")}` : t("laptop.opening")}</small></strong>
               </button>
             ))}
           </div>

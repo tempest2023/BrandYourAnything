@@ -13,7 +13,9 @@ import {
   type Spot,
 } from "@/lib/auction";
 import { formatRelativeTime, SPOT_NAME_KEYS } from "@/lib/i18n";
+import type { Locale } from "@/lib/i18n";
 import {
+  amountFromUsd,
   amountToUsd,
   amountToUsdCents,
   currencyDisplayName,
@@ -21,6 +23,22 @@ import {
   formatMoney as formatCurrency,
   minimumDisplayAmount,
 } from "@/lib/money";
+import type { Currency } from "@/lib/money";
+
+function compactMoney(amountUsd: number, currency: Currency, locale: Locale) {
+  const converted = amountFromUsd(amountUsd, currency);
+  const rounded = Math.round(converted);
+  const sym = currencySymbol(currency);
+  if (rounded >= 1_000_000) {
+    const m = rounded / 1_000_000;
+    return `${sym}${Number.isInteger(m) ? m : m.toFixed(1).replace(/\.0$/, "")}M`;
+  }
+  if (rounded >= 10_000) {
+    const k = rounded / 1_000;
+    return `${sym}${Number.isInteger(k) ? k : k.toFixed(1).replace(/\.0$/, "")}K`;
+  }
+  return formatCurrency(amountUsd, currency, locale, 0);
+}
 
 type LidView = "live" | "final";
 type TableView = "spots" | "history";
@@ -80,6 +98,7 @@ function Logo({ spot, compact = false }: { spot: Spot; compact?: boolean }) {
 function MacLid({ spots, onSelect }: { spots: Spot[]; onSelect: (spot: Spot) => void }) {
   const { currency, locale, t } = useI18n();
   const money = (amount: number) => formatCurrency(amount, currency, locale);
+  const compact = (amount: number) => compactMoney(amount, currency, locale);
 
   return (
     <div className="lid-stage" aria-label={t("home.lidAria")}>
@@ -102,7 +121,7 @@ function MacLid({ spots, onSelect }: { spots: Spot[]; onSelect: (spot: Spot) => 
             >
               {hasBid ? <Logo spot={spot} /> : <span className="lid-spot-number">{spot.id}</span>}
               {(!hasBid || spot.logo) && <span className="lid-holder">{hasBid ? spot.holder : t("common.available")}</span>}
-              <span className="lid-price">{hasBid ? money(spot.bid) : t("common.starts", { amount: money(spot.minBid) })}</span>
+              <span className="lid-price">{hasBid ? compact(spot.bid) : t("common.starts", { amount: compact(spot.minBid) })}</span>
               <span className="lid-outbid">{hasBid ? t("common.outbid") : t("common.placeBid")}</span>
             </button>
           );
@@ -487,7 +506,7 @@ export default function Home() {
                         <td data-label={t("common.spot")}><span className="spot-number">{spot.id}</span><strong>{SPOT_NAME_KEYS[spot.id] ? t(SPOT_NAME_KEYS[spot.id]!) : spot.name}</strong></td>
                         <td data-label={t("common.size")}><span className={`size-tag size-tag--${spot.size.toLowerCase()}`}>{spot.size}</span>{spot.dimensions}</td>
                         <td data-label={t("common.brand")}>{spot.bids === 0 ? <span className="availability-pill">{t("common.available")}</span> : spot.website ? <a href={spot.website} target="_blank" rel="noreferrer"><Logo spot={spot} compact /></a> : <Logo spot={spot} compact />}</td>
-                        <td data-label={spot.bids === 0 ? t("home.startingBid") : t("common.currentBid")}><strong>{money(spot.bids === 0 ? spot.minBid : spot.bid)}</strong><small>{spot.bids === 0 ? t("common.noBids") : `${spot.bids} ${spot.bids === 1 ? t("common.bid").toLowerCase() : t("common.bids")}`}</small></td>
+                        <td data-label={spot.bids === 0 ? t("home.startingBid") : t("common.currentBid")}><strong>{compactMoney(spot.bids === 0 ? spot.minBid : spot.bid, currency, locale)}</strong><small>{spot.bids === 0 ? t("common.noBids") : `${spot.bids} ${spot.bids === 1 ? t("common.bid").toLowerCase() : t("common.bids")}`}</small></td>
                         <td data-label={t("common.action")}><button className="outbid-button" onClick={() => setSelectedSpotId(spot.id)}>{spot.bids === 0 ? t("common.placeBid") : t("common.outbid")}</button></td>
                       </tr>
                     ))}

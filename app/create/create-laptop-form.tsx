@@ -98,7 +98,16 @@ type CreateResponse = {
 const moneyFormatter = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
 
 function formatMoney(amount: number) {
-  return `${moneyFormatter.format(Math.round(amount))} €`;
+  const rounded = Math.round(amount);
+  if (rounded >= 1_000_000) {
+    const millions = rounded / 1_000_000;
+    return `${Number.isInteger(millions) ? millions : millions.toFixed(1).replace(/\.0$/, "")}M €`;
+  }
+  if (rounded >= 10_000) {
+    const thousands = rounded / 1_000;
+    return `${Number.isInteger(thousands) ? thousands : thousands.toFixed(1).replace(/\.0$/, "")}K €`;
+  }
+  return `${moneyFormatter.format(rounded)} €`;
 }
 
 function slugify(value: string) {
@@ -106,14 +115,14 @@ function slugify(value: string) {
     .toLowerCase()
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^[-_]+/, "")
     .slice(0, 48);
 }
 
 function clampPrice(value: string, fallback: number) {
   const amount = Number(value);
-  return Number.isFinite(amount) && amount >= 10 ? amount : fallback;
+  return Number.isFinite(amount) && amount > 0 ? amount : fallback;
 }
 
 function isUnavailableXAuthError(message: string) {
@@ -372,7 +381,7 @@ export function CreateLaptopForm() {
   const totalFloor = previewSpots.reduce((sum, spot) => sum + spot.amount, 0) + (specialSpot ? specialAmount : 0);
   const minimumPrice = Math.min(...previewSpots.map((spot) => spot.amount));
   const fundingCost = Number(machineCost);
-  const machineIsValid = ownership === "own" || (Number.isFinite(fundingCost) && fundingCost >= 100 && fundingCost <= 20_000);
+  const machineIsValid = ownership === "own" || (Number.isFinite(fundingCost) && fundingCost >= 1);
   const desiredPublicLocation = laptopPath(slug);
   const sharePost = X_SHARE_POSTS[shareLocale](laptopUrl(slug));
 
@@ -631,8 +640,8 @@ export function CreateLaptopForm() {
                     <strong>I&apos;m funding it</strong><span>What the spots sell for pays for the machine, and the page carries a progress bar towards its price. If the goal is not reached, you still owe every sold sticker — topping the machine up yourself, or refunding the buyers you cannot deliver.</span>
                   </button>
                 </div>
-                {ownership === "fund" && <label className={styles.inputLabel}>What does the machine cost?<span className={styles.moneyField}><input type="number" min="100" max="20000" value={machineCost} onChange={(event) => setMachineCost(event.target.value)} /><b>€</b></span><small>The maker&apos;s own price for the exact machine, so the bar means something.</small></label>}
-                {!machineIsValid && <p className={styles.validation} role="alert">Give what the machine costs, between 100 € and 20 000 €.</p>}
+                {ownership === "fund" && <label className={styles.inputLabel}>What does the machine cost?<span className={styles.moneyField}><input type="number" min="1" value={machineCost} onChange={(event) => setMachineCost(event.target.value)} /><b>€</b></span><small>The maker&apos;s own price for the exact machine, so the bar means something.</small></label>}
+                {!machineIsValid && <p className={styles.validation} role="alert">Give what the machine costs.</p>}
               </fieldset>
             )}
 
@@ -669,7 +678,7 @@ export function CreateLaptopForm() {
                 <label className={specialSpot ? styles.checkedSpecial : styles.specialSpot}>
                   <input type="checkbox" checked={specialSpot} onChange={(event) => setSpecialSpot(event.target.checked)} />
                   <span><strong>Add a special spot over the logo</strong><small>6 × 6 cm, covering the Apple mark in the middle of the lid. Name your own price — it is the one placement size says nothing about.</small></span>
-                  {specialSpot && <span className={styles.specialPrice}><small>Starts at</small><span><input type="number" min="10" max="100000" value={specialPrice} onChange={(event) => setSpecialPrice(event.target.value)} /><b>€</b></span></span>}
+                  {specialSpot && <span className={styles.specialPrice}><small>Starts at</small><span><input type="number" min="1" value={specialPrice} onChange={(event) => setSpecialPrice(event.target.value)} /><b>€</b></span></span>}
                 </label>
                 <p className={styles.totalCopy}>Every spot sold at its floor: <strong>{formatMoney(totalFloor)}</strong>, before the platform&apos;s 10% and Stripe&apos;s fees.{ownership === "fund" && machineIsValid ? ` Your goal is ${formatMoney(fundingCost)} — the sized spots were set to reach it, and the centre one is on top.` : ""}</p>
               </fieldset>
@@ -785,7 +794,7 @@ function PriceField({ label, dimensions, value, onChange }: { label: string; dim
     <label className={styles.priceField}>
       <span><strong>{label}</strong><small>{dimensions}</small></span>
       <em>Recommended</em>
-      <span className={styles.priceInput}><input type="number" min="10" max="100000" value={value} onChange={(event) => onChange(event.target.value)} /><b>€</b></span>
+      <span className={styles.priceInput}><input type="number" min="1" value={value} onChange={(event) => onChange(event.target.value)} /><b>€</b></span>
     </label>
   );
 }

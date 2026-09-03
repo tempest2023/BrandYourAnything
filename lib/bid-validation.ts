@@ -68,8 +68,8 @@ export function parseBidForm(formData: FormData): ParsedBidForm {
   if (!Number.isInteger(spotId) || spotId < 1 || spotId > 10) {
     throw new BidValidationError("spotId must identify a valid sticker spot.");
   }
-  if (!Number.isSafeInteger(amountCents) || amountCents < 1000 || amountCents > 100_000_000) {
-    throw new BidValidationError("amountCents must be between $10 and $1,000,000.");
+  if (!Number.isSafeInteger(amountCents) || amountCents < 1000 || amountCents > 100_000_000_000) {
+    throw new BidValidationError("amountCents must be between $10 and $1,000,000,000.");
   }
   if (!EMAIL_PATTERN.test(email)) {
     throw new BidValidationError("email must be valid.");
