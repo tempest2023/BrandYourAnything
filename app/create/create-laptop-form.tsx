@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "@/app/i18n-provider";
 import { ModelStage } from "@/app/model-stage";
@@ -34,6 +34,8 @@ const LEGACY_DRAFT_STORAGE_KEY = "brandmylaptop-sell-draft";
 const PUBLISH_AFTER_AUTH_KEY = "brand-anything-publish-after-auth";
 const MANAGER_KEY_STORAGE_KEY = "brand-anything-lid-manager-key";
 const MANAGED_LID_STORAGE_KEY = "brand-anything-managed-lid";
+const X_AUTH_STATUS_STORAGE_KEY = "brand-anything-x-auth-status";
+const X_AUTH_STATUS_TTL_MS = 10 * 60 * 1000;
 const X_COMPOSE_URL = "https://x.com/compose/post";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHARE_LANGUAGE_LABELS: Record<Locale, string> = {
@@ -128,6 +130,32 @@ type SellDraft = {
 
 const TESLA_MODELS: TeslaModel[] = ["Model 3", "Model Y", "Model S", "Model X", "Cybertruck"];
 
+function defaultTitleFor(machine: Machine, teslaModel: TeslaModel) {
+  if (machine === "mac") return "Your brand, on my Mac.";
+  if (machine === "pc") return "Your brand, on my laptop.";
+  if (machine === "tesla") return `Your brand, on my Tesla ${teslaModel}.`;
+  if (machine === "yacht") return "Your brand, aboard my private yacht.";
+  if (machine === "jet") return "Your brand, aboard my private jet.";
+  return "Your brand, on my one-of-one object.";
+}
+
+function isDefaultListingTitle(value: string) {
+  return (["mac", "pc", "yacht", "jet", "anything"] as const)
+    .some((machine) => value === defaultTitleFor(machine, "Model 3"))
+    || TESLA_MODELS.some((model) => value === defaultTitleFor("tesla", model));
+}
+
+function splitAddressHost(host: string) {
+  const finalDot = host.lastIndexOf(".");
+  if (finalDot <= 0) return { prefix: host, suffix: "/" };
+  return {
+    prefix: host.slice(0, finalDot),
+    suffix: `${host.slice(finalDot)}/`,
+  };
+}
+
+const ADDRESS_HOST = splitAddressHost(SITE_HOST);
+
 function presetIdFor(machine: Machine, teslaModel: TeslaModel): PresetModelId | null {
   if (machine === "tesla" && teslaModel === "Cybertruck") return "tesla-cybertruck";
   if (machine === "tesla") return "tesla-model-3";
@@ -176,6 +204,16 @@ type CreateResponse = {
   result?: { reason: string; slug: string };
 };
 
+type XAuthAvailability = "checking" | "available" | "unavailable" | "unknown";
+type XAuthStatusResponse = {
+  configured?: unknown;
+  error?: string;
+};
+type CachedXAuthStatus = {
+  configured: boolean;
+  expiresAt: number;
+};
+
 const moneyFormatter = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
 
 function formatMoney(amount: number) {
@@ -220,6 +258,61 @@ function isSurfaceSpotPlacement(value: unknown): value is SurfaceSpotPlacement {
 
 function isUnavailableXAuthError(message: string) {
   return /provider|not configured|not enabled|unsupported|disabled/i.test(message);
+}
+
+function readCachedXAuthStatus() {
+  try {
+    const raw = window.localStorage.getItem(X_AUTH_STATUS_STORAGE_KEY);
+    if (!raw) return null;
+    const cached = JSON.parse(raw) as Partial<CachedXAuthStatus>;
+    if (typeof cached.configured !== "boolean"
+      || typeof cached.expiresAt !== "number"
+      || !Number.isFinite(cached.expiresAt)
+      || cached.expiresAt <= Date.now()) {
+      window.localStorage.removeItem(X_AUTH_STATUS_STORAGE_KEY);
+      return null;
+    }
+    return cached.configured;
+  } catch {
+    try {
+      window.localStorage.removeItem(X_AUTH_STATUS_STORAGE_KEY);
+    } catch {
+      // A blocked storage API should not turn a successful backend check into a guess.
+    }
+    return null;
+  }
+}
+
+function cacheXAuthStatus(configured: boolean) {
+  const cached: CachedXAuthStatus = {
+    configured,
+    expiresAt: Date.now() + X_AUTH_STATUS_TTL_MS,
+  };
+  try {
+    window.localStorage.setItem(X_AUTH_STATUS_STORAGE_KEY, JSON.stringify(cached));
+  } catch {
+    // The current request result remains usable; Publish will recheck without a cache flag.
+  }
+}
+
+function clearCachedXAuthStatus() {
+  try {
+    window.localStorage.removeItem(X_AUTH_STATUS_STORAGE_KEY);
+  } catch {
+    // Storage may be unavailable in hardened browser modes.
+  }
+}
+
+async function fetchXAuthStatus(): Promise<boolean> {
+  const response = await fetch("/api/auth/x-status", {
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+  const payload = await response.json() as XAuthStatusResponse;
+  if (!response.ok || typeof payload.configured !== "boolean") {
+    throw new Error(payload.error || "X authentication availability could not be checked.");
+  }
+  return payload.configured;
 }
 
 function getOrCreateManagerKey() {
@@ -331,9 +424,8 @@ export function CreateLaptopForm() {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [authRedirecting, setAuthRedirecting] = useState(false);
-  const [xSignInUnavailable, setXSignInUnavailable] = useState(
-    () => !isSupabaseBrowserConfigured(),
-  );
+  const [xAuthAvailability, setXAuthAvailability] = useState<XAuthAvailability>("checking");
+  const xAuthRequestRef = useRef<Promise<boolean> | null>(null);
   const [draftReady, setDraftReady] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -353,6 +445,40 @@ export function CreateLaptopForm() {
   useEffect(() => {
     surfaceSpotsRef.current = surfaceSpots;
   }, [surfaceSpots]);
+
+  const resolveXAuthAvailability = useCallback(async () => {
+    const cached = readCachedXAuthStatus();
+    if (cached !== null) {
+      setXAuthAvailability(cached ? "available" : "unavailable");
+      return cached;
+    }
+
+    setXAuthAvailability("checking");
+    const request = xAuthRequestRef.current ?? fetchXAuthStatus();
+    xAuthRequestRef.current = request;
+    try {
+      const configured = await request;
+      cacheXAuthStatus(configured);
+      setXAuthAvailability(configured ? "available" : "unavailable");
+      return configured;
+    } catch {
+      setXAuthAvailability("unknown");
+      return null;
+    } finally {
+      if (xAuthRequestRef.current === request) xAuthRequestRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void resolveXAuthAvailability(), 0);
+    return () => window.clearTimeout(timer);
+  }, [resolveXAuthAvailability]);
+
+  useEffect(() => {
+    if (step !== STEPS.length - 1 || readCachedXAuthStatus() !== null) return;
+    const timer = window.setTimeout(() => void resolveXAuthAvailability(), 0);
+    return () => window.clearTimeout(timer);
+  }, [resolveXAuthAvailability, step]);
 
   useEffect(() => {
     let draft: Partial<SellDraft> = {};
@@ -402,7 +528,15 @@ export function CreateLaptopForm() {
         if (typeof draft.specialPrice === "string") setSpecialPrice(draft.specialPrice);
         if (draft.listingDays) setListingDays(draft.listingDays);
         if (draft.stickerMonths) setStickerMonths(draft.stickerMonths);
-        if (typeof draft.title === "string") setTitle(draft.title);
+        if (typeof draft.title === "string") {
+          const draftMachine = draft.machine ?? "mac";
+          const draftTeslaModel = draft.teslaModel && TESLA_MODELS.includes(draft.teslaModel)
+            ? draft.teslaModel
+            : "Model 3";
+          setTitle(isDefaultListingTitle(draft.title)
+            ? defaultTitleFor(draftMachine, draftTeslaModel)
+            : draft.title);
+        }
         if (typeof draft.slug === "string") setSlug(draft.slug);
       }
       setDraftReady(true);
@@ -466,11 +600,21 @@ export function CreateLaptopForm() {
       || callbackParameters.get("error_code")
       || (callbackParameters.get("error") ? "X did not complete sign in. Please try again." : "");
 
-    if (!isSupabaseBrowserConfigured()) {
+    if (xAuthAvailability === "checking" || xAuthAvailability === "unknown") {
+      const timer = window.setTimeout(() => {
+        if (active) setAuthReady(false);
+      }, 0);
+      return () => {
+        active = false;
+        window.clearTimeout(timer);
+      };
+    }
+
+    if (xAuthAvailability === "unavailable" || !isSupabaseBrowserConfigured()) {
       const timer = window.setTimeout(() => {
         if (!active) return;
+        window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
         setAuthReady(true);
-        if (callbackError) setErrorMessage(callbackError);
       }, 0);
       return () => {
         active = false;
@@ -492,7 +636,10 @@ export function CreateLaptopForm() {
       if (callbackError || error) {
         window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
         const message = callbackError || "Your X session could not be restored. Please try again.";
-        if (isUnavailableXAuthError(message)) setXSignInUnavailable(true);
+        if (isUnavailableXAuthError(message)) {
+          cacheXAuthStatus(false);
+          setXAuthAvailability("unavailable");
+        }
         setErrorMessage(message);
       }
     });
@@ -501,7 +648,7 @@ export function CreateLaptopForm() {
       active = false;
       listener.subscription.unsubscribe();
     };
-  }, []);
+  }, [xAuthAvailability]);
 
   const isAnything = machine !== "mac" && machine !== "pc";
   const selectedPresetId = presetIdFor(machine, teslaModel);
@@ -625,6 +772,9 @@ export function CreateLaptopForm() {
     clearSurfaceLayout();
     setModelMode(nextPresetId ? "preset" : "custom");
     setMachine(nextMachine);
+    setTitle((current) => isDefaultListingTitle(current)
+      ? defaultTitleFor(nextMachine, teslaModel)
+      : current);
     setSpecialSpot(nextMachine === "mac");
     if (nextMachine === "tesla") setAssetName(`Tesla ${teslaModel}`);
     if (nextMachine === "yacht") setAssetName("Flybridge motor yacht");
@@ -640,6 +790,9 @@ export function CreateLaptopForm() {
     clearSurfaceLayout();
     setModelMode(presetIdFor("tesla", model) ? "preset" : "custom");
     setTeslaModel(model);
+    setTitle((current) => isDefaultListingTitle(current)
+      ? defaultTitleFor("tesla", model)
+      : current);
     setAssetName(`Tesla ${model}`);
   };
 
@@ -706,6 +859,7 @@ export function CreateLaptopForm() {
       dimensions: isAnything
         ? `${spot.size} side-surface placement`
         : spot.size === "Large" ? "9.5 × 5.5 cm" : spot.size === "Medium" ? "9.5 × 4 cm" : "4.5 × 4.5 cm",
+      openingBidCents: Math.round(spot.amount * 100),
       ...(spot.position && spot.normal ? { position: spot.position, normal: spot.normal } : {}),
     }));
     formData.set("layoutCount", String(layoutCount));
@@ -799,14 +953,13 @@ export function CreateLaptopForm() {
       return;
     }
 
-    if (!authReady) {
-      setErrorMessage("Checking your X session. Please try again in a moment.");
+    if (readCachedXAuthStatus() !== true || xAuthAvailability !== "available") {
+      await resolveXAuthAvailability();
       return;
     }
 
-    if (!isSupabaseBrowserConfigured()) {
-      setXSignInUnavailable(true);
-      setErrorMessage("");
+    if (!authReady) {
+      setErrorMessage("Checking your X session. Please try again in a moment.");
       return;
     }
 
@@ -821,11 +974,19 @@ export function CreateLaptopForm() {
           options: { redirectTo: `${window.location.origin}/sell` },
         });
         if (error) throw error;
-      } catch {
+      } catch (error) {
         window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
         setAuthRedirecting(false);
-        setXSignInUnavailable(true);
-        setErrorMessage("");
+        const message = error instanceof Error ? error.message : "X sign-in could not be started.";
+        if (isUnavailableXAuthError(message)) {
+          cacheXAuthStatus(false);
+          setXAuthAvailability("unavailable");
+          setErrorMessage("");
+        } else {
+          clearCachedXAuthStatus();
+          setXAuthAvailability("unknown");
+          setErrorMessage(message);
+        }
       }
       return;
     }
@@ -867,11 +1028,11 @@ export function CreateLaptopForm() {
           <p className={styles.heroKicker}>From Mac lids to moving machines</p>
           <h1>Put anything up.</h1>
           <p>You bring the object and set the prices; Brand Anything turns it into a live sponsorship auction.</p>
-          {xSignInUnavailable ? managedLid && (
+          {xAuthAvailability === "unavailable" ? managedLid && (
             <p className={styles.signIn}>Your auction is saved in this browser. <Link href={laptopPath(managedLid.slug)}>Manage {managedLid.title}</Link>.</p>
-          ) : (
+          ) : xAuthAvailability === "available" ? (
             <p className={styles.signIn}>Already published an auction? <Link href="/">Sign in to manage it</Link>.</p>
-          )}
+          ) : null}
 
           <ol className={styles.steps} aria-label="Listing steps">
             {STEPS.map((label, index) => (
@@ -1096,7 +1257,7 @@ export function CreateLaptopForm() {
             {step === 4 && (
               <fieldset>
                 <legend>What does a spot start at?</legend>
-                <p className={styles.introCopy}>One price each, paid in full by whoever takes the spot. The figures below are what we suggest — change any of them. The ones around the centre carry a premium on top.</p>
+                <p className={styles.introCopy}>Set a starting price for each placement size. The amount shown on every spot updates as you type.</p>
                 <div className={styles.priceList}>
                   <PriceField label={`${spotCountBySize.large} × Large`} dimensions={isAnything ? "Hero placement" : "9.5 × 5.5 cm printed"} value={largePrice} onChange={setLargePrice} />
                   <PriceField label={`${spotCountBySize.medium} × Medium`} dimensions={isAnything ? "Profile placement" : "9.5 × 4 cm printed"} value={mediumPrice} onChange={setMediumPrice} />
@@ -1133,8 +1294,8 @@ export function CreateLaptopForm() {
             {step === 7 && (
               <fieldset>
                 <legend>Name it, and put it up.</legend>
-                <label className={styles.inputLabel}>Title<input type="text" value={title} minLength={3} maxLength={80} onChange={(event) => setTitle(event.target.value)} placeholder="Ten spots on my MacBook Pro" required /></label>
-                <label className={styles.inputLabel}>Address<span className={styles.addressField}><b>{SITE_HOST}/</b><input value={slug} minLength={3} maxLength={48} onChange={(event) => setSlug(slugify(event.target.value))} placeholder="your-name" required /><i aria-label="Address is available">✓</i></span></label>
+                <label className={styles.inputLabel}>Title<input type="text" value={title} minLength={3} maxLength={80} onChange={(event) => setTitle(event.target.value)} placeholder={defaultTitleFor(machine, teslaModel)} required /></label>
+                <label className={styles.inputLabel}>Address<span className={styles.addressField}><span className={styles.addressHost} title={`${SITE_HOST}/`}><b>{ADDRESS_HOST.prefix}</b><strong>{ADDRESS_HOST.suffix}</strong></span><input value={slug} minLength={3} maxLength={48} onChange={(event) => setSlug(slugify(event.target.value))} placeholder="your-name" required /><i aria-label="Address is available">✓</i></span></label>
                 <dl className={styles.summary}>
                   <div><dt>Object</dt><dd>{objectName}</dd></div>
                   <div><dt>Ownership</dt><dd>{ownership === "own" ? "You own it" : `Funding ${formatMoney(fundingCost || 0)}`}</dd></div>
@@ -1144,7 +1305,7 @@ export function CreateLaptopForm() {
                   <div><dt>Stickers stay</dt><dd>{stickerMonths} months</dd></div>
                 </dl>
                 <p className={styles.publishCopy}>Buyers pay you directly — the money lands in your own Stripe account, minus the 10% platform fee and Stripe&apos;s processing fees. You produce each placement to the agreed spec and approve every logo before it appears.</p>
-                {xSignInUnavailable ? (
+                {xAuthAvailability === "unavailable" ? (
                   <section className={styles.shareFallback} aria-labelledby="x-share-title">
                     <h2 id="x-share-title">Share your auction.</h2>
                     <div className={styles.shareLanguageRow}>
@@ -1183,7 +1344,7 @@ export function CreateLaptopForm() {
                       ? "Your auction is live and saved in this browser. Copy the post again whenever you need it."
                       : "Copy or open X to publish your auction and save it in this browser. X opens in a new tab so this page stays here."}</p>
                   </section>
-                ) : (
+                ) : xAuthAvailability === "available" ? (
                   <>
                     {errorMessage && <p className={styles.error} role="alert">{errorMessage}</p>}
                     <button className={styles.publishButton} type="submit" disabled={!authReady || submitting || authRedirecting}>
@@ -1191,6 +1352,16 @@ export function CreateLaptopForm() {
                     </button>
                     <p className={styles.authNote}>X is what a buyer checks before putting their logo on a stranger&apos;s {isAnything ? "object" : "laptop"}. Everything above is kept while you sign in; you land back here.</p>
                   </>
+                ) : (
+                  <section className={styles.shareFallback} aria-labelledby="x-status-title">
+                    <h2 id="x-status-title">{xAuthAvailability === "checking" ? "Checking publishing options…" : "We couldn’t check X sign-in."}</h2>
+                    <p className={styles.shareNote}>{xAuthAvailability === "checking"
+                      ? "This normally takes a moment."
+                      : "Check your connection and try again. No login option will be shown until the check succeeds."}</p>
+                    {xAuthAvailability === "unknown" && (
+                      <button type="button" className={styles.publishButton} onClick={() => void resolveXAuthAvailability()}>Check again</button>
+                    )}
+                  </section>
                 )}
               </fieldset>
             )}
@@ -1242,7 +1413,7 @@ export function CreateLaptopForm() {
               )
             ) : (
               <div className={`${styles.lid} ${layoutCount === 6 ? styles.sixLid : styles.tenLid}`}>
-                {machine === "mac" && <span className={styles.apple} aria-hidden="true"></span>}
+                {machine === "mac" && <Image className={styles.apple} src="/apple-logo.svg" alt="" width={160} height={160} />}
                 {previewSpots.map((spot) => (
                   <button
                     type="button"
@@ -1270,7 +1441,6 @@ function PriceField({ label, dimensions, value, onChange }: { label: string; dim
   return (
     <label className={styles.priceField}>
       <span><strong>{label}</strong><small>{dimensions}</small></span>
-      <em>Recommended</em>
       <span className={styles.priceInput}><input type="number" min="1" value={value} onChange={(event) => onChange(event.target.value)} /><b>€</b></span>
     </label>
   );

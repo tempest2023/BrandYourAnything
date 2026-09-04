@@ -567,6 +567,12 @@
   font-size: 6rem;
 }
 
+.ownerApple {
+  width: 6rem;
+  height: 6rem;
+  object-fit: contain;
+}
+
 .ownerPhoto p {
   margin: 0.5rem 0 0;
   font-size: 0.75rem;

@@ -1,6 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -75,7 +76,7 @@ function LaptopLid({ spots, onSelect }: { spots: Spot[]; onSelect: (spot: Spot) 
     <div className="lid-stage" aria-label={t("laptop.layoutAria")}>
       <div className="mac-lid">
         <div className="lid-camera" />
-        <span className="apple-mark" aria-label={t("common.appleLogo")}></span>
+        <Image className="apple-mark" src="/apple-logo.svg" alt={t("common.appleLogo")} width={160} height={160} />
         {spots.map((spot) => {
           const hasBid = spot.bids > 0;
           return (
@@ -344,7 +345,12 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
           {snapshot.campaign.photoUrl ? (
             <img src={snapshot.campaign.photoUrl} alt={t("laptop.photoAlt", { owner: snapshot.campaign.ownerName, model: snapshot.campaign.laptopModel })} />
           ) : (
-            <div><span>{isAnything ? "✣" : ""}</span><p>{snapshot.campaign.assetName}</p></div>
+            <div>
+              {isAnything
+                ? <span aria-hidden="true">✣</span>
+                : <Image className={styles.ownerApple} src="/apple-logo.svg" alt="" width={96} height={96} />}
+              <p>{snapshot.campaign.assetName}</p>
+            </div>
           )}
         </div>
       </section>

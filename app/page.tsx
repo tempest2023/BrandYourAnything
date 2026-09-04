@@ -118,7 +118,7 @@ function MacLid({
     <div className="lid-stage" aria-label={t("home.lidAria")}>
       <div className="mac-lid">
         <div className="lid-camera" />
-        {showApple && <span className="apple-mark" aria-label={t("common.appleLogo")}></span>}
+        {showApple && <Image className="apple-mark" src="/apple-logo.svg" alt={t("common.appleLogo")} width={160} height={160} />}
         {spots.map((spot) => {
           const hasBid = spot.bids > 0 && Boolean(spot.holder);
           const spotNameKey = SPOT_NAME_KEYS[spot.id];
@@ -524,7 +524,7 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
               <a href="#spots">{t("home.seeAuction")}</a>
             </div>
             <div className="dark-mac" aria-hidden="true">
-              {isMac && <span className="dark-apple"></span>}
+              {isMac && <Image className="dark-apple" src="/apple-logo.svg" alt="" width={96} height={96} />}
               <i className="sticker-dot one" /><i className="sticker-dot two" /><i className="sticker-dot three" />
             </div>
           </div>

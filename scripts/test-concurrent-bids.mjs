@@ -91,6 +91,16 @@ const afterRetry = await spot(1);
 assert.equal(afterRetry.current_bid_cents, retryAmount, "an idempotent retry changes the price once");
 assert.equal(afterRetry.bid_count, beforeRetry.bid_count + 1, "an idempotent retry increments once");
 
+const widenedLimitBid = await bid({
+  spotId: 5,
+  amountCents: 100000001,
+  name: "High Value Brand",
+  email: "high-value@example.com",
+  key: randomUUID(),
+});
+if (widenedLimitBid.error) throw widenedLimitBid.error;
+assert.equal(widenedLimitBid.data[0].accepted, true, "legacy auctions accept bids above the former server limit");
+
 const crossSpotKey = randomUUID();
 const spotThree = await spot(3);
 const spotFour = await spot(4);

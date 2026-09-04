@@ -106,6 +106,8 @@ In **Project Settings > Environment Variables**, configure:
 | `SUPABASE_DATABASE_PREFIX` | `ba_prod` | Production only |
 | `SUPABASE_DATABASE_PREFIX` | `ba_dev` | Preview and Development only |
 
+X sign-in is never inferred from the Vercel environment name. `/sell` asks `/api/auth/x-status`, which reads the X provider status from Supabase Auth. The X OAuth client ID and client secret belong only in **Supabase Dashboard > Authentication > Sign In / Providers**, never in the app's environment variables. The browser caches a successful availability result for ten minutes and checks again at the Publish step whenever that cache is missing or expired.
+
 Optionally add a high-entropy `MODEL_UPLOAD_SIGNING_SECRET` to every environment. It signs the metadata claim that binds a model upload to its file name, size, and private Storage path. When omitted, the app derives the signature from the configured Supabase server secret. The accompanying Storage upload URL is short-lived.
 
 Add `SUPABASE_DATABASE_PREFIX` twice with the environment scopes shown above. This keeps preview bids and test campaigns out of the production tables. The variable is optional on Vercel because the application falls back to `ba_prod` when `VERCEL_ENV=production` and `ba_dev` otherwise, but setting it explicitly makes the isolation visible in the project configuration.
@@ -116,7 +118,7 @@ Treat `SUPABASE_SECRET_KEY` as a sensitive value if the Vercel UI offers that op
 
 1. Select **Deploy**. Vercel should detect Next.js and run `npm run build`.
 2. Open the generated URL and confirm that the homepage loads without a Supabase configuration error.
-3. Open `/sell`, choose **Anything else**, upload a self-contained `.glb`, complete the wizard, sign in with X, publish a test campaign, and place a test bid. Use a Preview deployment for testing so the records go to the `ba_dev_*` namespace.
+3. Open `/sell`, choose **Anything else**, upload a self-contained `.glb`, complete the wizard, publish a test campaign, and place a test bid. Environments without X OAuth credentials use browser-owned publishing without X sign-in. Use a Preview deployment for testing so records go to the `ba_dev_*` namespace.
 4. In Supabase, use **Table Editor** to confirm the campaign asset record and **Storage** to confirm the model is in the matching private bucket. Open the public auction and verify that orbit, zoom, and all numbered placement controls work.
 5. When ready, merge or push to the Vercel Production Branch, normally `main`. Vercel will create the Production deployment using `ba_prod`.
 
@@ -215,8 +217,6 @@ SUPABASE_DATABASE_PREFIX=ba_dev
 NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<the local PUBLISHABLE_KEY value>
 ```
-
-Local X OAuth additionally requires X credentials in the local Supabase Auth provider. Use `http://localhost:54321/auth/v1/callback` in the X app, uncomment the `auth.external.x` block in `supabase/config.toml`, and put `X_OAUTH_CLIENT_ID` plus `X_OAUTH_CLIENT_SECRET` in an uncommitted `.env` file. Restart the local Supabase stack after changing Auth config.
 
 Then start Next.js:
 

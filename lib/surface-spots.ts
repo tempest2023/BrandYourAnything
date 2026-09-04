@@ -20,6 +20,7 @@ export type SpotLayoutItem = {
   name: string;
   size: "S" | "M" | "L";
   dimensions: string;
+  openingBidCents: number;
   position?: SurfaceVector;
   normal?: SurfaceVector;
 };

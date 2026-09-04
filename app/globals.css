@@ -522,12 +522,11 @@ p {
   z-index: 1;
   top: 50%;
   left: 50%;
+  width: clamp(3rem, 14vw, 8.5rem);
+  height: clamp(3rem, 14vw, 8.5rem);
   transform: translate(-50%, -50%);
-  color: oklch(33% 0.009 255);
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: clamp(3rem, 14vw, 8.5rem);
-  line-height: 1;
-  text-shadow: 0 1px 0 oklch(99% 0 0 / 0.35);
+  object-fit: contain;
+  filter: drop-shadow(0 1px 0 oklch(99% 0 0 / 0.35));
 }
 
 .lid-spot {
@@ -837,9 +836,10 @@ p {
   position: absolute;
   top: 50%;
   left: 50%;
+  width: 6rem;
+  height: 6rem;
   transform: translate(-50%, -50%);
-  color: oklch(28% 0.01 255);
-  font-size: 6rem;
+  object-fit: contain;
 }
 
 .sticker-dot {
