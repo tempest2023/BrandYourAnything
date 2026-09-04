@@ -157,6 +157,13 @@
   line-height: 1.55;
 }
 
+.publishCopy a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
 .introCopy {
   margin: 12px 0 10px;
 }

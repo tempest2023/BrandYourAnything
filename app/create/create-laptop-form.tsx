@@ -356,10 +356,10 @@ function SiteFooter() {
         <div className={styles.footerBrand}>
           <Logo />
           <p>Turn the object you carry, drive, sail or fly into a finite marketplace for brands.</p>
-          <a className={styles.builtBy} href="https://x.com/vynsedev" target="_blank" rel="noreferrer">
+          <a className={styles.builtBy} href="https://x.com/biIIIionaire" target="_blank" rel="noreferrer">
             <span>built by</span>
-            <Image src="/vincent.webp" alt="" width={22} height={22} />
-            <strong>Vincent</strong>
+            <Image src="/github-avatar.jpeg" alt="" width={22} height={22} />
+            <strong>Tempest</strong>
           </a>
         </div>
         <nav className={styles.footerNav} aria-label="Footer">
@@ -379,9 +379,9 @@ function SiteFooter() {
         <div className={styles.footerLegal}>
           <p>Brand placements are paid sponsorships, not endorsements. Creators remain responsible for placement rights, production and fulfilment.</p>
           <nav aria-label="Legal">
-            <Link href="/">Terms</Link>
-            <Link href="/">Privacy</Link>
-            <a href="mailto:contact@vynse.dev">Contact</a>
+            <Link href="/terms">Terms</Link>
+            <Link href="/privacy">Privacy</Link>
+            <a href="https://x.com/biIIIionaire" target="_blank" rel="noreferrer">Contact</a>
           </nav>
         </div>
       </div>
