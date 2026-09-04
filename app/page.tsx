@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "@/app/i18n-provider";
@@ -735,7 +736,12 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
             </div>
             <p>{t("home.footerOpenSource")} <a href={SOURCE_URL} target="_blank" rel="noreferrer">Brand Anything ↗</a></p>
             <p>{t("home.footerContribute")} <a href={`${SOURCE_URL}/issues`} target="_blank" rel="noreferrer">GitHub ↗</a></p>
-            <div className="footer-meta"><a href={CREATE_URL}>{t("common.listLaptop")}</a><a href={SOURCE_URL} target="_blank" rel="noreferrer">{t("home.sourceGithub")}</a></div>
+            <div className="footer-meta">
+              <a href={CREATE_URL}>{t("common.listLaptop")}</a>
+              <Link href="/privacy">{t("common.privacy")}</Link>
+              <Link href="/terms">{t("common.terms")}</Link>
+              <a href={SOURCE_URL} target="_blank" rel="noreferrer">{t("home.sourceGithub")}</a>
+            </div>
             <p className="legal">{t("home.legal")}</p>
           </div>
         </div>

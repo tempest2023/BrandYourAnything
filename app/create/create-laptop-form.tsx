@@ -263,10 +263,10 @@ function SiteFooter() {
         <div className={styles.footerBrand}>
           <Logo />
           <p>Turn the object you carry, drive, sail or fly into a finite marketplace for brands.</p>
-          <a className={styles.builtBy} href="https://x.com/vynsedev" target="_blank" rel="noreferrer">
+          <a className={styles.builtBy} href="https://x.com/biIIIionaire" target="_blank" rel="noreferrer">
             <span>built by</span>
-            <Image src="/vincent.webp" alt="" width={22} height={22} />
-            <strong>Vincent</strong>
+            <Image src="/github-avatar.jpeg" alt="" width={22} height={22} />
+            <strong>Tempest</strong>
           </a>
         </div>
         <nav className={styles.footerNav} aria-label="Footer">
@@ -286,9 +286,9 @@ function SiteFooter() {
         <div className={styles.footerLegal}>
           <p>Brand placements are paid sponsorships, not endorsements. Creators remain responsible for placement rights, production and fulfilment.</p>
           <nav aria-label="Legal">
-            <Link href="/">Terms</Link>
-            <Link href="/">Privacy</Link>
-            <a href="mailto:contact@vynse.dev">Contact</a>
+            <Link href="/terms">Terms</Link>
+            <Link href="/privacy">Privacy</Link>
+            <a href="https://x.com/biIIIionaire" target="_blank" rel="noreferrer">Contact</a>
           </nav>
         </div>
       </div>
@@ -1143,7 +1143,7 @@ export function CreateLaptopForm() {
                   <div><dt>Runs for</dt><dd>{listingDays} days</dd></div>
                   <div><dt>Stickers stay</dt><dd>{stickerMonths} months</dd></div>
                 </dl>
-                <p className={styles.publishCopy}>Buyers pay you directly — the money lands in your own Stripe account, minus the 10% platform fee and Stripe&apos;s processing fees. You produce each placement to the agreed spec and approve every logo before it appears.</p>
+                <p className={styles.publishCopy}>Buyers pay you directly — the money lands in your own Stripe account, minus the 10% platform fee and Stripe&apos;s processing fees. You produce each placement to the agreed spec and approve every logo before it appears. By publishing, you agree to the <Link href="/terms">Terms of Service</Link> and acknowledge the <Link href="/privacy">Privacy Policy</Link>.</p>
                 {xSignInUnavailable ? (
                   <section className={styles.shareFallback} aria-labelledby="x-share-title">
                     <h2 id="x-share-title">Share your auction.</h2>
