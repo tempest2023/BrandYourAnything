@@ -543,15 +543,27 @@
   font-weight: 400;
 }
 
-.addressField b {
-  max-width: 160px;
+.addressHost {
+  display: flex;
+  max-width: min(52%, 180px);
+  min-width: 0;
   padding-left: 13px;
-  flex-shrink: 1;
-  overflow: hidden;
+  align-items: center;
+  flex: 0 1 180px;
   color: var(--muted);
+  white-space: nowrap;
+}
+
+.addressHost b {
+  min-width: 0;
+  overflow: hidden;
   font-weight: 400;
   text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.addressHost strong {
+  flex: 0 0 auto;
+  font-weight: 400;
 }
 
 .addressField input {
@@ -642,9 +654,9 @@
   display: grid;
   min-height: 76px;
   padding: 12px 14px;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) minmax(10.5rem, 44%);
   align-items: center;
-  gap: 10px;
+  gap: 14px;
   border: 1px solid var(--hairline);
   border-radius: 14px;
 }
@@ -663,18 +675,10 @@
   font-size: 12px;
 }
 
-.priceField em {
-  padding: 3px 7px;
-  border-radius: 999px;
-  background: #f5f5f7;
-  color: var(--muted);
-  font-size: 10px;
-  font-style: normal;
-}
-
 .priceInput {
   display: flex;
-  width: 105px;
+  width: 100%;
+  min-width: 0;
   height: 42px;
   align-items: center;
   border: 1px solid var(--hairline);
@@ -682,17 +686,22 @@
 }
 
 .priceInput input {
-  width: 72px;
+  width: 100%;
+  min-width: 0;
   height: 100%;
-  padding-left: 10px;
+  padding: 0 10px 0 12px;
+  flex: 1;
   border: 0;
   outline: 0;
   background: transparent;
   font: inherit;
   font-size: 15px;
+  font-variant-numeric: tabular-nums;
 }
 
 .priceInput b {
+  padding-right: 12px;
+  flex: 0 0 auto;
   color: var(--muted);
   font-weight: 400;
 }
@@ -741,7 +750,7 @@
 
 .specialPrice > span {
   display: flex;
-  width: 92px;
+  width: 132px;
   height: 38px;
   align-items: center;
   border: 1px solid var(--hairline);
@@ -750,18 +759,22 @@
 }
 
 .specialPrice input {
-  width: 63px;
+  width: 100%;
   min-width: 0;
   height: 100%;
-  padding-left: 8px;
+  padding: 0 8px 0 10px;
+  flex: 1;
   border: 0;
   outline: 0;
   background: transparent;
   font: inherit;
   font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 .specialPrice b {
+  padding-right: 10px;
+  flex: 0 0 auto;
   color: var(--muted);
   font-weight: 400;
 }
@@ -1133,11 +1146,10 @@
   z-index: 1;
   top: 50%;
   left: 50%;
-  color: #3a3a3c;
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 12cqw;
-  line-height: 1;
+  width: 12cqw;
+  height: 12cqw;
   transform: translate(-50%, -50%);
+  object-fit: contain;
 }
 
 .tenSpot1 { grid-column: 1 / 3; grid-row: 1; }
@@ -2451,14 +2463,6 @@
     min-height: 80px;
   }
 
-  .priceField {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .priceField em {
-    display: none;
-  }
-
   .checkedSpecial {
     grid-template-columns: auto minmax(0, 1fr);
   }
@@ -2467,7 +2471,7 @@
     grid-column: 2;
   }
 
-  .addressField b {
+  .addressHost {
     font-size: 13px;
   }
 

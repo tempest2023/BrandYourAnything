@@ -116,16 +116,20 @@ function parseSpotLayout(formData: FormData, assetType: CampaignAssetType) {
     const normal = surfaceVector(spot.normal);
     const name = typeof spot.name === "string" ? spot.name.trim() : "";
     const dimensions = typeof spot.dimensions === "string" ? spot.dimensions.trim() : "";
+    const openingBidCents = spot.openingBidCents;
     if (spot.id !== index + 1 || !["S", "M", "L"].includes(String(spot.size))
       || name.length < 2 || name.length > 80 || dimensions.length < 2 || dimensions.length > 100
+      || !Number.isSafeInteger(openingBidCents) || Number(openingBidCents) < 100
+      || Number(openingBidCents) > 100_000_000_000
       || (assetType === "anything" && (!position || !normal))) {
-      throw new LaptopValidationError(`Spot ${index + 1} is not placed on a valid model surface.`);
+      throw new LaptopValidationError(`Spot ${index + 1} has invalid placement or pricing details.`);
     }
     return {
       id: index + 1,
       name,
       size: spot.size as SpotLayoutItem["size"],
       dimensions,
+      openingBidCents: Number(openingBidCents),
       ...(position && normal ? { position, normal } : {}),
     };
   });

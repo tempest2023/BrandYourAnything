@@ -22,6 +22,7 @@ const laptopsTable = `${databasePrefix}_laptops`;
 const spotsTable = `${databasePrefix}_laptop_spots`;
 const bidsTable = `${databasePrefix}_laptop_bids`;
 const createFunction = `${databasePrefix}_create_laptop`;
+const configureFunction = `${databasePrefix}_configure_laptop_spots`;
 const bidFunction = `${databasePrefix}_place_laptop_bid`;
 const service = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
 
@@ -59,6 +60,18 @@ function placeBid(args) {
   });
 }
 
+function configureSpots(args) {
+  return service.rpc(configureFunction, {
+    p_laptop_id: args.laptopId,
+    p_layout: args.layout,
+    p_small_opening_bid_cents: args.smallOpeningBidCents,
+    p_medium_opening_bid_cents: args.mediumOpeningBidCents,
+    p_large_opening_bid_cents: args.largeOpeningBidCents,
+    p_min_increment_cents: args.minIncrementCents,
+    p_idempotency_key: args.idempotencyKey,
+  });
+}
+
 const unique = randomUUID().slice(0, 8);
 const closesAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
 const base = {
@@ -73,7 +86,7 @@ const base = {
   auctionClosesAt: closesAt,
   smallOpeningBidCents: 12500,
   mediumOpeningBidCents: 20000,
-  largeOpeningBidCents: 40000,
+  largeOpeningBidCents: 20000000,
   minIncrementCents: 1000,
   idempotencyKey: randomUUID(),
 };
@@ -100,6 +113,44 @@ const { data: createdLaptop, error: laptopError } = await service
   .eq("slug", base.slug)
   .single();
 if (laptopError) throw laptopError;
+
+const exactLayout = [
+  ["Top left banner", "L", "9.5 × 5.5 cm", base.largeOpeningBidCents],
+  ["Marquee — above the logo", "L", "9.5 × 5.5 cm", base.largeOpeningBidCents * 1.25],
+  ["Top right banner", "L", "9.5 × 5.5 cm", base.largeOpeningBidCents],
+  ["Middle left", "S", "4.5 × 4.5 cm", base.smallOpeningBidCents],
+  ["Inner left — beside the logo", "S", "4.5 × 4.5 cm", base.smallOpeningBidCents * 1.2],
+  ["Inner right — beside the logo", "S", "4.5 × 4.5 cm", base.smallOpeningBidCents * 1.2],
+  ["Middle right", "S", "4.5 × 4.5 cm", base.smallOpeningBidCents],
+  ["Bottom left strip", "M", "9.5 × 4 cm", base.mediumOpeningBidCents],
+  ["Bottom center — under the logo", "M", "9.5 × 4 cm", base.mediumOpeningBidCents * 1.25],
+  ["Bottom right strip", "M", "9.5 × 4 cm", base.mediumOpeningBidCents],
+].map(([name, size, dimensions, openingBidCents], index) => ({
+  id: index + 1,
+  name,
+  size,
+  dimensions,
+  openingBidCents,
+}));
+const configured = await configureSpots({
+  laptopId: createdLaptop.id,
+  layout: exactLayout,
+  smallOpeningBidCents: base.smallOpeningBidCents,
+  mediumOpeningBidCents: base.mediumOpeningBidCents,
+  largeOpeningBidCents: base.largeOpeningBidCents,
+  minIncrementCents: base.minIncrementCents,
+  idempotencyKey: base.idempotencyKey,
+});
+if (configured.error) throw configured.error;
+
+const { data: premiumSpot, error: premiumSpotError } = await service
+  .from(spotsTable)
+  .select("opening_bid_cents")
+  .eq("laptop_id", createdLaptop.id)
+  .eq("position", 2)
+  .single();
+if (premiumSpotError) throw premiumSpotError;
+assert.equal(premiumSpot.opening_bid_cents, base.largeOpeningBidCents * 1.25, "the exact preview price is persisted per spot");
 
 const { count: spotCount, error: spotCountError } = await service
   .from(spotsTable)
@@ -130,8 +181,8 @@ assert.equal(secondCreate.data[0].accepted, true, "a second tenant can create a 
 
 const raceKeys = [randomUUID(), randomUUID()];
 const raceResponses = await Promise.all([
-  placeBid({ slug: base.slug, position: 1, amountCents: 40000, name: "Race A", email: "race-a@example.com", idempotencyKey: raceKeys[0] }),
-  placeBid({ slug: base.slug, position: 1, amountCents: 40000, name: "Race B", email: "race-b@example.com", idempotencyKey: raceKeys[1] }),
+  placeBid({ slug: base.slug, position: 1, amountCents: base.largeOpeningBidCents, name: "Race A", email: "race-a@example.com", idempotencyKey: raceKeys[0] }),
+  placeBid({ slug: base.slug, position: 1, amountCents: base.largeOpeningBidCents, name: "Race B", email: "race-b@example.com", idempotencyKey: raceKeys[1] }),
 ]);
 for (const response of raceResponses) if (response.error) throw response.error;
 assert.equal(raceResponses.filter((response) => response.data[0].accepted).length, 1, "one equal concurrent laptop bid wins");
@@ -140,7 +191,7 @@ assert.equal(raceResponses.filter((response) => response.data[0].reason === "bid
 const isolatedBid = await placeBid({
   slug: second.slug,
   position: 1,
-  amountCents: 40000,
+  amountCents: base.largeOpeningBidCents,
   name: "Second Tenant Bid",
   email: "second-tenant@example.com",
   idempotencyKey: randomUUID(),
@@ -150,8 +201,8 @@ assert.equal(isolatedBid.data[0].accepted, true, "the same spot number on anothe
 
 const crossLaptopKey = randomUUID();
 const crossLaptopResponses = await Promise.all([
-  placeBid({ slug: base.slug, position: 2, amountCents: 40000, name: "Cross Laptop", email: "cross@example.com", idempotencyKey: crossLaptopKey }),
-  placeBid({ slug: second.slug, position: 2, amountCents: 40000, name: "Cross Laptop", email: "cross@example.com", idempotencyKey: crossLaptopKey }),
+  placeBid({ slug: base.slug, position: 2, amountCents: base.largeOpeningBidCents * 1.25, name: "Cross Laptop", email: "cross@example.com", idempotencyKey: crossLaptopKey }),
+  placeBid({ slug: second.slug, position: 2, amountCents: base.largeOpeningBidCents, name: "Cross Laptop", email: "cross@example.com", idempotencyKey: crossLaptopKey }),
 ]);
 for (const response of crossLaptopResponses) if (response.error) throw response.error;
 assert.equal(crossLaptopResponses.filter((response) => response.data[0].accepted).length, 1, "an idempotency key is accepted once across tenants");
