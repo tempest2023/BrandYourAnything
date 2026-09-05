@@ -2,12 +2,12 @@ import type { AuctionSnapshot, PlaceBidResult } from "@/lib/auction";
 import type { CampaignAssetType } from "@/lib/brand-model";
 import type { SpotLayoutItem } from "@/lib/surface-spots";
 
-export type LaptopCampaign = {
+export type AuctionCampaign = {
   slug: string;
   title: string;
   tagline: string;
   story: string;
-  laptopModel: string;
+  objectName: string;
   assetType: CampaignAssetType;
   assetName: string;
   ownerName: string;
@@ -19,18 +19,18 @@ export type LaptopCampaign = {
   modelFileName?: string;
 };
 
-export type LaptopSnapshot = AuctionSnapshot & {
-  campaign: LaptopCampaign;
+export type AuctionCampaignSnapshot = AuctionSnapshot & {
+  campaign: AuctionCampaign;
 };
 
-export type CreateLaptopInput = {
+export type CreateAuctionInput = {
   slug: string;
   ownerName: string;
   ownerEmail: string;
   title: string;
   tagline: string;
   story: string;
-  laptopModel: string;
+  objectName: string;
   goalCents: number;
   auctionClosesAt: string;
   photoStoragePath: string | null;
@@ -42,13 +42,13 @@ export type CreateLaptopInput = {
   idempotencyKey: string;
 };
 
-export type CreateLaptopResult = {
+export type CreateAuctionResult = {
   accepted: boolean;
   reason: "created" | "already_processed" | "slug_taken" | "rate_limited" | "idempotency_conflict";
-  laptopId: string | null;
+  auctionId: string | null;
   slug: string;
 };
 
-export type LaptopBidResult = Omit<PlaceBidResult, "reason"> & {
+export type AuctionBidResult = Omit<PlaceBidResult, "reason"> & {
   reason: PlaceBidResult["reason"] | "campaign_not_found";
 };

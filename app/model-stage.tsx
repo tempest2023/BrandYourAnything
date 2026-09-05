@@ -505,7 +505,7 @@ export function ModelStage({
   }, [placementProfile, resolvedFormat, sourceUrl]);
 
   return (
-    <div className={`${styles.stage} ${editing ? styles.editing : ""} ${className}`} role={editing ? "group" : "img"} aria-label={label}>
+    <div className={`${styles.stage} ${editing ? styles.editing : ""} ${className}`} role={editing || onSelectSpot ? "group" : "img"} aria-label={label}>
       <div ref={mountRef} className={styles.canvas} />
       {status === "loading" && <div className={styles.status}><span />Preparing your model…</div>}
       {status === "error" && (

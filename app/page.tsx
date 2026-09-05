@@ -15,7 +15,7 @@ import {
 } from "@/lib/auction";
 import { formatRelativeTime, SPOT_NAME_KEYS } from "@/lib/i18n";
 import type { Locale } from "@/lib/i18n";
-import type { LaptopCampaign } from "@/lib/laptop";
+import type { AuctionCampaign } from "@/lib/campaign-auction";
 import {
   amountFromUsd,
   amountToUsd,
@@ -45,7 +45,7 @@ function compactMoney(amountUsd: number, currency: Currency, locale: Locale) {
 type LidView = "live" | "final";
 type TableView = "spots" | "history";
 type AuctionLandingProps = {
-  campaign?: LaptopCampaign;
+  campaign?: AuctionCampaign;
   initialSnapshot?: AuctionSnapshot;
 };
 
@@ -304,12 +304,12 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
   const money = (amount: number) => formatCurrency(amount, currency, locale);
   const campaignGoal = campaign?.goal ?? CAMPAIGN_GOAL_USD;
   const auctionEndpoint = campaign
-    ? `/api/laptops/${encodeURIComponent(campaign.slug)}`
+    ? `/api/auctions/${encodeURIComponent(campaign.slug)}`
     : "/api/auction";
   const bidEndpoint = campaign
-    ? `/api/laptops/${encodeURIComponent(campaign.slug)}/bids`
+    ? `/api/auctions/${encodeURIComponent(campaign.slug)}/bids`
     : "/api/bids";
-  const isMac = !campaign || /^mac\b/i.test(campaign.laptopModel);
+  const isMac = !campaign || /^mac\b/i.test(campaign.objectName);
   const machineImage = campaign?.photoUrl ?? "/macbook.webp";
   const machineAssetKey = campaign && !campaign.photoUrl && !isMac
     ? null
@@ -454,14 +454,14 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={campaign.photoUrl}
-                    alt={`${campaign.title} — ${campaign.laptopModel}`}
+                    alt={`${campaign.title} — ${campaign.objectName}`}
                     onLoad={() => markFinalAssetReady(machineAssetKey)}
                     onError={() => markFinalAssetFailed(machineAssetKey)}
                   />
                 ) : isMac && machineAssetKey ? (
                   <Image
                     src="/macbook.webp"
-                    alt={campaign ? `${campaign.title} — ${campaign.laptopModel}` : t("home.finalAlt")}
+                    alt={campaign ? `${campaign.title} — ${campaign.objectName}` : t("home.finalAlt")}
                     width={1536}
                     height={1024}
                     loading="eager"
@@ -471,7 +471,7 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
                     onError={() => markFinalAssetFailed(machineAssetKey)}
                   />
                 ) : (
-                  <div className="final-pc-shell" role="img" aria-label={`${campaign?.title ?? "Laptop"} — ${campaign?.laptopModel ?? "PC"}`} />
+                  <div className="final-pc-shell" role="img" aria-label={`${campaign?.title ?? "Auction"} — ${campaign?.objectName ?? "Object"}`} />
                 )}
                 {spots.map((spot) => (
                   <span className={`final-sticker final-sticker--${spot.id}`} key={spot.id} aria-hidden="true">
@@ -509,7 +509,7 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
 
           <div className="hero-close">
             <p>{campaign?.story ?? t("home.zeroPlaceholders")}</p>
-            <p>{campaign?.laptopModel ?? t("home.outsideWorld")}</p>
+            <p>{campaign?.objectName ?? t("home.outsideWorld")}</p>
             <div>
               <a className="primary-button" href="#spots">{t("common.getSpot")}</a>
               <a className="text-link" href="#how">{t("common.how")} ›</a>
@@ -600,7 +600,7 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
             <h2>{t("home.moneyTitle")}</h2>
             <p className="specs-intro">{campaign?.story ?? t("home.specIntro", { amount: money(CAMPAIGN_GOAL_USD) })}</p>
             <div className="spec-card">
-              <div className="spec-card-head"><h3>{campaign?.laptopModel ?? t("home.specModel")}</h3><strong>{money(campaignGoal)}</strong></div>
+              <div className="spec-card-head"><h3>{campaign?.objectName ?? t("home.specModel")}</h3><strong>{money(campaignGoal)}</strong></div>
               {campaign ? (
                 <dl>
                   <div><dt>{t("laptop.owner")}</dt><dd>{campaign.ownerName}</dd></div>
@@ -688,7 +688,7 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
               </ol>
               <div className="anything-actions">
                 <a className="dark-button anything-cta" href={CREATE_URL}>
-                  <span>{t("home.createLaptop")}</span>
+                  <span>{t("home.createAuction")}</span>
                   <i aria-hidden="true">↗</i>
                 </a>
                 <small><span aria-hidden="true" />{t("home.selfHost")}</small>

@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 
+import type { AuctionPublishErrorCode } from "@/lib/auction-api-errors";
 import { getBrandModelMimeType } from "@/lib/brand-model";
-import { getBrandModelBucket, getLaptopMediaBucket } from "@/lib/database-names";
-import { attachCampaignAsset, createLaptop, getLaptopSnapshot } from "@/lib/laptop-repository";
-import { LaptopValidationError, parseLaptopForm } from "@/lib/laptop-validation";
+import { getAuctionMediaBucket, getBrandModelBucket } from "@/lib/database-names";
+import { attachCampaignAsset, createAuction, getAuctionSnapshot } from "@/lib/campaign-auction-repository";
+import { AuctionValidationError, parseAuctionForm } from "@/lib/auction-validation";
 import { normalizeModelClaimInput, verifyModelUploadClaim } from "@/lib/model-upload-claim";
 import { getPublishingOwner, PublishingAuthenticationError } from "@/lib/publishing-auth";
 import { getSupabaseAdmin, isSupabaseConfigured } from "@/lib/supabase-admin";
@@ -16,12 +17,16 @@ const EXTENSIONS_BY_TYPE: Record<string, string> = {
   "image/webp": "webp",
 };
 
+function errorResponse(errorCode: AuctionPublishErrorCode, status: number, headers?: HeadersInit) {
+  return Response.json({ errorCode }, { status, headers });
+}
+
 async function uploadPhoto(photo: File, slug: string, idempotencyKey: string) {
   const supabase = getSupabaseAdmin();
   const bytes = Buffer.from(await photo.arrayBuffer());
   const digest = createHash("sha256").update(bytes).digest("hex").slice(0, 16);
   const path = `${slug}/${idempotencyKey}-${digest}.${EXTENSIONS_BY_TYPE[photo.type]}`;
-  const { error } = await supabase.storage.from(getLaptopMediaBucket()).upload(path, bytes, {
+  const { error } = await supabase.storage.from(getAuctionMediaBucket()).upload(path, bytes, {
     cacheControl: "3600",
     contentType: photo.type,
     upsert: false,
@@ -34,13 +39,13 @@ async function uploadPhoto(photo: File, slug: string, idempotencyKey: string) {
 async function removePhoto(path: string | null) {
   if (!path) return;
   const supabase = getSupabaseAdmin();
-  const { error } = await supabase.storage.from(getLaptopMediaBucket()).remove([path]);
-  if (error) console.error("Failed to clean up rejected laptop photo", error);
+  const { error } = await supabase.storage.from(getAuctionMediaBucket()).remove([path]);
+  if (error) console.error("Failed to clean up rejected auction photo", error);
 }
 
 export async function POST(request: Request) {
   if (!isSupabaseConfigured()) {
-    return Response.json({ error: "Laptop creation is temporarily unavailable." }, { status: 503 });
+    return errorResponse("publish_unavailable", 503);
   }
 
   let photoStoragePath: string | null = null;
@@ -51,7 +56,7 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     formData.set("ownerName", owner.ownerName);
     formData.set("ownerEmail", owner.ownerEmail);
-    const input = parseLaptopForm(formData);
+    const input = parseAuctionForm(formData);
     if (input.assetType === "anything" && !input.presetModelId) {
       const claimInput = normalizeModelClaimInput({
         path: input.modelStoragePath!,
@@ -59,33 +64,33 @@ export async function POST(request: Request) {
         size: input.modelFileSize!,
       });
       if (!verifyModelUploadClaim(claimInput, input.modelUploadClaim!)) {
-        throw new LaptopValidationError("This model upload ticket is invalid or expired. Upload the model again.");
+        throw new AuctionValidationError("This model upload ticket is invalid or expired. Upload the model again.");
       }
       const { data: modelInfo, error: modelError } = await getSupabaseAdmin().storage
         .from(getBrandModelBucket())
         .info(input.modelStoragePath!);
       if (modelError || !modelInfo) {
-        throw new LaptopValidationError("The uploaded 3D model could not be found. Upload it again before publishing.");
+        throw new AuctionValidationError("The uploaded 3D model could not be found. Upload it again before publishing.");
       }
       const expectedModelMime = getBrandModelMimeType(input.modelFileName!);
       const storedModelMime = modelInfo.contentType?.split(";", 1)[0]?.toLowerCase();
       if (modelInfo.size !== input.modelFileSize
         || (storedModelMime && storedModelMime !== expectedModelMime && storedModelMime !== "application/octet-stream")) {
-        throw new LaptopValidationError("The uploaded 3D model does not match its upload ticket. Upload it again.");
+        throw new AuctionValidationError("The uploaded 3D model does not match its upload ticket. Upload it again.");
       }
     }
     if (input.photo) {
       photoStoragePath = await uploadPhoto(input.photo, input.slug, input.idempotencyKey);
     }
 
-    const result = await createLaptop({
+    const result = await createAuction({
       slug: input.slug,
       ownerName: input.ownerName,
       ownerEmail: input.ownerEmail,
       title: input.title,
       tagline: input.tagline,
       story: input.story,
-      laptopModel: input.laptopModel,
+      objectName: input.objectName,
       goalCents: input.goalCents,
       auctionClosesAt: input.auctionClosesAt,
       photoStoragePath,
@@ -100,25 +105,25 @@ export async function POST(request: Request) {
     if (!result.accepted) {
       await removePhoto(photoStoragePath);
       const status = result.reason === "rate_limited" ? 429 : 409;
-      const error = result.reason === "slug_taken"
-        ? "That public URL is already taken. Choose another slug."
+      const errorCode: AuctionPublishErrorCode = result.reason === "slug_taken"
+        ? "slug_taken"
         : result.reason === "rate_limited"
-          ? "This email has created several laptops recently. Please try again in an hour."
-          : "This creation request conflicts with one that was already processed.";
-      return Response.json({ error, result }, { status });
+          ? "rate_limited"
+          : "request_conflict";
+      return Response.json({ errorCode, result }, { status });
     }
 
     databaseAccepted = true;
-    if (!result.laptopId) throw new Error("The database accepted the campaign without an id.");
+    if (!result.auctionId) throw new Error("The database accepted the campaign without an id.");
     await attachCampaignAsset({
-      laptopId: result.laptopId,
+      auctionId: result.auctionId,
       assetType: input.assetType,
       assetName: input.assetName,
       modelStoragePath: input.modelStoragePath,
       modelFileName: input.modelFileName,
       idempotencyKey: input.idempotencyKey,
     });
-    const snapshot = await getLaptopSnapshot(result.slug).catch((error) => {
+    const snapshot = await getAuctionSnapshot(result.slug).catch((error) => {
       console.error("Campaign was created but its first snapshot could not be loaded", error);
       return null;
     });
@@ -130,21 +135,16 @@ export async function POST(request: Request) {
   } catch (error) {
     if (!databaseAccepted) await removePhoto(photoStoragePath);
     if (error instanceof PublishingAuthenticationError) {
-      return Response.json(
-        { error: error.message },
-        {
-          status: error.status,
-          headers: error.status === 401 ? { "WWW-Authenticate": "Bearer" } : undefined,
-        },
+      return errorResponse(
+        error.status === 401 ? "authentication_required" : "authentication_forbidden",
+        error.status,
+        error.status === 401 ? { "WWW-Authenticate": "Bearer" } : undefined,
       );
     }
-    if (error instanceof LaptopValidationError) {
-      return Response.json({ error: error.message }, { status: 400 });
+    if (error instanceof AuctionValidationError) {
+      return errorResponse("invalid_request", 400);
     }
-    console.error("Failed to create laptop", error);
-    return Response.json(
-      { error: "We could not publish this laptop. Your details are safe; please try again." },
-      { status: 500 },
-    );
+    console.error("Failed to create auction", error);
+    return errorResponse("publish_failed", 500);
   }
 }

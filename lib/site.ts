@@ -4,10 +4,10 @@ export const SITE_URL = (
 
 export const SITE_HOST = new URL(SITE_URL).host;
 
-export function laptopPath(slug: string) {
+export function auctionPath(slug: string) {
   return `/${slug}`;
 }
 
-export function laptopUrl(slug: string) {
-  return `${SITE_URL}${laptopPath(slug)}`;
+export function auctionUrl(slug: string) {
+  return `${SITE_URL}${auctionPath(slug)}`;
 }
