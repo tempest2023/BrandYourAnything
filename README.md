@@ -235,9 +235,12 @@ Run the real concurrency test against local Postgres:
 ```bash
 npm run test:concurrency
 npm run test:laptop-platform
+npm run test:api-e2e
 ```
 
 The platform test verifies atomic campaign creation, ten-spot isolation, RLS, equal concurrent bids, simultaneous retries, and cross-tenant idempotency-key reuse. Run it once with `SUPABASE_DATABASE_PREFIX=ba_dev` and once with `ba_prod` when validating both namespaces.
+
+The API E2E test builds and starts the production Next.js server on a free local port. It verifies the generic auction RPC surface, removed laptop routes, coded error responses, and the complete publish/read/bid flow for a non-laptop object. It creates uniquely named test auctions, so run `supabase db reset` first and use a local Supabase project unless you deliberately set `ALLOW_REMOTE_API_E2E=1`.
 
 ## Follow and support
 

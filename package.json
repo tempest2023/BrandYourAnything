@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test:concurrency": "node scripts/test-concurrent-bids.mjs",
-    "test:laptop-platform": "node scripts/test-laptop-platform.mjs"
+    "test:laptop-platform": "node scripts/test-laptop-platform.mjs",
+    "test:api-e2e": "npm run build && node --test scripts/test-auction-api-e2e.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",
