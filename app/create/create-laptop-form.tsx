@@ -48,7 +48,7 @@ const MANAGER_KEY_STORAGE_KEY = "brand-anything-lid-manager-key";
 const MANAGED_LID_STORAGE_KEY = "brand-anything-managed-lid";
 const X_AUTH_STATUS_STORAGE_KEY = "brand-anything-x-auth-status";
 const X_AUTH_STATUS_TTL_MS = 10 * 60 * 1000;
-const X_POST_INTENT_URL = "https://x.com/intent/tweet";
+const X_COMPOSE_URL = "https://x.com/compose/post";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHARE_LANGUAGE_LABELS: Record<Locale, string> = {
   en: "English",
@@ -819,7 +819,6 @@ export function CreateLaptopForm() {
   ];
   const desiredPublicLocation = laptopPath(slug);
   const sharePost = X_SHARE_POSTS[shareLocale](laptopUrl(slug), objectName, isAnything);
-  const xComposeUrl = `${X_POST_INTENT_URL}?text=${encodeURIComponent(sharePost)}`;
 
   const selectLayout = (count: LayoutCount) => {
     setLayoutCount(count);
@@ -1532,7 +1531,7 @@ export function CreateLaptopForm() {
                       <p className={styles.copyToast} role="status" aria-live="polite">Copied to your clipboard</p>
                     )}
                     {errorMessage && <p className={styles.error} role="alert">{errorMessage}</p>}
-                    <a className={styles.xShareButton} href={xComposeUrl} target="_blank" rel="noopener noreferrer">
+                    <a className={styles.xShareButton} href={X_COMPOSE_URL} target="_blank" rel="noopener noreferrer">
                       Post on X<span aria-hidden="true">↗</span>
                     </a>
                     <p className={styles.shareNote}>{publishedLocation
