@@ -6,6 +6,7 @@ import { isModelSizeAllowed } from "@/lib/model-upload-claim";
 import {
   MAX_SURFACE_SPOTS,
   MIN_SURFACE_SPOTS,
+  surfacePlacementType,
   type SpotLayoutItem,
   type SurfaceVector,
 } from "@/lib/surface-spots";
@@ -121,17 +122,22 @@ function parseSpotLayout(formData: FormData, assetType: CampaignAssetType) {
     const name = typeof spot.name === "string" ? spot.name.trim() : "";
     const dimensions = typeof spot.dimensions === "string" ? spot.dimensions.trim() : "";
     const openingBidCents = spot.openingBidCents;
-    if (spot.id !== index + 1 || !["S", "M", "L"].includes(String(spot.size))
+    const size = String(spot.size);
+    const expectedSurfaceDimensions = ["S", "M", "L"].includes(size)
+      ? surfacePlacementType(size as SpotLayoutItem["size"])
+      : null;
+    if (spot.id !== index + 1 || !expectedSurfaceDimensions
       || name.length < 2 || name.length > 80 || dimensions.length < 2 || dimensions.length > 100
       || !Number.isSafeInteger(openingBidCents) || Number(openingBidCents) < 100
       || Number(openingBidCents) > 100_000_000_000
+      || (assetType === "anything" && dimensions !== `${expectedSurfaceDimensions.label} · ${expectedSurfaceDimensions.coverage}`)
       || (assetType === "anything" && (!position || !normal))) {
       throw new LaptopValidationError(`Spot ${index + 1} has invalid placement or pricing details.`);
     }
     return {
       id: index + 1,
       name,
-      size: spot.size as SpotLayoutItem["size"],
+      size: size as SpotLayoutItem["size"],
       dimensions,
       openingBidCents: Number(openingBidCents),
       ...(position && normal ? { position, normal } : {}),
