@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "@/app/i18n-provider";
@@ -13,8 +14,10 @@ import {
   type Spot,
 } from "@/lib/auction";
 import { formatRelativeTime, SPOT_NAME_KEYS } from "@/lib/i18n";
-import type { LaptopCampaign } from "@/lib/laptop";
+import type { Locale } from "@/lib/i18n";
+import type { AuctionCampaign } from "@/lib/campaign-auction";
 import {
+  amountFromUsd,
   amountToUsd,
   amountToUsdCents,
   currencyDisplayName,
@@ -22,11 +25,27 @@ import {
   formatMoney as formatCurrency,
   minimumDisplayAmount,
 } from "@/lib/money";
+import type { Currency } from "@/lib/money";
+
+function compactMoney(amountUsd: number, currency: Currency, locale: Locale) {
+  const converted = amountFromUsd(amountUsd, currency);
+  const rounded = Math.round(converted);
+  const sym = currencySymbol(currency);
+  if (rounded >= 1_000_000) {
+    const m = rounded / 1_000_000;
+    return `${sym}${Number.isInteger(m) ? m : m.toFixed(1).replace(/\.0$/, "")}M`;
+  }
+  if (rounded >= 10_000) {
+    const k = rounded / 1_000;
+    return `${sym}${Number.isInteger(k) ? k : k.toFixed(1).replace(/\.0$/, "")}K`;
+  }
+  return formatCurrency(amountUsd, currency, locale, 0);
+}
 
 type LidView = "live" | "final";
 type TableView = "spots" | "history";
 type AuctionLandingProps = {
-  campaign?: LaptopCampaign;
+  campaign?: AuctionCampaign;
   initialSnapshot?: AuctionSnapshot;
 };
 
@@ -94,12 +113,13 @@ function MacLid({
 }) {
   const { currency, locale, t } = useI18n();
   const money = (amount: number) => formatCurrency(amount, currency, locale);
+  const compact = (amount: number) => compactMoney(amount, currency, locale);
 
   return (
     <div className="lid-stage" aria-label={t("home.lidAria")}>
       <div className="mac-lid">
         <div className="lid-camera" />
-        {showApple && <span className="apple-mark" aria-label={t("common.appleLogo")}></span>}
+        {showApple && <Image className="apple-mark" src="/apple-logo.svg" alt={t("common.appleLogo")} width={160} height={160} />}
         {spots.map((spot) => {
           const hasBid = spot.bids > 0 && Boolean(spot.holder);
           const spotNameKey = SPOT_NAME_KEYS[spot.id];
@@ -116,7 +136,7 @@ function MacLid({
             >
               {hasBid ? <Logo spot={spot} /> : <span className="lid-spot-number">{spot.id}</span>}
               {(!hasBid || spot.logo) && <span className="lid-holder">{hasBid ? spot.holder : t("common.available")}</span>}
-              <span className="lid-price">{hasBid ? money(spot.bid) : t("common.starts", { amount: money(spot.minBid) })}</span>
+              <span className="lid-price">{hasBid ? compact(spot.bid) : t("common.starts", { amount: compact(spot.minBid) })}</span>
               <span className="lid-outbid">{hasBid ? t("common.outbid") : t("common.placeBid")}</span>
             </button>
           );
@@ -284,12 +304,12 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
   const money = (amount: number) => formatCurrency(amount, currency, locale);
   const campaignGoal = campaign?.goal ?? CAMPAIGN_GOAL_USD;
   const auctionEndpoint = campaign
-    ? `/api/laptops/${encodeURIComponent(campaign.slug)}`
+    ? `/api/auctions/${encodeURIComponent(campaign.slug)}`
     : "/api/auction";
   const bidEndpoint = campaign
-    ? `/api/laptops/${encodeURIComponent(campaign.slug)}/bids`
+    ? `/api/auctions/${encodeURIComponent(campaign.slug)}/bids`
     : "/api/bids";
-  const isMac = !campaign || /^mac\b/i.test(campaign.laptopModel);
+  const isMac = !campaign || /^mac\b/i.test(campaign.objectName);
   const machineImage = campaign?.photoUrl ?? "/macbook.webp";
   const machineAssetKey = campaign && !campaign.photoUrl && !isMac
     ? null
@@ -434,14 +454,14 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={campaign.photoUrl}
-                    alt={`${campaign.title} — ${campaign.laptopModel}`}
+                    alt={`${campaign.title} — ${campaign.objectName}`}
                     onLoad={() => markFinalAssetReady(machineAssetKey)}
                     onError={() => markFinalAssetFailed(machineAssetKey)}
                   />
                 ) : isMac && machineAssetKey ? (
                   <Image
                     src="/macbook.webp"
-                    alt={campaign ? `${campaign.title} — ${campaign.laptopModel}` : t("home.finalAlt")}
+                    alt={campaign ? `${campaign.title} — ${campaign.objectName}` : t("home.finalAlt")}
                     width={1536}
                     height={1024}
                     loading="eager"
@@ -451,7 +471,7 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
                     onError={() => markFinalAssetFailed(machineAssetKey)}
                   />
                 ) : (
-                  <div className="final-pc-shell" role="img" aria-label={`${campaign?.title ?? "Laptop"} — ${campaign?.laptopModel ?? "PC"}`} />
+                  <div className="final-pc-shell" role="img" aria-label={`${campaign?.title ?? "Auction"} — ${campaign?.objectName ?? "Object"}`} />
                 )}
                 {spots.map((spot) => (
                   <span className={`final-sticker final-sticker--${spot.id}`} key={spot.id} aria-hidden="true">
@@ -489,7 +509,7 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
 
           <div className="hero-close">
             <p>{campaign?.story ?? t("home.zeroPlaceholders")}</p>
-            <p>{campaign?.laptopModel ?? t("home.outsideWorld")}</p>
+            <p>{campaign?.objectName ?? t("home.outsideWorld")}</p>
             <div>
               <a className="primary-button" href="#spots">{t("common.getSpot")}</a>
               <a className="text-link" href="#how">{t("common.how")} ›</a>
@@ -505,7 +525,7 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
               <a href="#spots">{t("home.seeAuction")}</a>
             </div>
             <div className="dark-mac" aria-hidden="true">
-              {isMac && <span className="dark-apple"></span>}
+              {isMac && <Image className="dark-apple" src="/apple-logo.svg" alt="" width={96} height={96} />}
               <i className="sticker-dot one" /><i className="sticker-dot two" /><i className="sticker-dot three" />
             </div>
           </div>
@@ -537,7 +557,7 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
                         <td data-label={t("common.spot")}><span className="spot-number">{spot.id}</span><strong>{SPOT_NAME_KEYS[spot.id] ? t(SPOT_NAME_KEYS[spot.id]!) : spot.name}</strong></td>
                         <td data-label={t("common.size")}><span className={`size-tag size-tag--${spot.size.toLowerCase()}`}>{spot.size}</span>{spot.dimensions}</td>
                         <td data-label={t("common.brand")}>{spot.bids === 0 ? <span className="availability-pill">{t("common.available")}</span> : spot.website ? <a href={spot.website} target="_blank" rel="noreferrer"><Logo spot={spot} compact /></a> : <Logo spot={spot} compact />}</td>
-                        <td data-label={spot.bids === 0 ? t("home.startingBid") : t("common.currentBid")}><strong>{money(spot.bids === 0 ? spot.minBid : spot.bid)}</strong><small>{spot.bids === 0 ? t("common.noBids") : `${spot.bids} ${spot.bids === 1 ? t("common.bid").toLowerCase() : t("common.bids")}`}</small></td>
+                        <td data-label={spot.bids === 0 ? t("home.startingBid") : t("common.currentBid")}><strong>{compactMoney(spot.bids === 0 ? spot.minBid : spot.bid, currency, locale)}</strong><small>{spot.bids === 0 ? t("common.noBids") : `${spot.bids} ${spot.bids === 1 ? t("common.bid").toLowerCase() : t("common.bids")}`}</small></td>
                         <td data-label={t("common.action")}><button className="outbid-button" onClick={() => setSelectedSpotId(spot.id)}>{spot.bids === 0 ? t("common.placeBid") : t("common.outbid")}</button></td>
                       </tr>
                     ))}
@@ -580,7 +600,7 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
             <h2>{t("home.moneyTitle")}</h2>
             <p className="specs-intro">{campaign?.story ?? t("home.specIntro", { amount: money(CAMPAIGN_GOAL_USD) })}</p>
             <div className="spec-card">
-              <div className="spec-card-head"><h3>{campaign?.laptopModel ?? t("home.specModel")}</h3><strong>{money(campaignGoal)}</strong></div>
+              <div className="spec-card-head"><h3>{campaign?.objectName ?? t("home.specModel")}</h3><strong>{money(campaignGoal)}</strong></div>
               {campaign ? (
                 <dl>
                   <div><dt>{t("laptop.owner")}</dt><dd>{campaign.ownerName}</dd></div>
@@ -668,7 +688,7 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
               </ol>
               <div className="anything-actions">
                 <a className="dark-button anything-cta" href={CREATE_URL}>
-                  <span>{t("home.createLaptop")}</span>
+                  <span>{t("home.createAuction")}</span>
                   <i aria-hidden="true">↗</i>
                 </a>
                 <small><span aria-hidden="true" />{t("home.selfHost")}</small>
@@ -716,7 +736,12 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
             </div>
             <p>{t("home.footerOpenSource")} <a href={SOURCE_URL} target="_blank" rel="noreferrer">Brand Anything ↗</a></p>
             <p>{t("home.footerContribute")} <a href={`${SOURCE_URL}/issues`} target="_blank" rel="noreferrer">GitHub ↗</a></p>
-            <div className="footer-meta"><a href={CREATE_URL}>{t("common.listLaptop")}</a><a href={SOURCE_URL} target="_blank" rel="noreferrer">{t("home.sourceGithub")}</a></div>
+            <div className="footer-meta">
+              <a href={CREATE_URL}>{t("common.listLaptop")}</a>
+              <Link href="/privacy">{t("common.privacy")}</Link>
+              <Link href="/terms">{t("common.terms")}</Link>
+              <a href={SOURCE_URL} target="_blank" rel="noreferrer">{t("home.sourceGithub")}</a>
+            </div>
             <p className="legal">{t("home.legal")}</p>
           </div>
         </div>

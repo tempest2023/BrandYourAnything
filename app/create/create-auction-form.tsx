@@ -2,26 +2,42 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "@/app/i18n-provider";
 import { ModelStage } from "@/app/model-stage";
+import {
+  isAuctionPublishErrorCode,
+  type AuctionPublishErrorCode,
+} from "@/lib/auction-api-errors";
 import type { BrandModelPreview, UploadedBrandModel } from "@/lib/brand-model";
-import { LOCALES, type Locale } from "@/lib/i18n";
+import { LOCALES, type Locale, type TranslationKey } from "@/lib/i18n";
 import {
   getPresetModel,
   type PresetModelId,
 } from "@/lib/preset-models";
-import { laptopPath, laptopUrl, SITE_HOST, SITE_URL } from "@/lib/site";
+import {
+  MAX_CUSTOM_SHOWCASE_LENGTH,
+  normalizeCustomShowcase,
+  sanitizeCustomShowcase,
+  SHOWCASE_GROUPS_BY_MACHINE,
+  showcaseOptionsFor,
+  type ShowcaseMachine,
+} from "@/lib/showcase-options";
+import { auctionPath, auctionUrl, SITE_HOST } from "@/lib/site";
 import {
   clampSurfaceSpotCount,
   MAX_SURFACE_SPOTS,
   MIN_SURFACE_SPOTS,
-  surfaceSpotName,
+  SURFACE_PLACEMENT_TYPES,
+  SURFACE_REGIONS_BY_PROFILE,
+  surfacePlacementType,
+  surfaceRegionFor,
   surfaceSpotSize,
   type SpotLayoutItem,
   type SurfaceModelAnalysis,
   type SurfacePlacementProfile,
+  type SurfaceSpotSize,
   type SurfaceSpotPlacement,
 } from "@/lib/surface-spots";
 import { getSupabaseBrowser, isSupabaseBrowserConfigured } from "@/lib/supabase-browser";
@@ -32,9 +48,21 @@ const STEPS = ["Object", "Ownership", "Showcase", "Layout", "Prices", "Listing",
 const DRAFT_STORAGE_KEY = "brand-anything-sell-draft";
 const LEGACY_DRAFT_STORAGE_KEY = "brandmylaptop-sell-draft";
 const PUBLISH_AFTER_AUTH_KEY = "brand-anything-publish-after-auth";
-const MANAGER_KEY_STORAGE_KEY = "brand-anything-lid-manager-key";
-const MANAGED_LID_STORAGE_KEY = "brand-anything-managed-lid";
+const MANAGER_KEY_STORAGE_KEY = "brand-anything-auction-manager-key";
+const MANAGED_AUCTION_STORAGE_KEY = "brand-anything-managed-auction";
+const X_AUTH_STATUS_STORAGE_KEY = "brand-anything-x-auth-status";
+const X_AUTH_STATUS_TTL_MS = 10 * 60 * 1000;
 const X_COMPOSE_URL = "https://x.com/compose/post";
+const PUBLISH_ERROR_KEYS: Record<AuctionPublishErrorCode, TranslationKey> = {
+  publish_unavailable: "sell.error.publishUnavailable",
+  slug_taken: "sell.error.slugTaken",
+  rate_limited: "sell.error.rateLimited",
+  request_conflict: "sell.error.requestConflict",
+  authentication_required: "sell.error.authenticationRequired",
+  authentication_forbidden: "sell.error.authenticationForbidden",
+  invalid_request: "sell.error.invalidRequest",
+  publish_failed: "sell.error.publishFailed",
+};
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHARE_LANGUAGE_LABELS: Record<Locale, string> = {
   en: "English",
@@ -52,16 +80,6 @@ const X_SHARE_POSTS: Record<Locale, (publicUrl: string, assetName: string, anyth
     ? `Voy a abrir unos pocos espacios de marca en ${assetName}. Explora el modelo 3D y puja por un lugar: ${publicUrl}\n#BrandAnything`
     : `Voy a abrir unos pocos espacios de la tapa de mi portátil a marcas. Tu logo viajará conmigo por cafés, reuniones y eventos, no será otro banner más. Mira la subasta en directo: ${publicUrl}\n#BrandAnything`,
 };
-const SHOWCASE_OPTIONS = [
-  "Build in public — posts and videos",
-  "Coworking spaces and cafés",
-  "Conferences and meetups",
-  "Business travel",
-  "Client and investor meetings",
-  "A campus or university",
-  "Roads, marinas, hangars and public spaces",
-] as const;
-
 const TEN_SPOTS = [
   { id: 1, name: "Top left banner", size: "Large", price: "large" },
   { id: 2, name: "Marquee — above the logo", size: "Large", price: "large", premium: 1.25 },
@@ -85,16 +103,24 @@ const SIX_SPOTS = [
 ] as const;
 
 type PriceKey = "small" | "medium" | "large";
+type SurfaceSpotPricing = {
+  id: number;
+  region: string;
+  size: SurfaceSpotSize;
+  price: string;
+};
 type PreviewSpot = {
   id: number;
   name: string;
   size: "Small" | "Medium" | "Large";
   price: PriceKey;
+  dimensions?: string;
+  openingPrice?: string;
   premium?: number;
   position?: SurfaceSpotPlacement["position"];
   normal?: SurfaceSpotPlacement["normal"];
 };
-type Machine = "mac" | "pc" | "tesla" | "yacht" | "jet" | "anything";
+type Machine = ShowcaseMachine;
 type TeslaModel = "Model 3" | "Model Y" | "Model S" | "Model X" | "Cybertruck";
 type ModelMode = "preset" | "custom";
 type Ownership = "own" | "fund";
@@ -112,9 +138,12 @@ type SellDraft = {
   ownership: Ownership;
   machineCost: string;
   showcase: string[];
+  customShowcaseEnabled: boolean;
+  customShowcase: string;
   extraNote: string;
   layoutCount: LayoutCount;
   surfaceSpots: SurfaceSpotPlacement[];
+  surfaceSpotPricing: SurfaceSpotPricing[];
   smallPrice: string;
   mediumPrice: string;
   largePrice: string;
@@ -127,6 +156,87 @@ type SellDraft = {
 };
 
 const TESLA_MODELS: TeslaModel[] = ["Model 3", "Model Y", "Model S", "Model X", "Cybertruck"];
+
+function placementProfileFor(machine: Machine): SurfacePlacementProfile {
+  if (machine === "tesla") return "car";
+  if (machine === "yacht") return "yacht";
+  if (machine === "jet") return "jet";
+  return "generic";
+}
+
+function priceKeyForSurfaceSize(size: SurfaceSpotSize): PriceKey {
+  if (size === "L") return "large";
+  if (size === "M") return "medium";
+  return "small";
+}
+
+function defaultSurfacePrice(size: SurfaceSpotSize, count: number) {
+  const prices = count >= 9
+    ? { small: 125, medium: 200, large: 400 }
+    : { small: 250, medium: 400, large: 800 };
+  return String(prices[priceKeyForSurfaceSize(size)]);
+}
+
+function surfaceSpotPricingIsSafe(value: unknown, profile: SurfacePlacementProfile): value is SurfaceSpotPricing {
+  if (!value || typeof value !== "object") return false;
+  const spot = value as Partial<SurfaceSpotPricing>;
+  return Number.isInteger(spot.id)
+    && typeof spot.region === "string"
+    && SURFACE_REGIONS_BY_PROFILE[profile].includes(spot.region)
+    && (spot.size === "S" || spot.size === "M" || spot.size === "L")
+    && typeof spot.price === "string"
+    && spot.price.length <= 24;
+}
+
+function normalizeSurfaceSpotPricing(
+  current: SurfaceSpotPricing[],
+  count: number,
+  profile: SurfacePlacementProfile,
+) {
+  return Array.from({ length: count }, (_, index): SurfaceSpotPricing => {
+    const id = index + 1;
+    const saved = current.find((spot) => spot.id === id);
+    if (saved && surfaceSpotPricingIsSafe(saved, profile)) return saved;
+    const size = surfaceSpotSize(index, count);
+    return {
+      id,
+      region: surfaceRegionFor(profile, index),
+      size,
+      price: defaultSurfacePrice(size, count),
+    };
+  });
+}
+
+function validSurfacePrice(value: string) {
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount >= 1;
+}
+
+function defaultTitleFor(machine: Machine, teslaModel: TeslaModel) {
+  if (machine === "mac") return "Your brand, on my Mac.";
+  if (machine === "pc") return "Your brand, on my laptop.";
+  if (machine === "tesla") return `Your brand, on my Tesla ${teslaModel}.`;
+  if (machine === "yacht") return "Your brand, aboard my private yacht.";
+  if (machine === "jet") return "Your brand, aboard my private jet.";
+  return "Your brand, on my one-of-one object.";
+}
+
+function isDefaultListingTitle(value: string) {
+  return (["mac", "pc", "yacht", "jet", "anything"] as const)
+    .some((machine) => value === defaultTitleFor(machine, "Model 3"))
+    || TESLA_MODELS.some((model) => value === defaultTitleFor("tesla", model));
+}
+
+function splitAddressHost(host: string) {
+  const finalDot = host.lastIndexOf(".");
+  if (finalDot <= 0) return { prefix: host, suffix: "/" };
+  return {
+    prefix: host.slice(0, finalDot),
+    suffix: `${host.slice(finalDot)}/`,
+  };
+}
+
+const ADDRESS_HOST = splitAddressHost(SITE_HOST);
 
 function presetIdFor(machine: Machine, teslaModel: TeslaModel): PresetModelId | null {
   if (machine === "tesla" && teslaModel === "Cybertruck") return "tesla-cybertruck";
@@ -165,21 +275,40 @@ function ObjectIcon({ kind }: { kind: (typeof OBJECT_PRESETS)[number]["icon"] })
   );
 }
 
-type ManagedLid = {
+type ManagedAuction = {
   slug: string;
   title: string;
 };
 
 type CreateResponse = {
-  error?: string;
+  errorCode?: unknown;
   location?: string;
   result?: { reason: string; slug: string };
+};
+
+type XAuthAvailability = "checking" | "available" | "unavailable" | "unknown";
+type XAuthStatusResponse = {
+  configured?: unknown;
+  errorCode?: unknown;
+};
+type CachedXAuthStatus = {
+  configured: boolean;
+  expiresAt: number;
 };
 
 const moneyFormatter = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
 
 function formatMoney(amount: number) {
-  return `${moneyFormatter.format(Math.round(amount))} €`;
+  const rounded = Math.round(amount);
+  if (rounded >= 1_000_000) {
+    const millions = rounded / 1_000_000;
+    return `${Number.isInteger(millions) ? millions : millions.toFixed(1).replace(/\.0$/, "")}M €`;
+  }
+  if (rounded >= 10_000) {
+    const thousands = rounded / 1_000;
+    return `${Number.isInteger(thousands) ? thousands : thousands.toFixed(1).replace(/\.0$/, "")}K €`;
+  }
+  return `${moneyFormatter.format(rounded)} €`;
 }
 
 function slugify(value: string) {
@@ -187,14 +316,14 @@ function slugify(value: string) {
     .toLowerCase()
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^[-_]+/, "")
     .slice(0, 48);
 }
 
 function clampPrice(value: string, fallback: number) {
   const amount = Number(value);
-  return Number.isFinite(amount) && amount >= 10 ? amount : fallback;
+  return Number.isFinite(amount) && amount > 0 ? amount : fallback;
 }
 
 function isSurfaceSpotPlacement(value: unknown): value is SurfaceSpotPlacement {
@@ -211,6 +340,61 @@ function isSurfaceSpotPlacement(value: unknown): value is SurfaceSpotPlacement {
 
 function isUnavailableXAuthError(message: string) {
   return /provider|not configured|not enabled|unsupported|disabled/i.test(message);
+}
+
+function readCachedXAuthStatus() {
+  try {
+    const raw = window.localStorage.getItem(X_AUTH_STATUS_STORAGE_KEY);
+    if (!raw) return null;
+    const cached = JSON.parse(raw) as Partial<CachedXAuthStatus>;
+    if (typeof cached.configured !== "boolean"
+      || typeof cached.expiresAt !== "number"
+      || !Number.isFinite(cached.expiresAt)
+      || cached.expiresAt <= Date.now()) {
+      window.localStorage.removeItem(X_AUTH_STATUS_STORAGE_KEY);
+      return null;
+    }
+    return cached.configured;
+  } catch {
+    try {
+      window.localStorage.removeItem(X_AUTH_STATUS_STORAGE_KEY);
+    } catch {
+      // A blocked storage API should not turn a successful backend check into a guess.
+    }
+    return null;
+  }
+}
+
+function cacheXAuthStatus(configured: boolean) {
+  const cached: CachedXAuthStatus = {
+    configured,
+    expiresAt: Date.now() + X_AUTH_STATUS_TTL_MS,
+  };
+  try {
+    window.localStorage.setItem(X_AUTH_STATUS_STORAGE_KEY, JSON.stringify(cached));
+  } catch {
+    // The current request result remains usable; Publish will recheck without a cache flag.
+  }
+}
+
+function clearCachedXAuthStatus() {
+  try {
+    window.localStorage.removeItem(X_AUTH_STATUS_STORAGE_KEY);
+  } catch {
+    // Storage may be unavailable in hardened browser modes.
+  }
+}
+
+async function fetchXAuthStatus(): Promise<boolean> {
+  const response = await fetch("/api/auth/x-status", {
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+  const payload = await response.json() as XAuthStatusResponse;
+  if (!response.ok || typeof payload.configured !== "boolean") {
+    throw new Error("x_auth_status_failed");
+  }
+  return payload.configured;
 }
 
 function getOrCreateManagerKey() {
@@ -254,10 +438,10 @@ function SiteFooter() {
         <div className={styles.footerBrand}>
           <Logo />
           <p>Turn the object you carry, drive, sail or fly into a finite marketplace for brands.</p>
-          <a className={styles.builtBy} href="https://x.com/vynsedev" target="_blank" rel="noreferrer">
+          <a className={styles.builtBy} href="https://x.com/biIIIionaire" target="_blank" rel="noreferrer">
             <span>built by</span>
-            <Image src="/vincent.webp" alt="" width={22} height={22} />
-            <strong>Vincent</strong>
+            <Image src="/github-avatar.jpeg" alt="" width={22} height={22} />
+            <strong>Tempest</strong>
           </a>
         </div>
         <nav className={styles.footerNav} aria-label="Footer">
@@ -277,9 +461,9 @@ function SiteFooter() {
         <div className={styles.footerLegal}>
           <p>Brand placements are paid sponsorships, not endorsements. Creators remain responsible for placement rights, production and fulfilment.</p>
           <nav aria-label="Legal">
-            <Link href="/">Terms</Link>
-            <Link href="/">Privacy</Link>
-            <a href="mailto:contact@vynse.dev">Contact</a>
+            <Link href="/terms">Terms</Link>
+            <Link href="/privacy">Privacy</Link>
+            <a href="https://x.com/biIIIionaire" target="_blank" rel="noreferrer">Contact</a>
           </nav>
         </div>
       </div>
@@ -287,8 +471,8 @@ function SiteFooter() {
   );
 }
 
-export function CreateLaptopForm() {
-  const { locale } = useI18n();
+export function CreateAuctionForm() {
+  const { locale, t } = useI18n();
   const formRef = useRef<HTMLFormElement>(null);
   const surfaceSpotsRef = useRef<SurfaceSpotPlacement[]>([]);
   const [step, setStep] = useState(0);
@@ -303,11 +487,14 @@ export function CreateLaptopForm() {
   const [screenSize, setScreenSize] = useState<13 | 14 | 16>(14);
   const [ownership, setOwnership] = useState<Ownership>("own");
   const [machineCost, setMachineCost] = useState("");
-  const [showcase, setShowcase] = useState<string[]>(SHOWCASE_OPTIONS.slice(0, 5));
+  const [showcase, setShowcase] = useState<string[]>([]);
+  const [customShowcaseEnabled, setCustomShowcaseEnabled] = useState(false);
+  const [customShowcase, setCustomShowcase] = useState("");
   const [extraNote, setExtraNote] = useState("");
   const [layoutCount, setLayoutCount] = useState<LayoutCount>(10);
   const [surfaceAnalysis, setSurfaceAnalysis] = useState<SurfaceModelAnalysis | null>(null);
   const [surfaceSpots, setSurfaceSpots] = useState<SurfaceSpotPlacement[]>([]);
+  const [surfaceSpotPricing, setSurfaceSpotPricing] = useState<SurfaceSpotPricing[]>([]);
   const [selectedSurfaceSpotId, setSelectedSurfaceSpotId] = useState(1);
   const [placementMessage, setPlacementMessage] = useState("");
   const [smallPrice, setSmallPrice] = useState("125");
@@ -322,18 +509,23 @@ export function CreateLaptopForm() {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [authRedirecting, setAuthRedirecting] = useState(false);
-  const [xSignInUnavailable, setXSignInUnavailable] = useState(
-    () => !isSupabaseBrowserConfigured(),
-  );
+  const [xAuthAvailability, setXAuthAvailability] = useState<XAuthAvailability>("checking");
+  const xAuthRequestRef = useRef<Promise<boolean> | null>(null);
   const [draftReady, setDraftReady] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [createdLocation, setCreatedLocation] = useState<string | null>(null);
   const [publishedLocation, setPublishedLocation] = useState<string | null>(null);
-  const [managedLid, setManagedLid] = useState<ManagedLid | null>(null);
+  const [managedAuction, setManagedAuction] = useState<ManagedAuction | null>(null);
   const [shareLocale, setShareLocale] = useState<Locale>(locale);
   const [copyFeedback, setCopyFeedback] = useState<"idle" | "copied">("idle");
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+  const placementProfile = placementProfileFor(machine);
+  const resolvedSurfaceSpotPricing = useMemo(() => normalizeSurfaceSpotPricing(
+    surfaceSpotPricing,
+    layoutCount,
+    placementProfile,
+  ), [layoutCount, placementProfile, surfaceSpotPricing]);
 
   useEffect(() => {
     if (copyFeedback !== "copied") return;
@@ -344,6 +536,40 @@ export function CreateLaptopForm() {
   useEffect(() => {
     surfaceSpotsRef.current = surfaceSpots;
   }, [surfaceSpots]);
+
+  const resolveXAuthAvailability = useCallback(async () => {
+    const cached = readCachedXAuthStatus();
+    if (cached !== null) {
+      setXAuthAvailability(cached ? "available" : "unavailable");
+      return cached;
+    }
+
+    setXAuthAvailability("checking");
+    const request = xAuthRequestRef.current ?? fetchXAuthStatus();
+    xAuthRequestRef.current = request;
+    try {
+      const configured = await request;
+      cacheXAuthStatus(configured);
+      setXAuthAvailability(configured ? "available" : "unavailable");
+      return configured;
+    } catch {
+      setXAuthAvailability("unknown");
+      return null;
+    } finally {
+      if (xAuthRequestRef.current === request) xAuthRequestRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void resolveXAuthAvailability(), 0);
+    return () => window.clearTimeout(timer);
+  }, [resolveXAuthAvailability]);
+
+  useEffect(() => {
+    if (step !== STEPS.length - 1 || readCachedXAuthStatus() !== null) return;
+    const timer = window.setTimeout(() => void resolveXAuthAvailability(), 0);
+    return () => window.clearTimeout(timer);
+  }, [resolveXAuthAvailability, step]);
 
   useEffect(() => {
     let draft: Partial<SellDraft> = {};
@@ -360,9 +586,12 @@ export function CreateLaptopForm() {
 
     const timer = window.setTimeout(() => {
       if (saved) {
+        const draftMachine = OBJECT_PRESETS.some((option) => option.id === draft.machine)
+          ? draft.machine as Machine
+          : "mac";
         if (Number.isInteger(draft.step) && draft.step! >= 0 && draft.step! < STEPS.length) setStep(draft.step!);
         if (Number.isInteger(draft.furthestStep) && draft.furthestStep! >= 0 && draft.furthestStep! < STEPS.length) setFurthestStep(draft.furthestStep!);
-        if (draft.machine) setMachine(draft.machine);
+        setMachine(draftMachine);
         if (typeof draft.assetName === "string") setAssetName(draft.assetName);
         if (draft.teslaModel && TESLA_MODELS.includes(draft.teslaModel)) setTeslaModel(draft.teslaModel);
         if (draft.modelMode === "preset" || draft.modelMode === "custom") setModelMode(draft.modelMode);
@@ -378,13 +607,30 @@ export function CreateLaptopForm() {
         if (draft.screenSize) setScreenSize(draft.screenSize);
         if (draft.ownership) setOwnership(draft.ownership);
         if (typeof draft.machineCost === "string") setMachineCost(draft.machineCost);
-        if (Array.isArray(draft.showcase)) setShowcase(draft.showcase);
+        if (Array.isArray(draft.showcase)) {
+          const supportedOptions = new Set(showcaseOptionsFor(draftMachine));
+          setShowcase(draft.showcase.filter((option) => (
+            typeof option === "string" && supportedOptions.has(option)
+          )));
+        }
+        if (typeof draft.customShowcaseEnabled === "boolean") {
+          setCustomShowcaseEnabled(draft.customShowcaseEnabled);
+        }
+        if (typeof draft.customShowcase === "string") {
+          setCustomShowcase(sanitizeCustomShowcase(draft.customShowcase));
+        }
         if (typeof draft.extraNote === "string") setExtraNote(draft.extraNote);
         if (Number.isInteger(draft.layoutCount)
           && draft.layoutCount! >= MIN_SURFACE_SPOTS
           && draft.layoutCount! <= MAX_SURFACE_SPOTS) setLayoutCount(draft.layoutCount!);
         if (Array.isArray(draft.surfaceSpots) && draft.surfaceSpots.every(isSurfaceSpotPlacement)) {
           setSurfaceSpots(draft.surfaceSpots.slice(0, MAX_SURFACE_SPOTS));
+        }
+        if (Array.isArray(draft.surfaceSpotPricing)) {
+          const draftProfile = placementProfileFor(draftMachine);
+          setSurfaceSpotPricing(draft.surfaceSpotPricing.filter((spot) => (
+            surfaceSpotPricingIsSafe(spot, draftProfile)
+          )).slice(0, MAX_SURFACE_SPOTS));
         }
         if (typeof draft.smallPrice === "string") setSmallPrice(draft.smallPrice);
         if (typeof draft.mediumPrice === "string") setMediumPrice(draft.mediumPrice);
@@ -393,7 +639,14 @@ export function CreateLaptopForm() {
         if (typeof draft.specialPrice === "string") setSpecialPrice(draft.specialPrice);
         if (draft.listingDays) setListingDays(draft.listingDays);
         if (draft.stickerMonths) setStickerMonths(draft.stickerMonths);
-        if (typeof draft.title === "string") setTitle(draft.title);
+        if (typeof draft.title === "string") {
+          const draftTeslaModel = draft.teslaModel && TESLA_MODELS.includes(draft.teslaModel)
+            ? draft.teslaModel
+            : "Model 3";
+          setTitle(isDefaultListingTitle(draft.title)
+            ? defaultTitleFor(draftMachine, draftTeslaModel)
+            : draft.title);
+        }
         if (typeof draft.slug === "string") setSlug(draft.slug);
       }
       setDraftReady(true);
@@ -402,16 +655,16 @@ export function CreateLaptopForm() {
   }, []);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(MANAGED_LID_STORAGE_KEY);
+    const saved = window.localStorage.getItem(MANAGED_AUCTION_STORAGE_KEY);
     if (!saved) return;
     const timer = window.setTimeout(() => {
       try {
-        const candidate = JSON.parse(saved) as Partial<ManagedLid>;
+        const candidate = JSON.parse(saved) as Partial<ManagedAuction>;
         if (typeof candidate.slug === "string" && typeof candidate.title === "string") {
-          setManagedLid({ slug: candidate.slug, title: candidate.title });
+          setManagedAuction({ slug: candidate.slug, title: candidate.title });
         }
       } catch {
-        window.localStorage.removeItem(MANAGED_LID_STORAGE_KEY);
+        window.localStorage.removeItem(MANAGED_AUCTION_STORAGE_KEY);
       }
     }, 0);
     return () => window.clearTimeout(timer);
@@ -432,9 +685,12 @@ export function CreateLaptopForm() {
       ownership,
       machineCost,
       showcase,
+      customShowcaseEnabled,
+      customShowcase,
       extraNote,
       layoutCount,
       surfaceSpots,
+      surfaceSpotPricing: resolvedSurfaceSpotPricing,
       smallPrice,
       mediumPrice,
       largePrice,
@@ -445,7 +701,7 @@ export function CreateLaptopForm() {
       title,
       slug,
     }));
-  }, [anythingSource, assetName, brandModel, draftReady, extraNote, furthestStep, largePrice, layoutCount, listingDays, machine, machineCost, mediumPrice, modelMode, ownership, screenSize, showcase, slug, smallPrice, specialPrice, specialSpot, step, stickerMonths, surfaceSpots, teslaModel, title]);
+  }, [anythingSource, assetName, brandModel, customShowcase, customShowcaseEnabled, draftReady, extraNote, furthestStep, largePrice, layoutCount, listingDays, machine, machineCost, mediumPrice, modelMode, ownership, resolvedSurfaceSpotPricing, screenSize, showcase, slug, smallPrice, specialPrice, specialSpot, step, stickerMonths, surfaceSpots, teslaModel, title]);
 
   useEffect(() => {
     let active = true;
@@ -457,11 +713,21 @@ export function CreateLaptopForm() {
       || callbackParameters.get("error_code")
       || (callbackParameters.get("error") ? "X did not complete sign in. Please try again." : "");
 
-    if (!isSupabaseBrowserConfigured()) {
+    if (xAuthAvailability === "checking" || xAuthAvailability === "unknown") {
+      const timer = window.setTimeout(() => {
+        if (active) setAuthReady(false);
+      }, 0);
+      return () => {
+        active = false;
+        window.clearTimeout(timer);
+      };
+    }
+
+    if (xAuthAvailability === "unavailable" || !isSupabaseBrowserConfigured()) {
       const timer = window.setTimeout(() => {
         if (!active) return;
+        window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
         setAuthReady(true);
-        if (callbackError) setErrorMessage(callbackError);
       }, 0);
       return () => {
         active = false;
@@ -482,9 +748,12 @@ export function CreateLaptopForm() {
       setAuthReady(true);
       if (callbackError || error) {
         window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
-        const message = callbackError || "Your X session could not be restored. Please try again.";
-        if (isUnavailableXAuthError(message)) setXSignInUnavailable(true);
-        setErrorMessage(message);
+        const rawMessage = callbackError || error?.message || "";
+        if (isUnavailableXAuthError(rawMessage)) {
+          cacheXAuthStatus(false);
+          setXAuthAvailability("unavailable");
+        }
+        setErrorMessage(t(callbackError ? "sell.error.xSignIn" : "sell.error.xSession"));
       }
     });
 
@@ -492,7 +761,7 @@ export function CreateLaptopForm() {
       active = false;
       listener.subscription.unsubscribe();
     };
-  }, []);
+  }, [t, xAuthAvailability]);
 
   const isAnything = machine !== "mac" && machine !== "pc";
   const selectedPresetId = presetIdFor(machine, teslaModel);
@@ -501,13 +770,6 @@ export function CreateLaptopForm() {
   const previewModel = usingPresetModel && selectedPreset
     ? { sourceUrl: selectedPreset.publicPath, format: "glb" as const }
     : brandModelPreview;
-  const placementProfile: SurfacePlacementProfile = machine === "tesla"
-    ? "car"
-    : machine === "yacht"
-      ? "yacht"
-      : machine === "jet"
-        ? "jet"
-        : "generic";
   const prices = useMemo(() => ({
     small: clampPrice(smallPrice, layoutCount >= 9 ? 125 : 250),
     medium: clampPrice(mediumPrice, layoutCount >= 9 ? 200 : 400),
@@ -517,19 +779,24 @@ export function CreateLaptopForm() {
   const baseSpots: PreviewSpot[] = isAnything
     ? Array.from({ length: layoutCount }, (_, index) => {
       const placement = surfaceSpots.find((spot) => spot.id === index + 1);
-      const size = surfaceSpotSize(index, layoutCount);
+      const pricing = resolvedSurfaceSpotPricing[index];
+      const placementType = surfacePlacementType(pricing.size);
       return {
         id: index + 1,
-        name: placement ? surfaceSpotName(placement, index) : `Surface spot ${index + 1}`,
-        size: size === "L" ? "Large" : size === "M" ? "Medium" : "Small",
-        price: size === "L" ? "large" : size === "M" ? "medium" : "small",
+        name: pricing.region,
+        size: pricing.size === "L" ? "Large" : pricing.size === "M" ? "Medium" : "Small",
+        price: priceKeyForSurfaceSize(pricing.size),
+        dimensions: `${placementType.label} · ${placementType.coverage}`,
+        openingPrice: pricing.price,
         ...(placement ? { position: placement.position, normal: placement.normal } : {}),
       };
     })
     : [...(layoutCount === 10 ? TEN_SPOTS : SIX_SPOTS)];
   const previewSpots = baseSpots.map((spot) => ({
     ...spot,
-    amount: Math.round(prices[spot.price] * (spot.premium ?? 1)),
+    amount: Math.round((spot.openingPrice === undefined
+      ? prices[spot.price]
+      : validSurfacePrice(spot.openingPrice) ? Number(spot.openingPrice) : 0) * (spot.premium ?? 1)),
   }));
   const spotCountBySize = {
     large: previewSpots.filter((spot) => spot.price === "large").length,
@@ -540,15 +807,32 @@ export function CreateLaptopForm() {
   const hasSpecialSpot = machine === "mac" && specialSpot;
   const totalFloor = previewSpots.reduce((sum, spot) => sum + spot.amount, 0) + (hasSpecialSpot ? specialAmount : 0);
   const minimumPrice = Math.min(...previewSpots.map((spot) => spot.amount));
+  const payloadPrices = isAnything
+    ? (Object.keys(prices) as PriceKey[]).reduce<Record<PriceKey, number>>((result, key) => {
+      const matchingPrices = previewSpots.filter((spot) => spot.price === key).map((spot) => spot.amount);
+      result[key] = matchingPrices.length > 0 ? Math.min(...matchingPrices) : prices[key];
+      return result;
+    }, { ...prices })
+    : prices;
   const fundingCost = Number(machineCost);
   const needsCustomModel = isAnything && !usingPresetModel;
   const objectName = isAnything ? assetName.trim() || "your object" : `${machine === "mac" ? "Mac" : "PC"} · ${screenSize}″`;
-  const machineIsValid = ownership === "own" || (Number.isFinite(fundingCost) && fundingCost >= 100 && fundingCost <= 20_000_000);
+  const machineIsValid = ownership === "own" || (Number.isFinite(fundingCost) && fundingCost >= 1);
   const objectIsValid = !isAnything || (assetName.trim().length >= 2 && (usingPresetModel || brandModel !== null));
   const layoutIsValid = !isAnything || (surfaceSpots.length === layoutCount
     && surfaceSpots.every((spot) => spot.position.length === 3 && spot.normal.length === 3));
-  const desiredPublicLocation = laptopPath(slug);
-  const sharePost = X_SHARE_POSTS[shareLocale](laptopUrl(slug), objectName, isAnything);
+  const surfacePricingIsValid = !isAnything || resolvedSurfaceSpotPricing.every((spot) => (
+    validSurfacePrice(spot.price)
+  ));
+  const showcaseGroups = SHOWCASE_GROUPS_BY_MACHINE[machine];
+  const normalizedCustomShowcase = normalizeCustomShowcase(customShowcase);
+  const customShowcaseIsValid = !customShowcaseEnabled || normalizedCustomShowcase.length >= 2;
+  const selectedShowcase = [
+    ...showcase,
+    ...(customShowcaseEnabled && customShowcaseIsValid ? [normalizedCustomShowcase] : []),
+  ];
+  const desiredPublicLocation = auctionPath(slug);
+  const sharePost = X_SHARE_POSTS[shareLocale](auctionUrl(slug), objectName, isAnything);
 
   const selectLayout = (count: LayoutCount) => {
     setLayoutCount(count);
@@ -564,35 +848,52 @@ export function CreateLaptopForm() {
   };
 
   const updateSurfaceSpotCount = (requestedCount: number) => {
-    const availableCount = surfaceAnalysis?.placements.length || MAX_SURFACE_SPOTS;
-    const count = Math.min(availableCount, clampSurfaceSpotCount(requestedCount));
+    const count = clampSurfaceSpotCount(requestedCount);
     setLayoutCount(count);
     setSurfaceSpots((current) => Array.from({ length: count }, (_, index) => (
       current.find((spot) => spot.id === index + 1)
       ?? surfaceAnalysis?.placements.find((spot) => spot.id === index + 1)
       ?? current[index % Math.max(current.length, 1)]
+      ?? surfaceAnalysis?.placements[index % Math.max(surfaceAnalysis.placements.length, 1)]
       ?? { id: index + 1, position: [0, 0, 0], normal: [0, 0, 1] }
     )).map((spot, index) => ({ ...spot, id: index + 1 })));
     setSelectedSurfaceSpotId((current) => Math.min(current, count));
     setPlacementMessage("");
   };
 
+  const updateSurfaceSpotPricing = (spotId: number, update: Partial<Omit<SurfaceSpotPricing, "id">>) => {
+    setSurfaceSpotPricing((current) => normalizeSurfaceSpotPricing(
+      current,
+      layoutCount,
+      placementProfile,
+    ).map((spot) => spot.id === spotId ? { ...spot, ...update } : spot));
+  };
+
   const handleModelAnalysis = (analysis: SurfaceModelAnalysis) => {
     setSurfaceAnalysis(analysis);
     if (surfaceSpotsRef.current.length > 0) return;
-    const count = Math.min(analysis.recommendedCount, analysis.placements.length);
+    const count = clampSurfaceSpotCount(analysis.recommendedCount);
     setLayoutCount(count);
-    setSurfaceSpots(analysis.placements.slice(0, count));
+    setSurfaceSpots(Array.from({ length: count }, (_, index) => ({
+      ...(analysis.placements[index] ?? analysis.placements[index % Math.max(analysis.placements.length, 1)]
+        ?? { position: [0, 0, 0] as const, normal: [0, 0, 1] as const }),
+      id: index + 1,
+    })));
     setSelectedSurfaceSpotId(1);
   };
 
   const resetSurfaceLayout = () => {
     if (!surfaceAnalysis) return;
-    const count = Math.min(surfaceAnalysis.recommendedCount, surfaceAnalysis.placements.length);
+    const count = clampSurfaceSpotCount(surfaceAnalysis.recommendedCount);
     setLayoutCount(count);
-    setSurfaceSpots(surfaceAnalysis.placements.slice(0, count));
+    setSurfaceSpots(Array.from({ length: count }, (_, index) => ({
+      ...(surfaceAnalysis.placements[index]
+        ?? surfaceAnalysis.placements[index % Math.max(surfaceAnalysis.placements.length, 1)]
+        ?? { position: [0, 0, 0] as const, normal: [0, 0, 1] as const }),
+      id: index + 1,
+    })));
     setSelectedSurfaceSpotId(1);
-    setPlacementMessage("Recommended side-surface layout restored.");
+    setPlacementMessage("Recommended layout restored.");
   };
 
   const placeSurfaceSpot = (nextSpot: SurfaceSpotPlacement) => {
@@ -604,6 +905,7 @@ export function CreateLaptopForm() {
     surfaceSpotsRef.current = [];
     setSurfaceAnalysis(null);
     setSurfaceSpots([]);
+    setSurfaceSpotPricing([]);
     setSelectedSurfaceSpotId(1);
     setPlacementMessage("");
   };
@@ -616,6 +918,12 @@ export function CreateLaptopForm() {
     clearSurfaceLayout();
     setModelMode(nextPresetId ? "preset" : "custom");
     setMachine(nextMachine);
+    setShowcase([]);
+    setCustomShowcaseEnabled(false);
+    setCustomShowcase("");
+    setTitle((current) => isDefaultListingTitle(current)
+      ? defaultTitleFor(nextMachine, teslaModel)
+      : current);
     setSpecialSpot(nextMachine === "mac");
     if (nextMachine === "tesla") setAssetName(`Tesla ${teslaModel}`);
     if (nextMachine === "yacht") setAssetName("Flybridge motor yacht");
@@ -631,6 +939,9 @@ export function CreateLaptopForm() {
     clearSurfaceLayout();
     setModelMode(presetIdFor("tesla", model) ? "preset" : "custom");
     setTeslaModel(model);
+    setTitle((current) => isDefaultListingTitle(current)
+      ? defaultTitleFor("tesla", model)
+      : current);
     setAssetName(`Tesla ${model}`);
   };
 
@@ -644,7 +955,9 @@ export function CreateLaptopForm() {
   const continueStep = () => {
     if (step === 0 && !objectIsValid) return;
     if (step === 1 && !machineIsValid) return;
+    if (step === 2 && !customShowcaseIsValid) return;
     if (step === 3 && !layoutIsValid) return;
+    if (step === 4 && !surfacePricingIsValid) return;
     const next = Math.min(step + 1, STEPS.length - 1);
     setStep(next);
     setFurthestStep(next);
@@ -664,21 +977,23 @@ export function CreateLaptopForm() {
       : [...current, option]);
   };
 
-  const rememberManagedLid = (location: string) => {
+  const rememberManagedAuction = (location: string) => {
     const entry = { slug, title };
-    window.localStorage.setItem(MANAGED_LID_STORAGE_KEY, JSON.stringify(entry));
-    setManagedLid(entry);
+    window.localStorage.setItem(MANAGED_AUCTION_STORAGE_KEY, JSON.stringify(entry));
+    setManagedAuction(entry);
     setPublishedLocation(location);
   };
 
-  const publishLaptop = async (form: HTMLFormElement, mode: "x" | "browser") => {
+  const publishAuction = async (form: HTMLFormElement, mode: "x" | "browser") => {
     if (publishedLocation === desiredPublicLocation) return publishedLocation;
 
     setSubmitting(true);
     setErrorMessage("");
     const formData = new FormData(form);
     const storyParts = [
-      showcase.length ? `This ${isAnything ? "object" : "laptop"} is seen at: ${showcase.join(", ")}.` : `This ${isAnything ? "object" : "laptop"} travels with its owner every day.`,
+      selectedShowcase.length
+        ? `Expected visibility: ${selectedShowcase.join(", ")}.`
+        : "Visibility details will be confirmed by the owner.",
       extraNote.trim(),
       `Each approved brand placement stays on for ${stickerMonths} months.`,
     ].filter(Boolean);
@@ -687,16 +1002,18 @@ export function CreateLaptopForm() {
     formData.set("title", title);
     formData.set("tagline", isAnything ? `Put your brand on ${objectName}.` : "Put your brand on the lid I carry everywhere.");
     formData.set("story", storyParts.join(" "));
-    formData.set("laptopModel", objectName);
+    formData.set("objectName", objectName);
     formData.set("assetType", isAnything ? "anything" : "laptop");
     formData.set("assetName", objectName);
+    formData.set("customShowcase", customShowcaseEnabled ? normalizedCustomShowcase : "");
     const spotLayout: SpotLayoutItem[] = previewSpots.map((spot) => ({
       id: spot.id,
       name: spot.name,
       size: spot.size === "Large" ? "L" : spot.size === "Medium" ? "M" : "S",
       dimensions: isAnything
-        ? `${spot.size} side-surface placement`
+        ? spot.dimensions ?? `${spot.size} surface placement`
         : spot.size === "Large" ? "9.5 × 5.5 cm" : spot.size === "Medium" ? "9.5 × 4 cm" : "4.5 × 4.5 cm",
+      openingBidCents: Math.round(spot.amount * 100),
       ...(spot.position && spot.normal ? { position: spot.position, normal: spot.normal } : {}),
     }));
     formData.set("layoutCount", String(layoutCount));
@@ -710,22 +1027,25 @@ export function CreateLaptopForm() {
       formData.set("presetModelId", selectedPreset.id);
     }
     formData.set("goalCents", String(Math.round((ownership === "fund" ? fundingCost : totalFloor) * 100)));
-    formData.set("smallOpeningBidCents", String(Math.round(prices.small * 100)));
-    formData.set("mediumOpeningBidCents", String(Math.round(prices.medium * 100)));
-    formData.set("largeOpeningBidCents", String(Math.round(prices.large * 100)));
+    formData.set("smallOpeningBidCents", String(Math.round(payloadPrices.small * 100)));
+    formData.set("mediumOpeningBidCents", String(Math.round(payloadPrices.medium * 100)));
+    formData.set("largeOpeningBidCents", String(Math.round(payloadPrices.large * 100)));
     formData.set("minIncrementCents", "1000");
     formData.set("auctionClosesAt", new Date(Date.now() + listingDays * 86_400_000).toISOString());
     formData.set("idempotencyKey", idempotencyKey);
 
     const headers: Record<string, string> = mode === "x" && accessToken
       ? { Authorization: `Bearer ${accessToken}` }
-      : { "X-Lid-Manager-Key": getOrCreateManagerKey() };
+      : { "X-Auction-Manager-Key": getOrCreateManagerKey() };
 
     try {
-      const response = await fetch("/api/laptops", { method: "POST", headers, body: formData });
+      const response = await fetch("/api/auctions", { method: "POST", headers, body: formData });
       const payload = await response.json() as CreateResponse;
       if (!response.ok || !payload.location) {
-        setErrorMessage(payload.error || "We could not publish this auction. Please try again.");
+        const errorCode = isAuctionPublishErrorCode(payload.errorCode)
+          ? payload.errorCode
+          : "publish_failed";
+        setErrorMessage(t(PUBLISH_ERROR_KEYS[errorCode]));
         if (payload.result?.reason === "idempotency_conflict") setIdempotencyKey(crypto.randomUUID());
         if (response.status === 401 && mode === "x" && isSupabaseBrowserConfigured()) {
           await getSupabaseBrowser().auth.signOut({ scope: "local" });
@@ -735,49 +1055,36 @@ export function CreateLaptopForm() {
       }
       window.sessionStorage.removeItem(DRAFT_STORAGE_KEY);
       window.sessionStorage.removeItem(LEGACY_DRAFT_STORAGE_KEY);
-      rememberManagedLid(payload.location);
+      rememberManagedAuction(payload.location);
       return payload.location;
     } catch {
-      setErrorMessage("The network did not confirm publication. Try again safely with the same details.");
+      setErrorMessage(t("sell.error.network"));
       return null;
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleShareCopy = async (openX: boolean) => {
+  const handleBrowserPublish = async () => {
     const form = formRef.current;
     if (!form || submitting || !form.reportValidity()) return;
-    if (!machineIsValid || !layoutIsValid || !objectIsValid) {
-      setErrorMessage("Please complete all required steps before publishing.");
+    if (!machineIsValid || !layoutIsValid || !objectIsValid || !customShowcaseIsValid || !surfacePricingIsValid) {
+      setErrorMessage(t("sell.error.incomplete"));
       return;
     }
+
+    await publishAuction(form, "browser");
+  };
+
+  const handleShareCopy = async () => {
     setCopyFeedback("idle");
-    const composeWindow = openX ? window.open("about:blank", "_blank") : null;
-    if (composeWindow) composeWindow.opener = null;
-
-    const location = await publishLaptop(form, "browser");
-    if (!location) {
-      composeWindow?.close();
-      return;
-    }
-    const post = X_SHARE_POSTS[shareLocale](`${SITE_URL}${location}`, objectName, isAnything);
-
-    if (openX) {
-      const composeUrl = `${X_COMPOSE_URL}?text=${encodeURIComponent(post)}`;
-      if (composeWindow) {
-        composeWindow.location.replace(composeUrl);
-      } else {
-        window.open(composeUrl, "_self");
-      }
-      return;
-    }
+    setErrorMessage("");
 
     try {
-      await copyText(post);
+      await copyText(sharePost);
       setCopyFeedback("copied");
     } catch {
-      setErrorMessage("Your browser blocked copying. Select the post text and copy it manually.");
+      setErrorMessage(t("sell.error.copyBlocked"));
     }
   };
 
@@ -785,19 +1092,18 @@ export function CreateLaptopForm() {
     event.preventDefault();
     if (submitting || authRedirecting) return;
 
-    if (!machineIsValid || !layoutIsValid || !objectIsValid) {
-      setErrorMessage("Please complete all required steps before publishing.");
+    if (!machineIsValid || !layoutIsValid || !objectIsValid || !customShowcaseIsValid || !surfacePricingIsValid) {
+      setErrorMessage(t("sell.error.incomplete"));
+      return;
+    }
+
+    if (readCachedXAuthStatus() !== true || xAuthAvailability !== "available") {
+      await resolveXAuthAvailability();
       return;
     }
 
     if (!authReady) {
-      setErrorMessage("Checking your X session. Please try again in a moment.");
-      return;
-    }
-
-    if (!isSupabaseBrowserConfigured()) {
-      setXSignInUnavailable(true);
-      setErrorMessage("");
+      setErrorMessage(t("sell.error.xChecking"));
       return;
     }
 
@@ -812,17 +1118,25 @@ export function CreateLaptopForm() {
           options: { redirectTo: `${window.location.origin}/sell` },
         });
         if (error) throw error;
-      } catch {
+      } catch (error) {
         window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
         setAuthRedirecting(false);
-        setXSignInUnavailable(true);
-        setErrorMessage("");
+        const rawMessage = error instanceof Error ? error.message : "";
+        if (isUnavailableXAuthError(rawMessage)) {
+          cacheXAuthStatus(false);
+          setXAuthAvailability("unavailable");
+          setErrorMessage("");
+        } else {
+          clearCachedXAuthStatus();
+          setXAuthAvailability("unknown");
+          setErrorMessage(t("sell.error.xSignIn"));
+        }
       }
       return;
     }
 
     window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
-    const location = await publishLaptop(event.currentTarget, "x");
+    const location = await publishAuction(event.currentTarget, "x");
     if (location) setCreatedLocation(location);
   };
 
@@ -858,11 +1172,11 @@ export function CreateLaptopForm() {
           <p className={styles.heroKicker}>From Mac lids to moving machines</p>
           <h1>Put anything up.</h1>
           <p>You bring the object and set the prices; Brand Anything turns it into a live sponsorship auction.</p>
-          {xSignInUnavailable ? managedLid && (
-            <p className={styles.signIn}>Your auction is saved in this browser. <Link href={laptopPath(managedLid.slug)}>Manage {managedLid.title}</Link>.</p>
-          ) : (
+          {xAuthAvailability === "unavailable" ? managedAuction && (
+            <p className={styles.signIn}>Your auction is saved in this browser. <Link href={auctionPath(managedAuction.slug)}>Manage {managedAuction.title}</Link>.</p>
+          ) : xAuthAvailability === "available" ? (
             <p className={styles.signIn}>Already published an auction? <Link href="/">Sign in to manage it</Link>.</p>
-          )}
+          ) : null}
 
           <ol className={styles.steps} aria-label="Listing steps">
             {STEPS.map((label, index) => (
@@ -982,7 +1296,7 @@ export function CreateLaptopForm() {
                             setBrandModelPreview(preview);
                             clearSurfaceLayout();
                           }}
-                          getUploadHeaders={() => ({ "X-Lid-Manager-Key": getOrCreateManagerKey() })}
+                          getUploadHeaders={() => ({ "X-Auction-Manager-Key": getOrCreateManagerKey() })}
                         />
                       </>
                     )}
@@ -1011,17 +1325,62 @@ export function CreateLaptopForm() {
                     <strong>I&apos;m funding it</strong><span>What the spots sell for pays for the machine, and the page carries a progress bar towards its price. If the goal is not reached, you still owe every sold sticker — topping the machine up yourself, or refunding the buyers you cannot deliver.</span>
                   </button>
                 </div>
-                {ownership === "fund" && <label className={styles.inputLabel}>What does the machine cost?<span className={styles.moneyField}><input type="number" min="100" max="20000000" value={machineCost} onChange={(event) => setMachineCost(event.target.value)} /><b>€</b></span><small>The maker&apos;s own price for the exact machine, so the bar means something.</small></label>}
-                {!machineIsValid && <p className={styles.validation} role="alert">Give what the machine costs, between 100 € and 20 000 000 €.</p>}
+                {ownership === "fund" && <label className={styles.inputLabel}>What does the machine cost?<span className={styles.moneyField}><input type="number" min="1" value={machineCost} onChange={(event) => setMachineCost(event.target.value)} /><b>€</b></span><small>The maker&apos;s own price for the exact machine, so the bar means something.</small></label>}
+                {!machineIsValid && <p className={styles.validation} role="alert">Give what the machine costs.</p>}
               </fieldset>
             )}
 
             {step === 2 && (
               <fieldset>
                 <legend>Where will it be seen?</legend>
-                <p className={styles.introCopy}>Pick everything true — it is shown to buyers on your listing.</p>
+                <p className={styles.introCopy}>Choose only the places buyers can genuinely expect to see it, both in use and while stopped or displayed.</p>
                 <div className={styles.checkList}>
-                  {SHOWCASE_OPTIONS.map((option) => <label key={option} className={showcase.includes(option) ? styles.checkedRow : styles.checkRow}><input type="checkbox" checked={showcase.includes(option)} onChange={() => toggleShowcase(option)} />{option}</label>)}
+                  {showcaseGroups.map((group) => (
+                    <section className={styles.showcaseGroup} key={group.label} aria-labelledby={`showcase-${group.label.replace(/\W+/g, "-").toLowerCase()}`}>
+                      <h2 id={`showcase-${group.label.replace(/\W+/g, "-").toLowerCase()}`}>{group.label}</h2>
+                      <div>
+                        {group.options.map((option) => (
+                          <label key={option} className={showcase.includes(option) ? styles.checkedRow : styles.checkRow}>
+                            <input type="checkbox" checked={showcase.includes(option)} onChange={() => toggleShowcase(option)} />
+                            {option}
+                          </label>
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                  <div className={styles.customShowcase}>
+                    <label className={customShowcaseEnabled ? styles.checkedRow : styles.checkRow}>
+                      <input
+                        type="checkbox"
+                        checked={customShowcaseEnabled}
+                        onChange={(event) => {
+                          setCustomShowcaseEnabled(event.target.checked);
+                          if (!event.target.checked) setCustomShowcase("");
+                        }}
+                      />
+                      Other
+                    </label>
+                    {customShowcaseEnabled && (
+                      <label className={styles.customShowcaseField}>
+                        <span>Where else will it be seen?</span>
+                        <input
+                          type="text"
+                          value={customShowcase}
+                          maxLength={MAX_CUSTOM_SHOWCASE_LENGTH}
+                          aria-invalid={!customShowcaseIsValid}
+                          aria-describedby="custom-showcase-hint"
+                          placeholder="For example, hotel entrances and private events"
+                          onChange={(event) => setCustomShowcase(sanitizeCustomShowcase(event.target.value))}
+                        />
+                        <small id="custom-showcase-hint">
+                          Letters, numbers and basic punctuation only · {customShowcase.length}/{MAX_CUSTOM_SHOWCASE_LENGTH}
+                        </small>
+                      </label>
+                    )}
+                    {customShowcaseEnabled && !customShowcaseIsValid && (
+                      <p className={styles.validation} role="alert">Enter at least 2 characters for the other location.</p>
+                    )}
+                  </div>
                 </div>
                 <label className={styles.textareaLabel}>Anything else buyers should know? <span>Optional</span><textarea maxLength={400} placeholder="Everything this raises goes to a cancer charity." value={extraNote} onChange={(event) => setExtraNote(event.target.value)} /><small>{extraNote.length}/400</small></label>
               </fieldset>
@@ -1033,9 +1392,9 @@ export function CreateLaptopForm() {
                 {isAnything ? (
                   <div className={styles.surfaceLayoutControls}>
                     <div className={styles.surfaceRecommendation}>
-                      <span>Side-surface analysis</span>
+                      <span>Suggested layout</span>
                       <strong>{surfaceAnalysis ? `${surfaceAnalysis.recommendedCount} spots recommended` : "Analysing your model…"}</strong>
-                      <p>We measure usable outward-facing surfaces and exclude the top and bottom. {placementProfile === "car" ? "Cars start with doors, quarter panels, front and rear." : placementProfile === "yacht" ? "Yachts start with port, starboard, bow and stern zones." : placementProfile === "jet" ? "Aircraft start with both fuselage sides, nose and tail zones." : "The first layout spreads placements across distinct side faces."}</p>
+                      <p>{placementProfile === "car" ? "Cars start with the hood, both front doors and both rear doors." : placementProfile === "yacht" ? "Yachts start with both hull sides, both superstructure sides, the bow and the stern." : placementProfile === "jet" ? "Aircraft start with both fuselage sides, both engine areas and both sides of the tail." : "We spread the first layout across distinct outward-facing surfaces."}</p>
                     </div>
                     <label className={styles.spotCountControl}>
                       <span>Number of spots</span>
@@ -1044,15 +1403,15 @@ export function CreateLaptopForm() {
                         <input
                           type="number"
                           min={MIN_SURFACE_SPOTS}
-                          max={surfaceAnalysis?.placements.length || MAX_SURFACE_SPOTS}
+                          max={MAX_SURFACE_SPOTS}
                           value={layoutCount}
                           onChange={(event) => updateSurfaceSpotCount(Number(event.target.value))}
                           aria-describedby="spot-count-note"
                         />
-                        <button type="button" aria-label="Add one spot" disabled={layoutCount >= (surfaceAnalysis?.placements.length || MAX_SURFACE_SPOTS)} onClick={() => updateSurfaceSpotCount(layoutCount + 1)}>+</button>
+                        <button type="button" aria-label="Add one spot" disabled={layoutCount >= MAX_SURFACE_SPOTS} onClick={() => updateSurfaceSpotCount(layoutCount + 1)}>+</button>
                       </span>
                     </label>
-                    <p id="spot-count-note" className={styles.surfaceHint}>Select a numbered spot, then click a side surface in the 3D preview to move it.</p>
+                    <p id="spot-count-note" className={styles.surfaceHint}>Choose 1–20 spots. Select a numbered spot, then click an eligible surface in the 3D preview to move it.</p>
                     <div className={styles.spotSelector} role="group" aria-label="Surface spots">
                       {surfaceSpots.slice(0, layoutCount).map((spot) => (
                         <button
@@ -1066,7 +1425,7 @@ export function CreateLaptopForm() {
                           }}
                         >
                           <span>{String(spot.id).padStart(2, "0")}</span>
-                          {surfaceSpotSize(spot.id - 1, layoutCount) === "L" ? "Hero" : surfaceSpotSize(spot.id - 1, layoutCount) === "M" ? "Profile" : "Detail"}
+                          Surface
                         </button>
                       ))}
                     </div>
@@ -1086,21 +1445,38 @@ export function CreateLaptopForm() {
 
             {step === 4 && (
               <fieldset>
-                <legend>What does a spot start at?</legend>
-                <p className={styles.introCopy}>One price each, paid in full by whoever takes the spot. The figures below are what we suggest — change any of them. The ones around the centre carry a premium on top.</p>
-                <div className={styles.priceList}>
-                  <PriceField label={`${spotCountBySize.large} × Large`} dimensions={isAnything ? "Hero placement" : "9.5 × 5.5 cm printed"} value={largePrice} onChange={setLargePrice} />
-                  <PriceField label={`${spotCountBySize.medium} × Medium`} dimensions={isAnything ? "Profile placement" : "9.5 × 4 cm printed"} value={mediumPrice} onChange={setMediumPrice} />
-                  <PriceField label={`${spotCountBySize.small} × Small`} dimensions={isAnything ? "Detail placement" : "4.5 × 4.5 cm printed"} value={smallPrice} onChange={setSmallPrice} />
-                </div>
+                <legend>{isAnything ? "Define and price each spot" : "What does a spot start at?"}</legend>
+                {isAnything ? (
+                  <SurfacePriceEditor
+                    spots={resolvedSurfaceSpotPricing}
+                    placementProfile={placementProfile}
+                    selectedSpotId={selectedSurfaceSpotId}
+                    onSelectSpot={setSelectedSurfaceSpotId}
+                    onChangeSpot={updateSurfaceSpotPricing}
+                  />
+                ) : (
+                  <>
+                    <p className={styles.introCopy}>Set a starting price for each placement size. The amount shown on every spot updates as you type.</p>
+                    <div className={styles.priceList}>
+                      <PriceField label={`${spotCountBySize.large} × Large`} dimensions="9.5 × 5.5 cm printed" value={largePrice} onChange={setLargePrice} />
+                      <PriceField label={`${spotCountBySize.medium} × Medium`} dimensions="9.5 × 4 cm printed" value={mediumPrice} onChange={setMediumPrice} />
+                      <PriceField label={`${spotCountBySize.small} × Small`} dimensions="4.5 × 4.5 cm printed" value={smallPrice} onChange={setSmallPrice} />
+                    </div>
+                  </>
+                )}
                 {machine === "mac" && (
                   <label className={specialSpot ? styles.checkedSpecial : styles.specialSpot}>
                     <input type="checkbox" checked={specialSpot} onChange={(event) => setSpecialSpot(event.target.checked)} />
                     <span><strong>Add a special spot over the logo</strong><small>6 × 6 cm, covering the Apple mark in the middle of the lid. Name your own price — it is the one placement size says nothing about.</small></span>
-                    {specialSpot && <span className={styles.specialPrice}><small>Starts at</small><span><input type="number" min="10" max="100000" value={specialPrice} onChange={(event) => setSpecialPrice(event.target.value)} /><b>€</b></span></span>}
+                    {specialSpot && <span className={styles.specialPrice}><small>Starts at</small><span><input type="number" min="1" value={specialPrice} onChange={(event) => setSpecialPrice(event.target.value)} /><b>€</b></span></span>}
                   </label>
                 )}
-                <p className={styles.totalCopy}>Every spot sold at its floor: <strong>{formatMoney(totalFloor)}</strong>, before the platform&apos;s 10% and Stripe&apos;s fees.{ownership === "fund" && machineIsValid ? ` Your goal is ${formatMoney(fundingCost)} — the sized spots were set to reach it, and the centre one is on top.` : ""}</p>
+                <p className={styles.totalCopy}>{surfacePricingIsValid
+                  ? <>Every spot sold at its floor: <strong>{formatMoney(totalFloor)}</strong>, before the platform&apos;s 10% and Stripe&apos;s fees.{ownership === "fund" && machineIsValid ? ` Your funding goal is ${formatMoney(fundingCost)}; each spot's price remains yours to set.` : ""}</>
+                  : "Complete every spot to see the full floor total."}</p>
+                {isAnything && !surfacePricingIsValid && (
+                  <p className={styles.validation} role="alert">Every spot needs a starting price of at least 1 €.</p>
+                )}
               </fieldset>
             )}
 
@@ -1124,20 +1500,25 @@ export function CreateLaptopForm() {
             {step === 7 && (
               <fieldset>
                 <legend>Name it, and put it up.</legend>
-                <label className={styles.inputLabel}>Title<input type="text" value={title} minLength={3} maxLength={80} onChange={(event) => setTitle(event.target.value)} placeholder="Ten spots on my MacBook Pro" required /></label>
-                <label className={styles.inputLabel}>Address<span className={styles.addressField}><b>{SITE_HOST}/</b><input value={slug} minLength={3} maxLength={48} onChange={(event) => setSlug(slugify(event.target.value))} placeholder="your-name" required /><i aria-label="Address is available">✓</i></span></label>
+                <label className={styles.inputLabel}>Title<input type="text" value={title} minLength={3} maxLength={80} onChange={(event) => setTitle(event.target.value)} placeholder={defaultTitleFor(machine, teslaModel)} required /></label>
+                <label className={styles.inputLabel}>Address<span className={styles.addressField}><span className={styles.addressHost} title={`${SITE_HOST}/`}><b>{ADDRESS_HOST.prefix}</b><strong>{ADDRESS_HOST.suffix}</strong></span><input value={slug} minLength={3} maxLength={48} onChange={(event) => setSlug(slugify(event.target.value))} placeholder="your-name" required /><i aria-label="Address is available">✓</i></span></label>
                 <dl className={styles.summary}>
                   <div><dt>Object</dt><dd>{objectName}</dd></div>
                   <div><dt>Ownership</dt><dd>{ownership === "own" ? "You own it" : `Funding ${formatMoney(fundingCost || 0)}`}</dd></div>
-                  <div><dt>Layout</dt><dd>{layoutCount + (hasSpecialSpot ? 1 : 0)} spots{hasSpecialSpot ? ", logo covered" : ""}</dd></div>
+                  <div><dt>Layout</dt><dd>{layoutCount + (hasSpecialSpot ? 1 : 0)} {layoutCount + (hasSpecialSpot ? 1 : 0) === 1 ? "spot" : "spots"}{hasSpecialSpot ? ", logo covered" : ""}</dd></div>
                   <div><dt>If it all sells</dt><dd>{formatMoney(totalFloor)}</dd></div>
                   <div><dt>Runs for</dt><dd>{listingDays} days</dd></div>
                   <div><dt>Stickers stay</dt><dd>{stickerMonths} months</dd></div>
                 </dl>
                 <p className={styles.publishCopy}>Buyers pay you directly — the money lands in your own Stripe account, minus the 10% platform fee and Stripe&apos;s processing fees. You produce each placement to the agreed spec and approve every logo before it appears.</p>
-                {xSignInUnavailable ? (
+                {xAuthAvailability === "unavailable" ? (
                   <section className={styles.shareFallback} aria-labelledby="x-share-title">
-                    <h2 id="x-share-title">Share your auction.</h2>
+                    <h2 id="x-share-title">{publishedLocation ? "Share your auction." : "Publish, then share."}</h2>
+                    {!publishedLocation && (
+                      <button type="button" className={styles.publishButton} disabled={submitting} onClick={() => void handleBrowserPublish()}>
+                        {submitting ? "Publishing…" : "Publish your auction"}
+                      </button>
+                    )}
                     <div className={styles.shareLanguageRow}>
                       <span>Post language</span>
                       <div role="group" aria-label="Post language">
@@ -1158,23 +1539,23 @@ export function CreateLaptopForm() {
                       </div>
                     </div>
                     <div className={styles.shareCopyBox}>
-                      <button type="button" className={styles.copyPostButton} disabled={submitting} onClick={() => void handleShareCopy(false)}>
-                        {submitting ? "Publishing…" : copyFeedback === "copied" ? "Copied" : "Copy"}
+                      <button type="button" className={styles.copyPostButton} onClick={() => void handleShareCopy()}>
+                        {copyFeedback === "copied" ? "Copied" : "Copy"}
                       </button>
                       <blockquote className={styles.shareCopy} lang={shareLocale}>{sharePost}</blockquote>
                     </div>
                     {copyFeedback === "copied" && (
-                      <p className={styles.copyToast} role="status" aria-live="polite">Copied to your clipboard</p>
+                      <p className={styles.copyToast} role="status" aria-live="polite">{t("sell.copySuccess")}</p>
                     )}
                     {errorMessage && <p className={styles.error} role="alert">{errorMessage}</p>}
-                    <button type="button" className={styles.xShareButton} disabled={submitting} onClick={() => void handleShareCopy(true)}>
-                      {submitting ? "Publishing…" : "Post on X"}<span aria-hidden="true">↗</span>
-                    </button>
+                    <a className={styles.xShareButton} href={X_COMPOSE_URL} target="_blank" rel="noopener noreferrer">
+                      Post on X<span aria-hidden="true">↗</span>
+                    </a>
                     <p className={styles.shareNote}>{publishedLocation
-                      ? "Your auction is live and saved in this browser. Copy the post again whenever you need it."
-                      : "Copy or open X to publish your auction and save it in this browser. X opens in a new tab so this page stays here."}</p>
+                      ? "Your auction is live and saved in this browser. Copy the post or open X whenever you are ready to share it."
+                      : "Publish first so the link in your post is live. Copy and Post on X only prepare the post; they never publish it for you."}</p>
                   </section>
-                ) : (
+                ) : xAuthAvailability === "available" ? (
                   <>
                     {errorMessage && <p className={styles.error} role="alert">{errorMessage}</p>}
                     <button className={styles.publishButton} type="submit" disabled={!authReady || submitting || authRedirecting}>
@@ -1182,11 +1563,21 @@ export function CreateLaptopForm() {
                     </button>
                     <p className={styles.authNote}>X is what a buyer checks before putting their logo on a stranger&apos;s {isAnything ? "object" : "laptop"}. Everything above is kept while you sign in; you land back here.</p>
                   </>
+                ) : (
+                  <section className={styles.shareFallback} aria-labelledby="x-status-title">
+                    <h2 id="x-status-title">{t(xAuthAvailability === "checking" ? "sell.xStatus.checkingTitle" : "sell.xStatus.errorTitle")}</h2>
+                    <p className={styles.shareNote}>{xAuthAvailability === "checking"
+                      ? t("sell.xStatus.checkingNote")
+                      : t("sell.xStatus.errorNote")}</p>
+                    {xAuthAvailability === "unknown" && (
+                      <button type="button" className={styles.publishButton} onClick={() => void resolveXAuthAvailability()}>{t("sell.xStatus.retry")}</button>
+                    )}
+                  </section>
                 )}
               </fieldset>
             )}
 
-            {step < 7 && <div className={styles.actions}>{step > 0 && <button type="button" className={styles.backButton} onClick={backStep}>Back</button>}<button type="button" className={styles.continueButton} disabled={(step === 0 && !objectIsValid) || (step === 1 && !machineIsValid) || (step === 3 && !layoutIsValid)} onClick={continueStep}>{step === 0 && needsCustomModel && !brandModel ? "Upload a 3D model to continue" : step === 3 && !layoutIsValid ? "Analysing model surfaces…" : "Continue"}</button></div>}
+            {step < 7 && <div className={styles.actions}>{step > 0 && <button type="button" className={styles.backButton} onClick={backStep}>Back</button>}<button type="button" className={styles.continueButton} disabled={(step === 0 && !objectIsValid) || (step === 1 && !machineIsValid) || (step === 2 && !customShowcaseIsValid) || (step === 3 && !layoutIsValid) || (step === 4 && !surfacePricingIsValid)} onClick={continueStep}>{step === 0 && needsCustomModel && !brandModel ? "Upload a 3D model to continue" : step === 2 && !customShowcaseIsValid ? "Describe the other location" : step === 3 && !layoutIsValid ? "Analysing model surfaces…" : step === 4 && !surfacePricingIsValid ? "Price every spot to continue" : "Continue"}</button></div>}
           </section>
 
           <aside className={styles.previewColumn} aria-label={`${objectName} auction preview`}>
@@ -1204,24 +1595,15 @@ export function CreateLaptopForm() {
                     }))}
                     placementProfile={placementProfile}
                     editing={step === 3}
-                    selectedSpotId={step === 3 ? selectedSurfaceSpotId : undefined}
-                    onSelectSpot={step === 3 ? (spotId) => {
+                    selectedSpotId={step === 3 || step === 4 ? selectedSurfaceSpotId : undefined}
+                    onSelectSpot={step === 3 || step === 4 ? (spotId) => {
                       setSelectedSurfaceSpotId(spotId);
-                      setPlacementMessage(`Spot ${spotId} selected. Click its new side surface in the preview.`);
+                      if (step === 3) setPlacementMessage(`Spot ${spotId} selected. Click its new side surface in the preview.`);
                     } : undefined}
                     onModelAnalysis={handleModelAnalysis}
                     onPlaceSpot={placeSurfaceSpot}
                     onPlacementError={setPlacementMessage}
                   />
-                  {usingPresetModel && selectedPreset && (
-                    <p className={styles.presetAttribution}>
-                      Model by <a href={selectedPreset.sourceUrl} target="_blank" rel="noreferrer">{selectedPreset.author}</a>
-                      {" · "}<a href={selectedPreset.licenseUrl} target="_blank" rel="noreferrer">{selectedPreset.licenseName}</a>
-                      {(selectedPreset.id === "flybridge-yacht" || selectedPreset.id === "private-jet") && (
-                        <span>Representative preview — not an official manufacturer digital twin.</span>
-                      )}
-                    </p>
-                  )}
                 </div>
               ) : (
                 <div className={styles.anythingMiniStage}>
@@ -1233,7 +1615,7 @@ export function CreateLaptopForm() {
               )
             ) : (
               <div className={`${styles.lid} ${layoutCount === 6 ? styles.sixLid : styles.tenLid}`}>
-                {machine === "mac" && <span className={styles.apple} aria-hidden="true"></span>}
+                {machine === "mac" && <Image className={styles.apple} src="/apple-logo.svg" alt="" width={160} height={160} />}
                 {previewSpots.map((spot) => (
                   <button
                     type="button"
@@ -1247,7 +1629,7 @@ export function CreateLaptopForm() {
                 {hasSpecialSpot && <button type="button" className={`${styles.previewSpot} ${styles.specialPreview}`} aria-label={`Spot over the logo, Large. ${formatMoney(specialAmount)}.`}><strong>Large</strong><span>{formatMoney(specialAmount)}</span></button>}
               </div>
             )}
-            <p>{layoutCount} spots · from {formatMoney(minimumPrice)}</p>
+            <p>{layoutCount} {layoutCount === 1 ? "spot" : "spots"} · {surfacePricingIsValid ? `from ${formatMoney(minimumPrice)}` : "finish pricing to continue"}</p>
           </aside>
         </form>
       </main>
@@ -1261,8 +1643,116 @@ function PriceField({ label, dimensions, value, onChange }: { label: string; dim
   return (
     <label className={styles.priceField}>
       <span><strong>{label}</strong><small>{dimensions}</small></span>
-      <em>Recommended</em>
-      <span className={styles.priceInput}><input type="number" min="10" max="100000" value={value} onChange={(event) => onChange(event.target.value)} /><b>€</b></span>
+      <span className={styles.priceInput}><input type="number" min="1" value={value} onChange={(event) => onChange(event.target.value)} /><b>€</b></span>
     </label>
+  );
+}
+
+function SurfacePriceEditor({
+  spots,
+  placementProfile,
+  selectedSpotId,
+  onSelectSpot,
+  onChangeSpot,
+}: {
+  spots: SurfaceSpotPricing[];
+  placementProfile: SurfacePlacementProfile;
+  selectedSpotId: number;
+  onSelectSpot: (spotId: number) => void;
+  onChangeSpot: (spotId: number, update: Partial<Omit<SurfaceSpotPricing, "id">>) => void;
+}) {
+  const selectedIndex = Math.max(0, spots.findIndex((spot) => spot.id === selectedSpotId));
+  const selectedSpot = spots[selectedIndex] ?? spots[0];
+  const selectedButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    selectedButtonRef.current?.scrollIntoView({ block: "nearest" });
+  }, [selectedSpot?.id]);
+  if (!selectedSpot) return null;
+  const selectedType = surfacePlacementType(selectedSpot.size);
+
+  return (
+    <div className={styles.surfacePriceFlow}>
+      <p className={styles.introCopy}>Each number is one physical placement. Choose its region and coverage, then set that spot&apos;s own starting price.</p>
+      <div className={styles.surfacePriceSpotList} role="group" aria-label="Choose a spot to price">
+        {spots.map((spot) => {
+          const placementType = surfacePlacementType(spot.size);
+          const active = spot.id === selectedSpot.id;
+          return (
+            <button
+              type="button"
+              key={spot.id}
+              ref={active ? selectedButtonRef : undefined}
+              className={active ? styles.activeSurfacePriceSpot : styles.surfacePriceSpot}
+              aria-pressed={active}
+              aria-controls="surface-price-editor"
+              onClick={() => onSelectSpot(spot.id)}
+            >
+              <span>{String(spot.id).padStart(2, "0")}</span>
+              <span><strong>{spot.region}</strong><small>{placementType.label} · {validSurfacePrice(spot.price) ? formatMoney(Number(spot.price)) : "Needs a price"}</small></span>
+            </button>
+          );
+        })}
+      </div>
+
+      <section id="surface-price-editor" className={styles.surfacePriceEditor} aria-labelledby="surface-price-editor-title">
+        <header className={styles.surfacePriceHeader}>
+          <span aria-hidden="true">{String(selectedSpot.id).padStart(2, "0")}</span>
+          <div>
+            <strong id="surface-price-editor-title">{selectedSpot.region}</strong>
+            <small>Spot {selectedIndex + 1} of {spots.length} · {selectedType.label}</small>
+          </div>
+        </header>
+
+        <label className={styles.surfaceRegionField}>
+          <span>Region on the object</span>
+          <select value={selectedSpot.region} onChange={(event) => onChangeSpot(selectedSpot.id, { region: event.target.value })}>
+            {SURFACE_REGIONS_BY_PROFILE[placementProfile].map((region) => (
+              <option key={region} value={region}>{region}</option>
+            ))}
+          </select>
+        </label>
+
+        <div className={styles.surfaceTypeField} role="radiogroup" aria-labelledby="surface-type-label">
+          <span id="surface-type-label">Coverage on that region</span>
+          <div className={styles.surfaceTypeChoices}>
+            {SURFACE_PLACEMENT_TYPES.map((option) => (
+              <label key={option.size} className={selectedSpot.size === option.size ? styles.selectedSurfaceType : styles.surfaceType}>
+                <input
+                  type="radio"
+                  name={`surface-spot-${selectedSpot.id}-type`}
+                  checked={selectedSpot.size === option.size}
+                  onChange={() => onChangeSpot(selectedSpot.id, { size: option.size })}
+                />
+                <span><strong>{option.label}</strong><small>{option.coverage}</small></span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <label className={styles.surfacePriceField}>
+          <span>Starting price for spot {String(selectedSpot.id).padStart(2, "0")}</span>
+          <span className={styles.priceInput}>
+            <input
+              type="number"
+              inputMode="decimal"
+              min="1"
+              step="1"
+              value={selectedSpot.price}
+              aria-invalid={!validSurfacePrice(selectedSpot.price)}
+              aria-describedby="surface-price-hint"
+              onChange={(event) => onChangeSpot(selectedSpot.id, { price: event.target.value })}
+            />
+            <b>€</b>
+          </span>
+          <small id="surface-price-hint">This price and coverage are shown to buyers for this spot only.</small>
+        </label>
+
+        <footer className={styles.surfacePriceNavigation}>
+          <button type="button" disabled={selectedIndex === 0} onClick={() => onSelectSpot(spots[selectedIndex - 1].id)}>← Previous spot</button>
+          <span>{selectedIndex + 1} / {spots.length}</span>
+          <button type="button" disabled={selectedIndex === spots.length - 1} onClick={() => onSelectSpot(spots[selectedIndex + 1].id)}>Next spot →</button>
+        </footer>
+      </section>
+    </div>
   );
 }

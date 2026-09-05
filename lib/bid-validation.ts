@@ -56,7 +56,7 @@ function normalizedWebsite(value: string | null) {
   }
 }
 
-export function parseBidForm(formData: FormData): ParsedBidForm {
+export function parseBidForm(formData: FormData, maximumSpotId = 10): ParsedBidForm {
   const spotId = Number(requiredText(formData, "spotId", 2));
   const amountCents = Number(requiredText(formData, "amountCents", 12));
   const brandName = requiredText(formData, "brandName", 80);
@@ -65,11 +65,11 @@ export function parseBidForm(formData: FormData): ParsedBidForm {
   const xHandle = optionalText(formData, "xHandle", 50);
   const idempotencyKey = requiredText(formData, "idempotencyKey", 36).toLowerCase();
 
-  if (!Number.isInteger(spotId) || spotId < 1 || spotId > 10) {
+  if (!Number.isInteger(spotId) || spotId < 1 || spotId > maximumSpotId) {
     throw new BidValidationError("spotId must identify a valid sticker spot.");
   }
-  if (!Number.isSafeInteger(amountCents) || amountCents < 1000 || amountCents > 100_000_000) {
-    throw new BidValidationError("amountCents must be between $10 and $1,000,000.");
+  if (!Number.isSafeInteger(amountCents) || amountCents < 1000 || amountCents > 100_000_000_000) {
+    throw new BidValidationError("amountCents must be between $10 and $1,000,000,000.");
   }
   if (!EMAIL_PATTERN.test(email)) {
     throw new BidValidationError("email must be valid.");

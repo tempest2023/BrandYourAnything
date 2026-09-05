@@ -75,7 +75,7 @@ Do not create these tables or buckets manually, and do not run `supabase db rese
 
 ### 4. Configure X sign in
 
-When X / Twitter OAuth 2.0 is configured, `POST /api/laptops` sends the access token back to Supabase, verifies the user, and derives the public owner identity on the server. If X sign-in is unavailable, the creator uses a browser-generated management key stored in `localStorage`; the server hashes that key into a stable private owner identity and applies the same creation rate limit.
+When X / Twitter OAuth 2.0 is configured, `POST /api/auctions` sends the access token back to Supabase, verifies the user, and derives the public owner identity on the server. If X sign-in is unavailable, the creator uses a browser-generated management key stored in `localStorage`; the server hashes that key into a stable private owner identity and applies the same creation rate limit.
 
 1. In the [X Developer Portal](https://developer.x.com/), create an OAuth 2.0 Web App and enable **Request email from users**.
 2. Add `https://<project-ref>.supabase.co/auth/v1/callback` as the X app callback URL. For a local Supabase stack, also add `http://localhost:54321/auth/v1/callback`.
@@ -106,6 +106,8 @@ In **Project Settings > Environment Variables**, configure:
 | `SUPABASE_DATABASE_PREFIX` | `ba_prod` | Production only |
 | `SUPABASE_DATABASE_PREFIX` | `ba_dev` | Preview and Development only |
 
+X sign-in is never inferred from the Vercel environment name. `/sell` asks `/api/auth/x-status`, which reads the X provider status from Supabase Auth. The X OAuth client ID and client secret belong only in **Supabase Dashboard > Authentication > Sign In / Providers**, never in the app's environment variables. The browser caches a successful availability result for ten minutes and checks again at the Publish step whenever that cache is missing or expired.
+
 Optionally add a high-entropy `MODEL_UPLOAD_SIGNING_SECRET` to every environment. It signs the metadata claim that binds a model upload to its file name, size, and private Storage path. When omitted, the app derives the signature from the configured Supabase server secret. The accompanying Storage upload URL is short-lived.
 
 Add `SUPABASE_DATABASE_PREFIX` twice with the environment scopes shown above. This keeps preview bids and test campaigns out of the production tables. The variable is optional on Vercel because the application falls back to `ba_prod` when `VERCEL_ENV=production` and `ba_dev` otherwise, but setting it explicitly makes the isolation visible in the project configuration.
@@ -116,7 +118,7 @@ Treat `SUPABASE_SECRET_KEY` as a sensitive value if the Vercel UI offers that op
 
 1. Select **Deploy**. Vercel should detect Next.js and run `npm run build`.
 2. Open the generated URL and confirm that the homepage loads without a Supabase configuration error.
-3. Open `/sell`, choose **Anything else**, upload a self-contained `.glb`, complete the wizard, sign in with X, publish a test campaign, and place a test bid. Use a Preview deployment for testing so the records go to the `ba_dev_*` namespace.
+3. Open `/sell`, choose **Anything else**, upload a self-contained `.glb`, complete the wizard, publish a test campaign, and place a test bid. Environments without X OAuth credentials use browser-owned publishing without X sign-in. Use a Preview deployment for testing so records go to the `ba_dev_*` namespace.
 4. In Supabase, use **Table Editor** to confirm the campaign asset record and **Storage** to confirm the model is in the matching private bucket. Open the public auction and verify that orbit, zoom, and all numbered placement controls work.
 5. When ready, merge or push to the Vercel Production Branch, normally `main`. Vercel will create the Production deployment using `ba_prod`.
 
@@ -158,7 +160,7 @@ The browser requests a signed upload ticket, uploads the model straight to a pri
 
 ## Multi-tenant campaign flow
 
-`POST /api/laptops` validates the multipart creation form, stores an optional laptop photo privately, and creates the campaign plus all ten spots in one database transaction. Brand Anything campaigns attach the already-uploaded model metadata immediately afterward using the same idempotency key. Each campaign is published at `/<slug>` and exposes only public fields; the former `/laptop/<slug>` route remains compatible.
+`POST /api/auctions` validates the multipart creation form, stores optional auction media privately, and creates the campaign plus its spots in one database transaction. Brand Anything campaigns attach the already-uploaded model metadata immediately afterward using the same idempotency key. Each campaign is published at `/<slug>` and exposes only public fields; the former `/laptop/<slug>` route remains compatible.
 
 Every environment adds four compact tables:
 
@@ -169,14 +171,14 @@ Every environment adds four compact tables:
 
 The owner email, bidder emails, and Storage paths are never returned by the public API. Public images use short-lived signed URLs. `anon` and `authenticated` have no direct access to the tables, buckets, or write functions.
 
-Creation goes through `ba_<env>_create_laptop(...)`. It uses advisory locks for slug and idempotency races, creates the laptop and ten spots atomically, and applies a small per-email creation limit. Tenant bids go through `ba_<env>_place_laptop_bid(...)`; it locks the exact campaign spot, re-checks the live minimum, appends the bid, and updates the winner in one transaction. Idempotency keys make network retries safe.
+Creation goes through `ba_<env>_create_auction(...)`. It uses advisory locks for slug and idempotency races, creates the auction and its spots atomically, and applies a small per-identity creation limit. Tenant bids go through `ba_<env>_place_auction_bid(...)`; it locks the exact campaign spot, re-checks the live minimum, appends the bid, and updates the winner in one transaction. Idempotency keys make network retries safe.
 
 The browser only calls Next.js Route Handlers:
 
 - `POST /api/models/upload-ticket` validates a GLB request and returns a one-use signed upload URL plus a signed metadata claim.
-- `POST /api/laptops` publishes a campaign.
-- `GET /api/laptops/<slug>` returns its public snapshot.
-- `POST /api/laptops/<slug>/bids` places a concurrency-safe bid and optionally stores a private logo.
+- `POST /api/auctions` publishes a campaign.
+- `GET /api/auctions/<slug>` returns its public snapshot.
+- `POST /api/auctions/<slug>/bids` places a concurrency-safe bid and optionally stores a private logo.
 
 ## Included starter auction
 
@@ -216,8 +218,6 @@ NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<the local PUBLISHABLE_KEY value>
 ```
 
-Local X OAuth additionally requires X credentials in the local Supabase Auth provider. Use `http://localhost:54321/auth/v1/callback` in the X app, uncomment the `auth.external.x` block in `supabase/config.toml`, and put `X_OAUTH_CLIENT_ID` plus `X_OAUTH_CLIENT_SECRET` in an uncommitted `.env` file. Restart the local Supabase stack after changing Auth config.
-
 Then start Next.js:
 
 ```bash
@@ -235,9 +235,12 @@ Run the real concurrency test against local Postgres:
 ```bash
 npm run test:concurrency
 npm run test:laptop-platform
+npm run test:api-e2e
 ```
 
 The platform test verifies atomic campaign creation, ten-spot isolation, RLS, equal concurrent bids, simultaneous retries, and cross-tenant idempotency-key reuse. Run it once with `SUPABASE_DATABASE_PREFIX=ba_dev` and once with `ba_prod` when validating both namespaces.
+
+The API E2E test builds and starts the production Next.js server on a free local port. It verifies the generic auction RPC surface, removed laptop routes, coded error responses, and the complete publish/read/bid flow for a non-laptop object. It creates uniquely named test auctions, so run `supabase db reset` first and use a local Supabase project unless you deliberately set `ALLOW_REMOTE_API_E2E=1`.
 
 ## Follow and support
 

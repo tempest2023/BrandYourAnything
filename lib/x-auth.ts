@@ -76,10 +76,10 @@ export async function getPublishingOwner(request: Request) {
     return getXOwnerIdentity(await requireXUser(request));
   }
 
-  const managerKey = request.headers.get("x-lid-manager-key")?.trim() ?? "";
+  const managerKey = request.headers.get("x-auction-manager-key")?.trim() ?? "";
   if (!MANAGER_KEY_PATTERN.test(managerKey)) {
     throw new XAuthenticationError(
-      "Publish from the browser where you created this lid, or sign in with X.",
+      "Publish from the browser where you created this auction, or sign in with X.",
       401,
     );
   }
@@ -87,6 +87,6 @@ export async function getPublishingOwner(request: Request) {
   const fingerprint = createHash("sha256").update(managerKey).digest("hex").slice(0, 32);
   return {
     ownerName: "Campaign owner",
-    ownerEmail: `lid-${fingerprint}@auth.brand-anything.vercel.app`,
+    ownerEmail: `auction-${fingerprint}@auth.brand-anything.vercel.app`,
   };
 }

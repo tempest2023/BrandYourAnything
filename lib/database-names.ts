@@ -30,23 +30,28 @@ export function getLogoBucket() {
   return `${getDatabasePrefix()}_bid_logos`;
 }
 
-export function getLaptopTable(name: "laptops" | "laptop_spots" | "laptop_bids") {
-  return `${getDatabasePrefix()}_${name}`;
+export function getCampaignTable(name: "campaigns" | "campaign_spots" | "campaign_bids") {
+  const legacyTable = {
+    campaigns: "laptops",
+    campaign_spots: "laptop_spots",
+    campaign_bids: "laptop_bids",
+  }[name];
+  return `${getDatabasePrefix()}_${legacyTable}`;
 }
 
-export function getCreateLaptopFunction() {
-  return `${getDatabasePrefix()}_create_laptop`;
+export function getCreateAuctionFunction() {
+  return `${getDatabasePrefix()}_create_auction`;
 }
 
-export function getConfigureLaptopSpotsFunction() {
-  return `${getDatabasePrefix()}_configure_laptop_spots`;
+export function getConfigureAuctionSpotsFunction() {
+  return `${getDatabasePrefix()}_configure_auction_spots`;
 }
 
-export function getPlaceLaptopBidFunction() {
-  return `${getDatabasePrefix()}_place_laptop_bid`;
+export function getPlaceAuctionBidFunction() {
+  return `${getDatabasePrefix()}_place_auction_bid`;
 }
 
-export function getLaptopMediaBucket() {
+export function getAuctionMediaBucket() {
   return `${getDatabasePrefix()}_laptop_media`;
 }
 

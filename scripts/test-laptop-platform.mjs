@@ -21,11 +21,12 @@ if (!["ba_dev", "ba_prod"].includes(databasePrefix)) {
 const laptopsTable = `${databasePrefix}_laptops`;
 const spotsTable = `${databasePrefix}_laptop_spots`;
 const bidsTable = `${databasePrefix}_laptop_bids`;
-const createFunction = `${databasePrefix}_create_laptop`;
-const bidFunction = `${databasePrefix}_place_laptop_bid`;
+const createFunction = `${databasePrefix}_create_auction`;
+const configureFunction = `${databasePrefix}_configure_auction_spots`;
+const bidFunction = `${databasePrefix}_place_auction_bid`;
 const service = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
 
-function createLaptop(args) {
+function createAuction(args) {
   return service.rpc(createFunction, {
     p_slug: args.slug,
     p_owner_name: args.ownerName,
@@ -33,7 +34,7 @@ function createLaptop(args) {
     p_title: args.title,
     p_tagline: args.tagline,
     p_story: args.story,
-    p_laptop_model: args.laptopModel,
+    p_object_name: args.objectName,
     p_goal_cents: args.goalCents,
     p_auction_closes_at: args.auctionClosesAt,
     p_photo_storage_path: null,
@@ -47,7 +48,7 @@ function createLaptop(args) {
 
 function placeBid(args) {
   return service.rpc(bidFunction, {
-    p_laptop_slug: args.slug,
+    p_auction_slug: args.slug,
     p_spot_position: args.position,
     p_amount_cents: args.amountCents,
     p_bidder_name: args.name,
@@ -55,6 +56,18 @@ function placeBid(args) {
     p_website: null,
     p_x_handle: null,
     p_logo_storage_path: null,
+    p_idempotency_key: args.idempotencyKey,
+  });
+}
+
+function configureSpots(args) {
+  return service.rpc(configureFunction, {
+    p_auction_id: args.auctionId,
+    p_layout: args.layout,
+    p_small_opening_bid_cents: args.smallOpeningBidCents,
+    p_medium_opening_bid_cents: args.mediumOpeningBidCents,
+    p_large_opening_bid_cents: args.largeOpeningBidCents,
+    p_min_increment_cents: args.minIncrementCents,
     p_idempotency_key: args.idempotencyKey,
   });
 }
@@ -68,17 +81,17 @@ const base = {
   title: "Concurrency Laptop",
   tagline: "A real multi-tenant laptop auction.",
   story: "This campaign exists to prove that creation and bidding are isolated and atomic.",
-  laptopModel: "MacBook Pro 14-inch",
+  objectName: "MacBook Pro 14-inch",
   goalCents: 320000,
   auctionClosesAt: closesAt,
   smallOpeningBidCents: 12500,
   mediumOpeningBidCents: 20000,
-  largeOpeningBidCents: 40000,
+  largeOpeningBidCents: 20000000,
   minIncrementCents: 1000,
   idempotencyKey: randomUUID(),
 };
 
-const createResponses = await Promise.all([createLaptop(base), createLaptop(base)]);
+const createResponses = await Promise.all([createAuction(base), createAuction(base)]);
 for (const response of createResponses) {
   if (response.error) throw response.error;
   assert.equal(response.data[0].accepted, true, "concurrent creation retries both succeed");
@@ -86,7 +99,7 @@ for (const response of createResponses) {
 assert.equal(createResponses.filter((response) => response.data[0].reason === "created").length, 1, "one request creates the laptop");
 assert.equal(createResponses.filter((response) => response.data[0].reason === "already_processed").length, 1, "one request is an idempotent retry");
 
-const changedPricingRetry = await createLaptop({
+const changedPricingRetry = await createAuction({
   ...base,
   smallOpeningBidCents: base.smallOpeningBidCents + 100,
 });
@@ -101,6 +114,44 @@ const { data: createdLaptop, error: laptopError } = await service
   .single();
 if (laptopError) throw laptopError;
 
+const exactLayout = [
+  ["Top left banner", "L", "9.5 × 5.5 cm", base.largeOpeningBidCents],
+  ["Marquee — above the logo", "L", "9.5 × 5.5 cm", base.largeOpeningBidCents * 1.25],
+  ["Top right banner", "L", "9.5 × 5.5 cm", base.largeOpeningBidCents],
+  ["Middle left", "S", "4.5 × 4.5 cm", base.smallOpeningBidCents],
+  ["Inner left — beside the logo", "S", "4.5 × 4.5 cm", base.smallOpeningBidCents * 1.2],
+  ["Inner right — beside the logo", "S", "4.5 × 4.5 cm", base.smallOpeningBidCents * 1.2],
+  ["Middle right", "S", "4.5 × 4.5 cm", base.smallOpeningBidCents],
+  ["Bottom left strip", "M", "9.5 × 4 cm", base.mediumOpeningBidCents],
+  ["Bottom center — under the logo", "M", "9.5 × 4 cm", base.mediumOpeningBidCents * 1.25],
+  ["Bottom right strip", "M", "9.5 × 4 cm", base.mediumOpeningBidCents],
+].map(([name, size, dimensions, openingBidCents], index) => ({
+  id: index + 1,
+  name,
+  size,
+  dimensions,
+  openingBidCents,
+}));
+const configured = await configureSpots({
+  auctionId: createdLaptop.id,
+  layout: exactLayout,
+  smallOpeningBidCents: base.smallOpeningBidCents,
+  mediumOpeningBidCents: base.mediumOpeningBidCents,
+  largeOpeningBidCents: base.largeOpeningBidCents,
+  minIncrementCents: base.minIncrementCents,
+  idempotencyKey: base.idempotencyKey,
+});
+if (configured.error) throw configured.error;
+
+const { data: premiumSpot, error: premiumSpotError } = await service
+  .from(spotsTable)
+  .select("opening_bid_cents")
+  .eq("laptop_id", createdLaptop.id)
+  .eq("position", 2)
+  .single();
+if (premiumSpotError) throw premiumSpotError;
+assert.equal(premiumSpot.opening_bid_cents, base.largeOpeningBidCents * 1.25, "the exact preview price is persisted per spot");
+
 const { count: spotCount, error: spotCountError } = await service
   .from(spotsTable)
   .select("id", { count: "exact", head: true })
@@ -108,7 +159,7 @@ const { count: spotCount, error: spotCountError } = await service
 if (spotCountError) throw spotCountError;
 assert.equal(spotCount, 10, "creation atomically produces ten spots");
 
-const slugCollision = await createLaptop({
+const slugCollision = await createAuction({
   ...base,
   title: "Different Laptop",
   idempotencyKey: randomUUID(),
@@ -124,14 +175,14 @@ const second = {
   title: "Second Isolated Laptop",
   idempotencyKey: randomUUID(),
 };
-const secondCreate = await createLaptop(second);
+const secondCreate = await createAuction(second);
 if (secondCreate.error) throw secondCreate.error;
 assert.equal(secondCreate.data[0].accepted, true, "a second tenant can create a laptop");
 
 const raceKeys = [randomUUID(), randomUUID()];
 const raceResponses = await Promise.all([
-  placeBid({ slug: base.slug, position: 1, amountCents: 40000, name: "Race A", email: "race-a@example.com", idempotencyKey: raceKeys[0] }),
-  placeBid({ slug: base.slug, position: 1, amountCents: 40000, name: "Race B", email: "race-b@example.com", idempotencyKey: raceKeys[1] }),
+  placeBid({ slug: base.slug, position: 1, amountCents: base.largeOpeningBidCents, name: "Race A", email: "race-a@example.com", idempotencyKey: raceKeys[0] }),
+  placeBid({ slug: base.slug, position: 1, amountCents: base.largeOpeningBidCents, name: "Race B", email: "race-b@example.com", idempotencyKey: raceKeys[1] }),
 ]);
 for (const response of raceResponses) if (response.error) throw response.error;
 assert.equal(raceResponses.filter((response) => response.data[0].accepted).length, 1, "one equal concurrent laptop bid wins");
@@ -140,7 +191,7 @@ assert.equal(raceResponses.filter((response) => response.data[0].reason === "bid
 const isolatedBid = await placeBid({
   slug: second.slug,
   position: 1,
-  amountCents: 40000,
+  amountCents: base.largeOpeningBidCents,
   name: "Second Tenant Bid",
   email: "second-tenant@example.com",
   idempotencyKey: randomUUID(),
@@ -150,8 +201,8 @@ assert.equal(isolatedBid.data[0].accepted, true, "the same spot number on anothe
 
 const crossLaptopKey = randomUUID();
 const crossLaptopResponses = await Promise.all([
-  placeBid({ slug: base.slug, position: 2, amountCents: 40000, name: "Cross Laptop", email: "cross@example.com", idempotencyKey: crossLaptopKey }),
-  placeBid({ slug: second.slug, position: 2, amountCents: 40000, name: "Cross Laptop", email: "cross@example.com", idempotencyKey: crossLaptopKey }),
+  placeBid({ slug: base.slug, position: 2, amountCents: base.largeOpeningBidCents * 1.25, name: "Cross Laptop", email: "cross@example.com", idempotencyKey: crossLaptopKey }),
+  placeBid({ slug: second.slug, position: 2, amountCents: base.largeOpeningBidCents, name: "Cross Laptop", email: "cross@example.com", idempotencyKey: crossLaptopKey }),
 ]);
 for (const response of crossLaptopResponses) if (response.error) throw response.error;
 assert.equal(crossLaptopResponses.filter((response) => response.data[0].accepted).length, 1, "an idempotency key is accepted once across tenants");

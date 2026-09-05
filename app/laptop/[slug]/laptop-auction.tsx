@@ -1,6 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -10,22 +11,40 @@ import { PreferenceControls } from "@/app/preference-controls";
 import type { Spot } from "@/lib/auction";
 import { getBrandModelFormat } from "@/lib/brand-model";
 import { formatRelativeTime, SPOT_NAME_KEYS } from "@/lib/i18n";
-import type { LaptopBidResult, LaptopSnapshot } from "@/lib/laptop";
-import { getPresetModelFromPublicPath } from "@/lib/preset-models";
+import type { Locale } from "@/lib/i18n";
+import type { AuctionBidResult, AuctionCampaignSnapshot } from "@/lib/campaign-auction";
 import {
+  amountFromUsd,
   amountToUsd,
   amountToUsdCents,
   currencyDisplayName,
+  currencySymbol,
   formatMoney as formatCurrency,
   minimumDisplayAmount,
 } from "@/lib/money";
+import type { Currency } from "@/lib/money";
 
 import styles from "./laptop.module.css";
 
+function compactMoney(amountUsd: number, currency: Currency, locale: Locale) {
+  const converted = amountFromUsd(amountUsd, currency);
+  const rounded = Math.round(converted);
+  const sym = currencySymbol(currency);
+  if (rounded >= 1_000_000) {
+    const m = rounded / 1_000_000;
+    return `${sym}${Number.isInteger(m) ? m : m.toFixed(1).replace(/\.0$/, "")}M`;
+  }
+  if (rounded >= 10_000) {
+    const k = rounded / 1_000;
+    return `${sym}${Number.isInteger(k) ? k : k.toFixed(1).replace(/\.0$/, "")}K`;
+  }
+  return formatCurrency(amountUsd, currency, locale, 0);
+}
+
 type BidResponse = {
   error?: string;
-  result?: LaptopBidResult;
-  snapshot?: LaptopSnapshot | null;
+  result?: AuctionBidResult;
+  snapshot?: AuctionCampaignSnapshot | null;
 };
 
 function useCountdown(closesAt: string) {
@@ -50,12 +69,13 @@ function useCountdown(closesAt: string) {
 function LaptopLid({ spots, onSelect }: { spots: Spot[]; onSelect: (spot: Spot) => void }) {
   const { currency, locale, t } = useI18n();
   const money = (amount: number) => formatCurrency(amount, currency, locale, 0);
+  const compact = (amount: number) => compactMoney(amount, currency, locale);
 
   return (
     <div className="lid-stage" aria-label={t("laptop.layoutAria")}>
       <div className="mac-lid">
         <div className="lid-camera" />
-        <span className="apple-mark" aria-label={t("common.appleLogo")}></span>
+        <Image className="apple-mark" src="/apple-logo.svg" alt={t("common.appleLogo")} width={160} height={160} />
         {spots.map((spot) => {
           const hasBid = spot.bids > 0;
           return (
@@ -73,7 +93,7 @@ function LaptopLid({ spots, onSelect }: { spots: Spot[]; onSelect: (spot: Spot) 
                 <span className="lid-spot-number">{spot.id}</span>
               )}
               <span className="lid-holder">{hasBid ? spot.holder : t("common.available")}</span>
-              <span className="lid-price">{hasBid ? money(spot.bid) : t("common.starts", { amount: money(spot.minBid) })}</span>
+              <span className="lid-price">{hasBid ? compact(spot.bid) : t("common.starts", { amount: compact(spot.minBid) })}</span>
               <span className="lid-outbid">{hasBid ? t("common.outbid") : t("common.placeBid")}</span>
             </button>
           );
@@ -92,7 +112,7 @@ function BidPanel({
   slug: string;
   spot: Spot;
   isAnything: boolean;
-  onSnapshot: (snapshot: LaptopSnapshot) => void;
+  onSnapshot: (snapshot: AuctionCampaignSnapshot) => void;
 }) {
   const { currency, locale, t } = useI18n();
   const money = (amountUsd: number) => formatCurrency(amountUsd, currency, locale, 0);
@@ -115,7 +135,7 @@ function BidPanel({
     formData.set("idempotencyKey", idempotencyKey);
 
     try {
-      const response = await fetch(`/api/laptops/${encodeURIComponent(slug)}/bids`, {
+      const response = await fetch(`/api/auctions/${encodeURIComponent(slug)}/bids`, {
         method: "POST",
         body: formData,
       });
@@ -177,7 +197,7 @@ function BidPanel({
   );
 }
 
-export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnapshot }) {
+export function LaptopAuction({ initialSnapshot }: { initialSnapshot: AuctionCampaignSnapshot }) {
   const { currency, locale, t, formatDate } = useI18n();
   const money = (amount: number) => formatCurrency(amount, currency, locale, 0);
   const [snapshot, setSnapshot] = useState(initialSnapshot);
@@ -192,13 +212,12 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
   const filled = useMemo(() => snapshot.spots.filter((spot) => spot.bids > 0).length, [snapshot.spots]);
   const progress = Math.min(100, Math.round((totalRaised / snapshot.campaign.goal) * 100));
   const isAnything = snapshot.campaign.assetType === "anything";
-  const presetModel = getPresetModelFromPublicPath(snapshot.campaign.modelUrl);
 
   const refresh = useCallback(async () => {
     try {
-      const response = await fetch(`/api/laptops/${encodeURIComponent(snapshot.campaign.slug)}`, { cache: "no-store" });
+      const response = await fetch(`/api/auctions/${encodeURIComponent(snapshot.campaign.slug)}`, { cache: "no-store" });
       if (!response.ok) throw new Error();
-      const nextSnapshot = await response.json() as LaptopSnapshot;
+      const nextSnapshot = await response.json() as AuctionCampaignSnapshot;
       setSnapshot((current) => ({
         ...nextSnapshot,
         campaign: {
@@ -237,7 +256,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
           <p>{snapshot.campaign.tagline}</p>
           <div className={styles.heroStats}>
             <span><b>{money(totalRaised)}</b> {t("home.raised")}</span>
-            <span><b>{t("laptop.spotsClaimed", { filled, count: snapshot.spots.length })}</b></span>
+            <span><b>{t(snapshot.spots.length === 1 ? "laptop.spotClaimed" : "laptop.spotsClaimed", { filled, count: snapshot.spots.length })}</b></span>
             <span><b>{countdown}</b></span>
           </div>
         </div>
@@ -259,16 +278,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
           ) : (
             <LaptopLid spots={snapshot.spots} onSelect={(spot) => setSelectedSpotId(spot.id)} />
           )}
-          {presetModel && (
-            <p className={styles.modelAttribution}>
-              Model by <a href={presetModel.sourceUrl} target="_blank" rel="noreferrer">{presetModel.author}</a>
-              {" · "}<a href={presetModel.licenseUrl} target="_blank" rel="noreferrer">{presetModel.licenseName}</a>
-              {(presetModel.id === "flybridge-yacht" || presetModel.id === "private-jet") && (
-                <span>Representative preview — not an official manufacturer digital twin.</span>
-              )}
-            </p>
-          )}
-          <p>{isAnything ? t("laptop.orbitObject", { object: snapshot.campaign.assetName }) : t("laptop.tap", { model: snapshot.campaign.laptopModel })}</p>
+          <p>{isAnything ? t("laptop.orbitObject", { object: snapshot.campaign.assetName }) : t("laptop.tap", { model: snapshot.campaign.objectName })}</p>
         </div>
       </header>
 
@@ -279,7 +289,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
 
       <section className={styles.auctionSection} id="auction">
         <div className={styles.auctionIntro}>
-          <p>{t(isAnything ? "laptop.anythingPlacements" : "laptop.tenPlacements", { count: snapshot.spots.length })}</p>
+          <p>{t(isAnything && snapshot.spots.length === 1 ? "laptop.anythingPlacement" : isAnything ? "laptop.anythingPlacements" : "laptop.tenPlacements", { count: snapshot.spots.length })}</p>
           <h2>{t(isAnything ? "laptop.chooseOnObject" : "laptop.chooseWhere")}</h2>
         </div>
         <div className={styles.auctionGrid}>
@@ -292,7 +302,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
               >
                 <span>{String(spot.id).padStart(2, "0")}</span>
                 <p><b>{isAnything ? spot.name : SPOT_NAME_KEYS[spot.id] ? t(SPOT_NAME_KEYS[spot.id]!) : spot.name}</b><small>{spot.size} · {spot.dimensions}</small></p>
-                <strong>{money(spot.bids > 0 ? spot.bid : spot.minBid)}<small>{spot.bids > 0 ? `${spot.bids} ${t("common.bids")}` : t("laptop.opening")}</small></strong>
+                <strong>{compactMoney(spot.bids > 0 ? spot.bid : spot.minBid, currency, locale)}<small>{spot.bids > 0 ? `${spot.bids} ${t("common.bids")}` : t("laptop.opening")}</small></strong>
               </button>
             ))}
           </div>
@@ -322,9 +332,14 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
         </div>
         <div className={styles.ownerPhoto}>
           {snapshot.campaign.photoUrl ? (
-            <img src={snapshot.campaign.photoUrl} alt={t("laptop.photoAlt", { owner: snapshot.campaign.ownerName, model: snapshot.campaign.laptopModel })} />
+            <img src={snapshot.campaign.photoUrl} alt={t("laptop.photoAlt", { owner: snapshot.campaign.ownerName, model: snapshot.campaign.objectName })} />
           ) : (
-            <div><span>{isAnything ? "✣" : ""}</span><p>{snapshot.campaign.assetName}</p></div>
+            <div>
+              {isAnything
+                ? <span aria-hidden="true">✣</span>
+                : <Image className={styles.ownerApple} src="/apple-logo.svg" alt="" width={96} height={96} />}
+              <p>{snapshot.campaign.assetName}</p>
+            </div>
           )}
         </div>
       </section>

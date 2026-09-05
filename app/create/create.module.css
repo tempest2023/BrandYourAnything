@@ -157,6 +157,13 @@
   line-height: 1.55;
 }
 
+.publishCopy a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
 .introCopy {
   margin: 12px 0 10px;
 }
@@ -536,11 +543,27 @@
   font-weight: 400;
 }
 
-.addressField b {
+.addressHost {
+  display: flex;
+  max-width: min(52%, 180px);
+  min-width: 0;
   padding-left: 13px;
+  align-items: center;
+  flex: 0 1 180px;
   color: var(--muted);
-  font-weight: 400;
   white-space: nowrap;
+}
+
+.addressHost b {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 400;
+  text-overflow: ellipsis;
+}
+
+.addressHost strong {
+  flex: 0 0 auto;
+  font-weight: 400;
 }
 
 .addressField input {
@@ -564,6 +587,26 @@
 
 .checkList {
   display: grid;
+  gap: 20px;
+}
+
+.showcaseGroup {
+  display: grid;
+  gap: 9px;
+}
+
+.showcaseGroup h2 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.showcaseGroup > div,
+.customShowcase {
+  display: grid;
   gap: 10px;
 }
 
@@ -579,6 +622,50 @@
   color: var(--ink);
   cursor: pointer;
   font-size: 15px;
+}
+
+.customShowcaseField {
+  display: grid;
+  padding: 14px 16px;
+  gap: 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: #fafafa;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.customShowcaseField input {
+  width: 100%;
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  outline: 0;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+}
+
+.customShowcaseField input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px rgba(0, 113, 227, 0.14);
+}
+
+.customShowcaseField input[aria-invalid="true"] {
+  border-color: #b42318;
+}
+
+.customShowcaseField small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: right;
+}
+
+.customShowcase > .validation {
+  margin-top: 0;
 }
 
 .checkedRow {
@@ -627,13 +714,292 @@
   gap: 10px;
 }
 
+.surfacePriceFlow {
+  display: grid;
+  gap: 16px;
+}
+
+.surfacePriceFlow > .introCopy {
+  margin-bottom: -2px;
+}
+
+.surfacePriceSpotList {
+  display: grid;
+  max-height: 216px;
+  padding-right: 3px;
+  overflow-y: auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  scrollbar-gutter: stable;
+}
+
+.surfacePriceSpot,
+.activeSurfacePriceSpot {
+  display: grid;
+  min-width: 0;
+  min-height: 64px;
+  padding: 9px 10px;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.surfacePriceSpot > span:first-child,
+.activeSurfacePriceSpot > span:first-child,
+.surfacePriceHeader > span {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid var(--hairline);
+  border-radius: 50%;
+  color: var(--ink);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+}
+
+.surfacePriceSpot > span:last-child,
+.activeSurfacePriceSpot > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.surfacePriceSpot strong,
+.activeSurfacePriceSpot strong {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.surfacePriceSpot small,
+.activeSurfacePriceSpot small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activeSurfacePriceSpot {
+  border-color: var(--blue);
+  background: rgba(0, 113, 227, 0.045);
+  box-shadow: inset 0 0 0 1px var(--blue);
+}
+
+.activeSurfacePriceSpot > span:first-child {
+  border-color: var(--blue);
+  background: var(--blue);
+  color: #fff;
+}
+
+.surfacePriceEditor {
+  display: grid;
+  padding: 18px;
+  gap: 20px;
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(0, 113, 227, 0.025), transparent 45%), #fff;
+}
+
+.surfacePriceHeader {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.surfacePriceHeader > span {
+  width: 40px;
+  height: 40px;
+  border-color: var(--blue);
+  background: var(--blue);
+  color: #fff;
+  font-size: 11px;
+}
+
+.surfacePriceHeader > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.surfacePriceHeader strong {
+  overflow: hidden;
+  font-size: 16px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.surfacePriceHeader small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.surfaceRegionField,
+.surfacePriceField,
+.surfaceTypeField {
+  display: grid;
+  gap: 8px;
+}
+
+.surfaceRegionField > span,
+.surfacePriceField > span:first-child,
+.surfaceTypeField > span {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.surfaceRegionField select {
+  width: 100%;
+  height: 46px;
+  padding: 0 40px 0 13px;
+  border: 1px solid var(--hairline);
+  border-radius: 11px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+}
+
+.surfaceTypeChoices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.surfaceType,
+.selectedSurfaceType {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 96px;
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.surfaceType input,
+.selectedSurfaceType input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.surfaceType > span,
+.selectedSurfaceType > span {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+}
+
+.surfaceType strong,
+.selectedSurfaceType strong {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.surfaceType small,
+.selectedSurfaceType small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.selectedSurfaceType {
+  border-color: var(--blue);
+  background: rgba(0, 113, 227, 0.045);
+  box-shadow: inset 0 0 0 1px var(--blue);
+}
+
+.surfacePriceField > .priceInput {
+  height: 46px;
+}
+
+.surfacePriceField > small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.surfacePriceField input[aria-invalid="true"] {
+  color: #b42318;
+}
+
+.surfacePriceField:has(input[aria-invalid="true"]) .priceInput {
+  border-color: #d92d20;
+}
+
+.surfacePriceNavigation {
+  display: grid;
+  padding-top: 14px;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid #ededf0;
+}
+
+.surfacePriceNavigation button {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+
+.surfacePriceNavigation button:last-child {
+  justify-self: end;
+}
+
+.surfacePriceNavigation button:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
+.surfacePriceNavigation span {
+  color: var(--muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.surfacePriceSpot:focus-visible,
+.activeSurfacePriceSpot:focus-visible,
+.surfacePriceNavigation button:focus-visible,
+.surfaceRegionField select:focus-visible,
+.surfaceType:focus-within,
+.selectedSurfaceType:focus-within,
+.surfacePriceField .priceInput:focus-within {
+  outline: 3px solid rgba(0, 113, 227, 0.28);
+  outline-offset: 2px;
+}
+
 .priceField {
   display: grid;
   min-height: 76px;
   padding: 12px 14px;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) minmax(10.5rem, 44%);
   align-items: center;
-  gap: 10px;
+  gap: 14px;
   border: 1px solid var(--hairline);
   border-radius: 14px;
 }
@@ -652,18 +1018,10 @@
   font-size: 12px;
 }
 
-.priceField em {
-  padding: 3px 7px;
-  border-radius: 999px;
-  background: #f5f5f7;
-  color: var(--muted);
-  font-size: 10px;
-  font-style: normal;
-}
-
 .priceInput {
   display: flex;
-  width: 105px;
+  width: 100%;
+  min-width: 0;
   height: 42px;
   align-items: center;
   border: 1px solid var(--hairline);
@@ -671,17 +1029,22 @@
 }
 
 .priceInput input {
-  width: 72px;
+  width: 100%;
+  min-width: 0;
   height: 100%;
-  padding-left: 10px;
+  padding: 0 10px 0 12px;
+  flex: 1;
   border: 0;
   outline: 0;
   background: transparent;
   font: inherit;
   font-size: 15px;
+  font-variant-numeric: tabular-nums;
 }
 
 .priceInput b {
+  padding-right: 12px;
+  flex: 0 0 auto;
   color: var(--muted);
   font-weight: 400;
 }
@@ -730,7 +1093,7 @@
 
 .specialPrice > span {
   display: flex;
-  width: 92px;
+  width: 132px;
   height: 38px;
   align-items: center;
   border: 1px solid var(--hairline);
@@ -739,18 +1102,22 @@
 }
 
 .specialPrice input {
-  width: 63px;
+  width: 100%;
   min-width: 0;
   height: 100%;
-  padding-left: 8px;
+  padding: 0 8px 0 10px;
+  flex: 1;
   border: 0;
   outline: 0;
   background: transparent;
   font: inherit;
   font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 .specialPrice b {
+  padding-right: 10px;
+  flex: 0 0 auto;
   color: var(--muted);
   font-weight: 400;
 }
@@ -1122,11 +1489,10 @@
   z-index: 1;
   top: 50%;
   left: 50%;
-  color: #3a3a3c;
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 12cqw;
-  line-height: 1;
+  width: 12cqw;
+  height: 12cqw;
   transform: translate(-50%, -50%);
+  object-fit: contain;
 }
 
 .tenSpot1 { grid-column: 1 / 3; grid-row: 1; }
@@ -1983,26 +2349,6 @@
   min-height: 500px;
 }
 
-.presetAttribution {
-  margin: 0;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.5;
-  text-align: left;
-}
-
-.presetAttribution a {
-  color: var(--ink);
-  text-decoration: underline;
-  text-decoration-color: var(--hairline);
-  text-underline-offset: 2px;
-}
-
-.presetAttribution span {
-  display: block;
-  margin-top: 2px;
-}
-
 .anythingMiniStage::before {
   position: absolute;
   inset: 0;
@@ -2253,7 +2599,10 @@
   .choice:hover,
   .duration:hover,
   .backButton:hover,
-  .secondaryButton:hover {
+  .secondaryButton:hover,
+  .surfacePriceSpot:hover,
+  .surfacePriceNavigation button:not(:disabled):hover,
+  .surfaceType:hover {
     border-color: #a8a8ad;
     color: var(--ink);
   }
@@ -2440,23 +2789,19 @@
     min-height: 80px;
   }
 
-  .priceField {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .priceField em {
-    display: none;
-  }
-
   .checkedSpecial {
     grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .surfaceTypeChoices {
+    grid-template-columns: 1fr;
   }
 
   .specialPrice {
     grid-column: 2;
   }
 
-  .addressField b {
+  .addressHost {
     font-size: 13px;
   }
 

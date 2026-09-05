@@ -3,8 +3,8 @@ import { notFound } from "next/navigation";
 
 import { AuctionLandingPage } from "@/app/page";
 import { LaptopAuction } from "./laptop-auction";
-import { getLaptopSnapshot } from "@/lib/laptop-repository";
-import { laptopPath } from "@/lib/site";
+import { getAuctionSnapshot } from "@/lib/campaign-auction-repository";
+import { auctionPath } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
 
@@ -14,16 +14,16 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const snapshot = await getLaptopSnapshot(slug).catch(() => null);
+  const snapshot = await getAuctionSnapshot(slug).catch(() => null);
   if (!snapshot) return { title: "Auction not found — Brand Anything" };
   return {
     title: `${snapshot.campaign.title} — Brand Anything`,
     description: snapshot.campaign.tagline,
-    alternates: { canonical: laptopPath(snapshot.campaign.slug) },
+    alternates: { canonical: auctionPath(snapshot.campaign.slug) },
     openGraph: {
       title: snapshot.campaign.title,
       description: snapshot.campaign.tagline,
-      url: laptopPath(snapshot.campaign.slug),
+      url: auctionPath(snapshot.campaign.slug),
       ...(snapshot.campaign.photoUrl ? { images: [snapshot.campaign.photoUrl] } : {}),
     },
   };
@@ -35,7 +35,7 @@ export default async function LaptopPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const snapshot = await getLaptopSnapshot(slug);
+  const snapshot = await getAuctionSnapshot(slug);
   if (!snapshot) notFound();
   return snapshot.campaign.assetType === "anything"
     ? <LaptopAuction initialSnapshot={snapshot} />
