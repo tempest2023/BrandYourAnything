@@ -587,6 +587,26 @@
 
 .checkList {
   display: grid;
+  gap: 20px;
+}
+
+.showcaseGroup {
+  display: grid;
+  gap: 9px;
+}
+
+.showcaseGroup h2 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.showcaseGroup > div,
+.customShowcase {
+  display: grid;
   gap: 10px;
 }
 
@@ -602,6 +622,50 @@
   color: var(--ink);
   cursor: pointer;
   font-size: 15px;
+}
+
+.customShowcaseField {
+  display: grid;
+  padding: 14px 16px;
+  gap: 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: #fafafa;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.customShowcaseField input {
+  width: 100%;
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  outline: 0;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+}
+
+.customShowcaseField input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px rgba(0, 113, 227, 0.14);
+}
+
+.customShowcaseField input[aria-invalid="true"] {
+  border-color: #b42318;
+}
+
+.customShowcaseField small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: right;
+}
+
+.customShowcase > .validation {
+  margin-top: 0;
 }
 
 .checkedRow {

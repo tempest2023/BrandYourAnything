@@ -12,6 +12,14 @@ import {
   getPresetModel,
   type PresetModelId,
 } from "@/lib/preset-models";
+import {
+  MAX_CUSTOM_SHOWCASE_LENGTH,
+  normalizeCustomShowcase,
+  sanitizeCustomShowcase,
+  SHOWCASE_GROUPS_BY_MACHINE,
+  showcaseOptionsFor,
+  type ShowcaseMachine,
+} from "@/lib/showcase-options";
 import { laptopPath, laptopUrl, SITE_HOST, SITE_URL } from "@/lib/site";
 import {
   clampSurfaceSpotCount,
@@ -54,16 +62,6 @@ const X_SHARE_POSTS: Record<Locale, (publicUrl: string, assetName: string, anyth
     ? `Voy a abrir unos pocos espacios de marca en ${assetName}. Explora el modelo 3D y puja por un lugar: ${publicUrl}\n#BrandAnything`
     : `Voy a abrir unos pocos espacios de la tapa de mi portátil a marcas. Tu logo viajará conmigo por cafés, reuniones y eventos, no será otro banner más. Mira la subasta en directo: ${publicUrl}\n#BrandAnything`,
 };
-const SHOWCASE_OPTIONS = [
-  "Build in public — posts and videos",
-  "Coworking spaces and cafés",
-  "Conferences and meetups",
-  "Business travel",
-  "Client and investor meetings",
-  "A campus or university",
-  "Roads, marinas, hangars and public spaces",
-] as const;
-
 const TEN_SPOTS = [
   { id: 1, name: "Top left banner", size: "Large", price: "large" },
   { id: 2, name: "Marquee — above the logo", size: "Large", price: "large", premium: 1.25 },
@@ -96,7 +94,7 @@ type PreviewSpot = {
   position?: SurfaceSpotPlacement["position"];
   normal?: SurfaceSpotPlacement["normal"];
 };
-type Machine = "mac" | "pc" | "tesla" | "yacht" | "jet" | "anything";
+type Machine = ShowcaseMachine;
 type TeslaModel = "Model 3" | "Model Y" | "Model S" | "Model X" | "Cybertruck";
 type ModelMode = "preset" | "custom";
 type Ownership = "own" | "fund";
@@ -114,6 +112,8 @@ type SellDraft = {
   ownership: Ownership;
   machineCost: string;
   showcase: string[];
+  customShowcaseEnabled: boolean;
+  customShowcase: string;
   extraNote: string;
   layoutCount: LayoutCount;
   surfaceSpots: SurfaceSpotPlacement[];
@@ -405,7 +405,9 @@ export function CreateLaptopForm() {
   const [screenSize, setScreenSize] = useState<13 | 14 | 16>(14);
   const [ownership, setOwnership] = useState<Ownership>("own");
   const [machineCost, setMachineCost] = useState("");
-  const [showcase, setShowcase] = useState<string[]>(SHOWCASE_OPTIONS.slice(0, 5));
+  const [showcase, setShowcase] = useState<string[]>([]);
+  const [customShowcaseEnabled, setCustomShowcaseEnabled] = useState(false);
+  const [customShowcase, setCustomShowcase] = useState("");
   const [extraNote, setExtraNote] = useState("");
   const [layoutCount, setLayoutCount] = useState<LayoutCount>(10);
   const [surfaceAnalysis, setSurfaceAnalysis] = useState<SurfaceModelAnalysis | null>(null);
@@ -495,9 +497,12 @@ export function CreateLaptopForm() {
 
     const timer = window.setTimeout(() => {
       if (saved) {
+        const draftMachine = OBJECT_PRESETS.some((option) => option.id === draft.machine)
+          ? draft.machine as Machine
+          : "mac";
         if (Number.isInteger(draft.step) && draft.step! >= 0 && draft.step! < STEPS.length) setStep(draft.step!);
         if (Number.isInteger(draft.furthestStep) && draft.furthestStep! >= 0 && draft.furthestStep! < STEPS.length) setFurthestStep(draft.furthestStep!);
-        if (draft.machine) setMachine(draft.machine);
+        setMachine(draftMachine);
         if (typeof draft.assetName === "string") setAssetName(draft.assetName);
         if (draft.teslaModel && TESLA_MODELS.includes(draft.teslaModel)) setTeslaModel(draft.teslaModel);
         if (draft.modelMode === "preset" || draft.modelMode === "custom") setModelMode(draft.modelMode);
@@ -513,7 +518,18 @@ export function CreateLaptopForm() {
         if (draft.screenSize) setScreenSize(draft.screenSize);
         if (draft.ownership) setOwnership(draft.ownership);
         if (typeof draft.machineCost === "string") setMachineCost(draft.machineCost);
-        if (Array.isArray(draft.showcase)) setShowcase(draft.showcase);
+        if (Array.isArray(draft.showcase)) {
+          const supportedOptions = new Set(showcaseOptionsFor(draftMachine));
+          setShowcase(draft.showcase.filter((option) => (
+            typeof option === "string" && supportedOptions.has(option)
+          )));
+        }
+        if (typeof draft.customShowcaseEnabled === "boolean") {
+          setCustomShowcaseEnabled(draft.customShowcaseEnabled);
+        }
+        if (typeof draft.customShowcase === "string") {
+          setCustomShowcase(sanitizeCustomShowcase(draft.customShowcase));
+        }
         if (typeof draft.extraNote === "string") setExtraNote(draft.extraNote);
         if (Number.isInteger(draft.layoutCount)
           && draft.layoutCount! >= MIN_SURFACE_SPOTS
@@ -529,7 +545,6 @@ export function CreateLaptopForm() {
         if (draft.listingDays) setListingDays(draft.listingDays);
         if (draft.stickerMonths) setStickerMonths(draft.stickerMonths);
         if (typeof draft.title === "string") {
-          const draftMachine = draft.machine ?? "mac";
           const draftTeslaModel = draft.teslaModel && TESLA_MODELS.includes(draft.teslaModel)
             ? draft.teslaModel
             : "Model 3";
@@ -575,6 +590,8 @@ export function CreateLaptopForm() {
       ownership,
       machineCost,
       showcase,
+      customShowcaseEnabled,
+      customShowcase,
       extraNote,
       layoutCount,
       surfaceSpots,
@@ -588,7 +605,7 @@ export function CreateLaptopForm() {
       title,
       slug,
     }));
-  }, [anythingSource, assetName, brandModel, draftReady, extraNote, furthestStep, largePrice, layoutCount, listingDays, machine, machineCost, mediumPrice, modelMode, ownership, screenSize, showcase, slug, smallPrice, specialPrice, specialSpot, step, stickerMonths, surfaceSpots, teslaModel, title]);
+  }, [anythingSource, assetName, brandModel, customShowcase, customShowcaseEnabled, draftReady, extraNote, furthestStep, largePrice, layoutCount, listingDays, machine, machineCost, mediumPrice, modelMode, ownership, screenSize, showcase, slug, smallPrice, specialPrice, specialSpot, step, stickerMonths, surfaceSpots, teslaModel, title]);
 
   useEffect(() => {
     let active = true;
@@ -703,6 +720,13 @@ export function CreateLaptopForm() {
   const objectIsValid = !isAnything || (assetName.trim().length >= 2 && (usingPresetModel || brandModel !== null));
   const layoutIsValid = !isAnything || (surfaceSpots.length === layoutCount
     && surfaceSpots.every((spot) => spot.position.length === 3 && spot.normal.length === 3));
+  const showcaseGroups = SHOWCASE_GROUPS_BY_MACHINE[machine];
+  const normalizedCustomShowcase = normalizeCustomShowcase(customShowcase);
+  const customShowcaseIsValid = !customShowcaseEnabled || normalizedCustomShowcase.length >= 2;
+  const selectedShowcase = [
+    ...showcase,
+    ...(customShowcaseEnabled && customShowcaseIsValid ? [normalizedCustomShowcase] : []),
+  ];
   const desiredPublicLocation = laptopPath(slug);
   const sharePost = X_SHARE_POSTS[shareLocale](laptopUrl(slug), objectName, isAnything);
 
@@ -720,13 +744,13 @@ export function CreateLaptopForm() {
   };
 
   const updateSurfaceSpotCount = (requestedCount: number) => {
-    const availableCount = surfaceAnalysis?.placements.length || MAX_SURFACE_SPOTS;
-    const count = Math.min(availableCount, clampSurfaceSpotCount(requestedCount));
+    const count = clampSurfaceSpotCount(requestedCount);
     setLayoutCount(count);
     setSurfaceSpots((current) => Array.from({ length: count }, (_, index) => (
       current.find((spot) => spot.id === index + 1)
       ?? surfaceAnalysis?.placements.find((spot) => spot.id === index + 1)
       ?? current[index % Math.max(current.length, 1)]
+      ?? surfaceAnalysis?.placements[index % Math.max(surfaceAnalysis.placements.length, 1)]
       ?? { id: index + 1, position: [0, 0, 0], normal: [0, 0, 1] }
     )).map((spot, index) => ({ ...spot, id: index + 1 })));
     setSelectedSurfaceSpotId((current) => Math.min(current, count));
@@ -736,19 +760,28 @@ export function CreateLaptopForm() {
   const handleModelAnalysis = (analysis: SurfaceModelAnalysis) => {
     setSurfaceAnalysis(analysis);
     if (surfaceSpotsRef.current.length > 0) return;
-    const count = Math.min(analysis.recommendedCount, analysis.placements.length);
+    const count = clampSurfaceSpotCount(analysis.recommendedCount);
     setLayoutCount(count);
-    setSurfaceSpots(analysis.placements.slice(0, count));
+    setSurfaceSpots(Array.from({ length: count }, (_, index) => ({
+      ...(analysis.placements[index] ?? analysis.placements[index % Math.max(analysis.placements.length, 1)]
+        ?? { position: [0, 0, 0] as const, normal: [0, 0, 1] as const }),
+      id: index + 1,
+    })));
     setSelectedSurfaceSpotId(1);
   };
 
   const resetSurfaceLayout = () => {
     if (!surfaceAnalysis) return;
-    const count = Math.min(surfaceAnalysis.recommendedCount, surfaceAnalysis.placements.length);
+    const count = clampSurfaceSpotCount(surfaceAnalysis.recommendedCount);
     setLayoutCount(count);
-    setSurfaceSpots(surfaceAnalysis.placements.slice(0, count));
+    setSurfaceSpots(Array.from({ length: count }, (_, index) => ({
+      ...(surfaceAnalysis.placements[index]
+        ?? surfaceAnalysis.placements[index % Math.max(surfaceAnalysis.placements.length, 1)]
+        ?? { position: [0, 0, 0] as const, normal: [0, 0, 1] as const }),
+      id: index + 1,
+    })));
     setSelectedSurfaceSpotId(1);
-    setPlacementMessage("Recommended side-surface layout restored.");
+    setPlacementMessage("Recommended layout restored.");
   };
 
   const placeSurfaceSpot = (nextSpot: SurfaceSpotPlacement) => {
@@ -772,6 +805,9 @@ export function CreateLaptopForm() {
     clearSurfaceLayout();
     setModelMode(nextPresetId ? "preset" : "custom");
     setMachine(nextMachine);
+    setShowcase([]);
+    setCustomShowcaseEnabled(false);
+    setCustomShowcase("");
     setTitle((current) => isDefaultListingTitle(current)
       ? defaultTitleFor(nextMachine, teslaModel)
       : current);
@@ -806,6 +842,7 @@ export function CreateLaptopForm() {
   const continueStep = () => {
     if (step === 0 && !objectIsValid) return;
     if (step === 1 && !machineIsValid) return;
+    if (step === 2 && !customShowcaseIsValid) return;
     if (step === 3 && !layoutIsValid) return;
     const next = Math.min(step + 1, STEPS.length - 1);
     setStep(next);
@@ -840,7 +877,9 @@ export function CreateLaptopForm() {
     setErrorMessage("");
     const formData = new FormData(form);
     const storyParts = [
-      showcase.length ? `This ${isAnything ? "object" : "laptop"} is seen at: ${showcase.join(", ")}.` : `This ${isAnything ? "object" : "laptop"} travels with its owner every day.`,
+      selectedShowcase.length
+        ? `Expected visibility: ${selectedShowcase.join(", ")}.`
+        : "Visibility details will be confirmed by the owner.",
       extraNote.trim(),
       `Each approved brand placement stays on for ${stickerMonths} months.`,
     ].filter(Boolean);
@@ -852,6 +891,7 @@ export function CreateLaptopForm() {
     formData.set("laptopModel", objectName);
     formData.set("assetType", isAnything ? "anything" : "laptop");
     formData.set("assetName", objectName);
+    formData.set("customShowcase", customShowcaseEnabled ? normalizedCustomShowcase : "");
     const spotLayout: SpotLayoutItem[] = previewSpots.map((spot) => ({
       id: spot.id,
       name: spot.name,
@@ -911,7 +951,7 @@ export function CreateLaptopForm() {
   const handleShareCopy = async (openX: boolean) => {
     const form = formRef.current;
     if (!form || submitting || !form.reportValidity()) return;
-    if (!machineIsValid || !layoutIsValid || !objectIsValid) {
+    if (!machineIsValid || !layoutIsValid || !objectIsValid || !customShowcaseIsValid) {
       setErrorMessage("Please complete all required steps before publishing.");
       return;
     }
@@ -948,7 +988,7 @@ export function CreateLaptopForm() {
     event.preventDefault();
     if (submitting || authRedirecting) return;
 
-    if (!machineIsValid || !layoutIsValid || !objectIsValid) {
+    if (!machineIsValid || !layoutIsValid || !objectIsValid || !customShowcaseIsValid) {
       setErrorMessage("Please complete all required steps before publishing.");
       return;
     }
@@ -1189,9 +1229,54 @@ export function CreateLaptopForm() {
             {step === 2 && (
               <fieldset>
                 <legend>Where will it be seen?</legend>
-                <p className={styles.introCopy}>Pick everything true — it is shown to buyers on your listing.</p>
+                <p className={styles.introCopy}>Choose only the places buyers can genuinely expect to see it, both in use and while stopped or displayed.</p>
                 <div className={styles.checkList}>
-                  {SHOWCASE_OPTIONS.map((option) => <label key={option} className={showcase.includes(option) ? styles.checkedRow : styles.checkRow}><input type="checkbox" checked={showcase.includes(option)} onChange={() => toggleShowcase(option)} />{option}</label>)}
+                  {showcaseGroups.map((group) => (
+                    <section className={styles.showcaseGroup} key={group.label} aria-labelledby={`showcase-${group.label.replace(/\W+/g, "-").toLowerCase()}`}>
+                      <h2 id={`showcase-${group.label.replace(/\W+/g, "-").toLowerCase()}`}>{group.label}</h2>
+                      <div>
+                        {group.options.map((option) => (
+                          <label key={option} className={showcase.includes(option) ? styles.checkedRow : styles.checkRow}>
+                            <input type="checkbox" checked={showcase.includes(option)} onChange={() => toggleShowcase(option)} />
+                            {option}
+                          </label>
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                  <div className={styles.customShowcase}>
+                    <label className={customShowcaseEnabled ? styles.checkedRow : styles.checkRow}>
+                      <input
+                        type="checkbox"
+                        checked={customShowcaseEnabled}
+                        onChange={(event) => {
+                          setCustomShowcaseEnabled(event.target.checked);
+                          if (!event.target.checked) setCustomShowcase("");
+                        }}
+                      />
+                      Other
+                    </label>
+                    {customShowcaseEnabled && (
+                      <label className={styles.customShowcaseField}>
+                        <span>Where else will it be seen?</span>
+                        <input
+                          type="text"
+                          value={customShowcase}
+                          maxLength={MAX_CUSTOM_SHOWCASE_LENGTH}
+                          aria-invalid={!customShowcaseIsValid}
+                          aria-describedby="custom-showcase-hint"
+                          placeholder="For example, hotel entrances and private events"
+                          onChange={(event) => setCustomShowcase(sanitizeCustomShowcase(event.target.value))}
+                        />
+                        <small id="custom-showcase-hint">
+                          Letters, numbers and basic punctuation only · {customShowcase.length}/{MAX_CUSTOM_SHOWCASE_LENGTH}
+                        </small>
+                      </label>
+                    )}
+                    {customShowcaseEnabled && !customShowcaseIsValid && (
+                      <p className={styles.validation} role="alert">Enter at least 2 characters for the other location.</p>
+                    )}
+                  </div>
                 </div>
                 <label className={styles.textareaLabel}>Anything else buyers should know? <span>Optional</span><textarea maxLength={400} placeholder="Everything this raises goes to a cancer charity." value={extraNote} onChange={(event) => setExtraNote(event.target.value)} /><small>{extraNote.length}/400</small></label>
               </fieldset>
@@ -1203,9 +1288,9 @@ export function CreateLaptopForm() {
                 {isAnything ? (
                   <div className={styles.surfaceLayoutControls}>
                     <div className={styles.surfaceRecommendation}>
-                      <span>Side-surface analysis</span>
+                      <span>Suggested layout</span>
                       <strong>{surfaceAnalysis ? `${surfaceAnalysis.recommendedCount} spots recommended` : "Analysing your model…"}</strong>
-                      <p>We measure usable outward-facing surfaces and exclude the top and bottom. {placementProfile === "car" ? "Cars start with doors, quarter panels, front and rear." : placementProfile === "yacht" ? "Yachts start with port, starboard, bow and stern zones." : placementProfile === "jet" ? "Aircraft start with both fuselage sides, nose and tail zones." : "The first layout spreads placements across distinct side faces."}</p>
+                      <p>{placementProfile === "car" ? "Cars start with the hood, both front doors and both rear doors." : placementProfile === "yacht" ? "Yachts start with both hull sides, both superstructure sides, the bow and the stern." : placementProfile === "jet" ? "Aircraft start with both fuselage sides, both engine areas and both sides of the tail." : "We spread the first layout across distinct outward-facing surfaces."}</p>
                     </div>
                     <label className={styles.spotCountControl}>
                       <span>Number of spots</span>
@@ -1214,15 +1299,15 @@ export function CreateLaptopForm() {
                         <input
                           type="number"
                           min={MIN_SURFACE_SPOTS}
-                          max={surfaceAnalysis?.placements.length || MAX_SURFACE_SPOTS}
+                          max={MAX_SURFACE_SPOTS}
                           value={layoutCount}
                           onChange={(event) => updateSurfaceSpotCount(Number(event.target.value))}
                           aria-describedby="spot-count-note"
                         />
-                        <button type="button" aria-label="Add one spot" disabled={layoutCount >= (surfaceAnalysis?.placements.length || MAX_SURFACE_SPOTS)} onClick={() => updateSurfaceSpotCount(layoutCount + 1)}>+</button>
+                        <button type="button" aria-label="Add one spot" disabled={layoutCount >= MAX_SURFACE_SPOTS} onClick={() => updateSurfaceSpotCount(layoutCount + 1)}>+</button>
                       </span>
                     </label>
-                    <p id="spot-count-note" className={styles.surfaceHint}>Select a numbered spot, then click a side surface in the 3D preview to move it.</p>
+                    <p id="spot-count-note" className={styles.surfaceHint}>Choose 1–20 spots. Select a numbered spot, then click an eligible surface in the 3D preview to move it.</p>
                     <div className={styles.spotSelector} role="group" aria-label="Surface spots">
                       {surfaceSpots.slice(0, layoutCount).map((spot) => (
                         <button
@@ -1299,7 +1384,7 @@ export function CreateLaptopForm() {
                 <dl className={styles.summary}>
                   <div><dt>Object</dt><dd>{objectName}</dd></div>
                   <div><dt>Ownership</dt><dd>{ownership === "own" ? "You own it" : `Funding ${formatMoney(fundingCost || 0)}`}</dd></div>
-                  <div><dt>Layout</dt><dd>{layoutCount + (hasSpecialSpot ? 1 : 0)} spots{hasSpecialSpot ? ", logo covered" : ""}</dd></div>
+                  <div><dt>Layout</dt><dd>{layoutCount + (hasSpecialSpot ? 1 : 0)} {layoutCount + (hasSpecialSpot ? 1 : 0) === 1 ? "spot" : "spots"}{hasSpecialSpot ? ", logo covered" : ""}</dd></div>
                   <div><dt>If it all sells</dt><dd>{formatMoney(totalFloor)}</dd></div>
                   <div><dt>Runs for</dt><dd>{listingDays} days</dd></div>
                   <div><dt>Stickers stay</dt><dd>{stickerMonths} months</dd></div>
@@ -1366,7 +1451,7 @@ export function CreateLaptopForm() {
               </fieldset>
             )}
 
-            {step < 7 && <div className={styles.actions}>{step > 0 && <button type="button" className={styles.backButton} onClick={backStep}>Back</button>}<button type="button" className={styles.continueButton} disabled={(step === 0 && !objectIsValid) || (step === 1 && !machineIsValid) || (step === 3 && !layoutIsValid)} onClick={continueStep}>{step === 0 && needsCustomModel && !brandModel ? "Upload a 3D model to continue" : step === 3 && !layoutIsValid ? "Analysing model surfaces…" : "Continue"}</button></div>}
+            {step < 7 && <div className={styles.actions}>{step > 0 && <button type="button" className={styles.backButton} onClick={backStep}>Back</button>}<button type="button" className={styles.continueButton} disabled={(step === 0 && !objectIsValid) || (step === 1 && !machineIsValid) || (step === 2 && !customShowcaseIsValid) || (step === 3 && !layoutIsValid)} onClick={continueStep}>{step === 0 && needsCustomModel && !brandModel ? "Upload a 3D model to continue" : step === 2 && !customShowcaseIsValid ? "Describe the other location" : step === 3 && !layoutIsValid ? "Analysing model surfaces…" : "Continue"}</button></div>}
           </section>
 
           <aside className={styles.previewColumn} aria-label={`${objectName} auction preview`}>
@@ -1427,7 +1512,7 @@ export function CreateLaptopForm() {
                 {hasSpecialSpot && <button type="button" className={`${styles.previewSpot} ${styles.specialPreview}`} aria-label={`Spot over the logo, Large. ${formatMoney(specialAmount)}.`}><strong>Large</strong><span>{formatMoney(specialAmount)}</span></button>}
               </div>
             )}
-            <p>{layoutCount} spots · from {formatMoney(minimumPrice)}</p>
+            <p>{layoutCount} {layoutCount === 1 ? "spot" : "spots"} · from {formatMoney(minimumPrice)}</p>
           </aside>
         </form>
       </main>

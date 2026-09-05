@@ -1,5 +1,5 @@
-export const MIN_SURFACE_SPOTS = 4;
-export const MAX_SURFACE_SPOTS = 10;
+export const MIN_SURFACE_SPOTS = 1;
+export const MAX_SURFACE_SPOTS = 20;
 
 export type SurfaceVector = [number, number, number];
 
@@ -27,7 +27,15 @@ export type SpotLayoutItem = {
 
 export type SurfacePlacementProfile = "car" | "yacht" | "jet" | "generic";
 
+export const RECOMMENDED_SURFACE_SPOTS: Record<SurfacePlacementProfile, number> = {
+  car: 5,
+  yacht: 6,
+  jet: 6,
+  generic: 8,
+};
+
 export function clampSurfaceSpotCount(value: number) {
+  if (!Number.isFinite(value)) return MIN_SURFACE_SPOTS;
   return Math.min(MAX_SURFACE_SPOTS, Math.max(MIN_SURFACE_SPOTS, Math.round(value)));
 }
 

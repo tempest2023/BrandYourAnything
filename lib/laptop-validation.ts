@@ -14,6 +14,10 @@ import {
   getPresetModelStoragePath,
   type PresetModelId,
 } from "@/lib/preset-models";
+import {
+  isValidCustomShowcase,
+  MAX_CUSTOM_SHOWCASE_LENGTH,
+} from "@/lib/showcase-options";
 
 export const MAX_LAPTOP_PHOTO_BYTES = 5 * 1024 * 1024;
 
@@ -149,6 +153,12 @@ export function parseLaptopForm(formData: FormData): ParsedLaptopForm {
     throw new LaptopValidationError("Choose a supported auction object type.");
   }
   const assetName = requiredText(formData, "assetName", 2, 80);
+  const customShowcase = optionalText(formData, "customShowcase", MAX_CUSTOM_SHOWCASE_LENGTH);
+  if (customShowcase !== null && !isValidCustomShowcase(customShowcase)) {
+    throw new LaptopValidationError(
+      "Other visibility must use letters, numbers, spaces, and basic punctuation only.",
+    );
+  }
   const spotLayout = parseSpotLayout(formData, assetType);
   const presetModelIdValue = optionalText(formData, "presetModelId", 64);
   const presetModel = getPresetModel(presetModelIdValue);

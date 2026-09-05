@@ -4,6 +4,7 @@ import { BidValidationError, parseBidForm } from "@/lib/bid-validation";
 import { getLogoBucket } from "@/lib/database-names";
 import { getLaptopSnapshot, placeLaptopBid } from "@/lib/laptop-repository";
 import { getSupabaseAdmin, isSupabaseConfigured } from "@/lib/supabase-admin";
+import { MAX_SURFACE_SPOTS } from "@/lib/surface-spots";
 
 export const runtime = "nodejs";
 
@@ -49,7 +50,7 @@ export async function POST(
 
   try {
     const { slug } = await context.params;
-    const input = parseBidForm(await request.formData());
+    const input = parseBidForm(await request.formData(), MAX_SURFACE_SPOTS);
     if (input.logo) {
       logoStoragePath = await uploadLogo(input.logo, slug, input.spotId, input.idempotencyKey);
     }

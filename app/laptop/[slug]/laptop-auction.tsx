@@ -258,7 +258,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
           <p>{snapshot.campaign.tagline}</p>
           <div className={styles.heroStats}>
             <span><b>{money(totalRaised)}</b> {t("home.raised")}</span>
-            <span><b>{t("laptop.spotsClaimed", { filled, count: snapshot.spots.length })}</b></span>
+            <span><b>{t(snapshot.spots.length === 1 ? "laptop.spotClaimed" : "laptop.spotsClaimed", { filled, count: snapshot.spots.length })}</b></span>
             <span><b>{countdown}</b></span>
           </div>
         </div>
@@ -300,7 +300,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
 
       <section className={styles.auctionSection} id="auction">
         <div className={styles.auctionIntro}>
-          <p>{t(isAnything ? "laptop.anythingPlacements" : "laptop.tenPlacements", { count: snapshot.spots.length })}</p>
+          <p>{t(isAnything && snapshot.spots.length === 1 ? "laptop.anythingPlacement" : isAnything ? "laptop.anythingPlacements" : "laptop.tenPlacements", { count: snapshot.spots.length })}</p>
           <h2>{t(isAnything ? "laptop.chooseOnObject" : "laptop.chooseWhere")}</h2>
         </div>
         <div className={styles.auctionGrid}>

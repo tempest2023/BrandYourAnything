@@ -13,6 +13,7 @@ import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.j
 import { getBrandModelFormat, type BrandModelFormat } from "@/lib/brand-model";
 import {
   MAX_SURFACE_SPOTS,
+  RECOMMENDED_SURFACE_SPOTS,
   type SurfaceModelAnalysis,
   type SurfacePlacementProfile,
   type SurfaceSpotPlacement,
@@ -53,13 +54,6 @@ const MARKER_POSITIONS = [
   [18, 24], [50, 13], [82, 24], [10, 49], [36, 42],
   [64, 42], [90, 49], [21, 76], [50, 83], [79, 76],
 ] as const;
-
-const PROFILE_COUNTS: Record<SurfacePlacementProfile, number> = {
-  car: 8,
-  yacht: 10,
-  jet: 10,
-  generic: 8,
-};
 
 function disposeMaterial(material: THREE.Material) {
   for (const value of Object.values(material)) {
@@ -123,13 +117,36 @@ function pointDistance(a: THREE.Vector3, b: THREE.Vector3, size: THREE.Vector3) 
 }
 
 function profileTargets(profile: SurfacePlacementProfile) {
-  if (profile === "generic") return [];
-  const sideStops = profile === "car" ? [-0.28, 0, 0.28] : [-0.36, -0.12, 0.12, 0.36];
-  return [
-    ...([-1, 1] as const).flatMap((side) => sideStops.map((length) => ({ length, side, end: 0 }))),
-    { length: -0.46, side: 0, end: -1 },
-    { length: 0.46, side: 0, end: 1 },
-  ];
+  if (profile === "car") {
+    return [
+      { length: 0.4, side: 0, end: 0, up: true, height: -0.18 },
+      { length: -0.17, side: -1, end: 0, height: 0 },
+      { length: -0.17, side: 1, end: 0, height: 0 },
+      { length: 0.2, side: -1, end: 0, height: 0 },
+      { length: 0.2, side: 1, end: 0, height: 0 },
+    ];
+  }
+  if (profile === "yacht") {
+    return [
+      { length: 0, side: -1, end: 0, height: -0.08 },
+      { length: 0, side: 1, end: 0, height: -0.08 },
+      { length: 0, side: -1, end: 0, height: 0.2 },
+      { length: 0, side: 1, end: 0, height: 0.2 },
+      { length: -0.46, side: 0, end: -1, height: 0 },
+      { length: 0.46, side: 0, end: 1, height: 0 },
+    ];
+  }
+  if (profile === "jet") {
+    return [
+      { length: -0.18, side: -1, end: 0, height: 0 },
+      { length: -0.18, side: 1, end: 0, height: 0 },
+      { length: 0.08, side: -1, end: 0, height: -0.08 },
+      { length: 0.08, side: 1, end: 0, height: -0.08 },
+      { length: 0.36, side: -1, end: 0, height: 0.14 },
+      { length: 0.36, side: 1, end: 0, height: 0.14 },
+    ];
+  }
+  return [];
 }
 
 function analyzeModelSurface(root: THREE.Object3D, profile: SurfacePlacementProfile): SurfaceModelAnalysis {
@@ -165,7 +182,8 @@ function analyzeModelSurface(root: THREE.Object3D, profile: SurfacePlacementProf
       const area = cross.length() * 0.5 * stride;
       if (!Number.isFinite(area) || area < 0.000001) continue;
       const normal = cross.normalize();
-      if (Math.abs(normal.y) >= 0.72) continue;
+      const isCarHoodCandidate = profile === "car" && normal.y > 0.72;
+      if (Math.abs(normal.y) >= 0.72 && !isCarHoodCandidate) continue;
       const point = a.clone().add(b).add(c).multiplyScalar(1 / 3);
       usableSideArea += area;
       candidates.push({ point, normal, area });
@@ -189,7 +207,7 @@ function analyzeModelSurface(root: THREE.Object3D, profile: SurfacePlacementProf
       ));
       return { id: index + 1, position: vectorTuple(point), normal: vectorTuple(normal) };
     });
-    return { recommendedCount: PROFILE_COUNTS[profile], usableSideArea: 0, placements: fallback };
+    return { recommendedCount: RECOMMENDED_SURFACE_SPOTS[profile], usableSideArea: 0, placements: fallback };
   }
 
   const lengthIsX = size.x >= size.z;
@@ -207,10 +225,10 @@ function analyzeModelSurface(root: THREE.Object3D, profile: SurfacePlacementProf
       const normalizedLength = (lengthValue - (lengthIsX ? center.x : center.z)) / Math.max(lengthIsX ? size.x : size.z, 0.01);
       const normalizedSide = (sideValue - (lengthIsX ? center.z : center.x)) / Math.max(lengthIsX ? size.z : size.x, 0.01);
       const normalizedHeight = (candidate.point.y - center.y) / Math.max(size.y, 0.01);
-      const desiredNormal = target.end ? lengthNormal * target.end : sideNormal * target.side;
+      const desiredNormal = target.up ? candidate.normal.y : target.end ? lengthNormal * target.end : sideNormal * target.side;
       const score = Math.abs(normalizedLength - target.length)
         + Math.abs(normalizedSide - target.side * 0.48) * 0.7
-        + Math.abs(normalizedHeight) * 0.35
+        + Math.abs(normalizedHeight - target.height) * 0.35
         + Math.max(0, 0.65 - desiredNormal) * 1.6;
       if (score < bestScore) {
         best = candidate;
@@ -247,7 +265,7 @@ function analyzeModelSurface(root: THREE.Object3D, profile: SurfacePlacementProf
   const sideBoxArea = Math.max(0.001, 2 * size.y * (size.x + size.z));
   const genericCount = Math.min(12, Math.max(6, Math.round(6 + Math.min(3, usableSideArea / sideBoxArea))));
   return {
-    recommendedCount: profile === "generic" ? genericCount : PROFILE_COUNTS[profile],
+    recommendedCount: profile === "generic" ? genericCount : RECOMMENDED_SURFACE_SPOTS[profile],
     usableSideArea: Number(usableSideArea.toFixed(3)),
     placements: chosen.slice(0, MAX_SURFACE_SPOTS).map((candidate, index) => ({
       id: index + 1,
@@ -419,8 +437,11 @@ export function ModelStage({
       const normalMatrix = new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
       const normal = hit.face.normal.clone().applyMatrix3(normalMatrix).normalize();
       if (hit.point.dot(normal) < 0) normal.multiplyScalar(-1);
-      if (Math.abs(normal.y) >= 0.72) {
-        onPlacementErrorRef.current?.("Choose a side surface — top and bottom faces are excluded.");
+      const isCarHood = placementProfile === "car" && normal.y > 0.72;
+      if (Math.abs(normal.y) >= 0.72 && !isCarHood) {
+        onPlacementErrorRef.current?.(placementProfile === "car"
+          ? "Choose an outward-facing surface — the underside is excluded."
+          : "Choose a side surface — top and bottom faces are excluded.");
         return;
       }
       onPlaceSpotRef.current({
@@ -494,7 +515,7 @@ export function ModelStage({
         </div>
       )}
       {status === "ready" && (
-        <span className={styles.orbitHint}>{editing ? "Select a spot, then click a side surface" : "Drag to orbit · scroll to zoom"}</span>
+        <span className={styles.orbitHint}>{editing ? "Select a spot, then click an eligible surface" : "Drag to orbit · scroll to zoom"}</span>
       )}
       {spots.map((spot, index) => {
         const fallback = MARKER_POSITIONS[index % MARKER_POSITIONS.length];
