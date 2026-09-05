@@ -469,6 +469,7 @@ export function CreateLaptopForm() {
   const [authFeedback, setAuthFeedback] = useState("");
   const [authError, setAuthError] = useState("");
   const [xAuthAvailability, setXAuthAvailability] = useState<XAuthAvailability>("checking");
+  const authPasswordRef = useRef<HTMLInputElement>(null);
   const xAuthRequestRef = useRef<Promise<boolean> | null>(null);
   const [draftReady, setDraftReady] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -1082,6 +1083,15 @@ export function CreateLaptopForm() {
     }
   };
 
+  const prepareEmailSignIn = (email: string) => {
+    window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
+    setEmailAuthMode("sign-in");
+    setAuthEmail(email);
+    setAuthPassword("");
+    setShowPassword(false);
+    window.requestAnimationFrame(() => authPasswordRef.current?.focus());
+  };
+
   const handleEmailAuth = async () => {
     if (authSubmitting || authRedirecting || submitting) return;
     const email = authEmail.trim().toLowerCase();
@@ -1105,11 +1115,8 @@ export function CreateLaptopForm() {
           (EMAIL_SEND_COOLDOWN_MS - (Date.now() - cooldown.sentAt)) / 60_000,
         ));
         if (cooldown.email === email) {
-          setEmailAuthMode("sign-in");
-          setAuthEmail(email);
-          setAuthPassword("");
-          setShowPassword(false);
-          setAuthError(`A confirmation email was already sent for this account. Confirm it, then enter your password to sign in. You can request another email in ${remainingMinutes} minute${remainingMinutes === 1 ? "" : "s"}.`);
+          prepareEmailSignIn(email);
+          setAuthError(`This email is already registered. Confirm the email we sent, then enter your password to sign in. You can request another email in ${remainingMinutes} minute${remainingMinutes === 1 ? "" : "s"}.`);
         } else {
           setAuthError(`This browser requested a confirmation email recently. Try again in ${remainingMinutes} minute${remainingMinutes === 1 ? "" : "s"}.`);
         }
@@ -1128,12 +1135,8 @@ export function CreateLaptopForm() {
         });
         if (error) throw error;
         if (!data.user || data.user.identities?.length === 0) {
-          window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
-          setEmailAuthMode("sign-in");
-          setAuthEmail(email);
-          setAuthPassword("");
-          setShowPassword(false);
-          setAuthError("This email is already registered. Sign in instead.");
+          prepareEmailSignIn(email);
+          setAuthError("This email is already registered. Enter your password to sign in.");
           return;
         }
 
@@ -1144,12 +1147,8 @@ export function CreateLaptopForm() {
           setAccountLabel(data.user?.email || email);
           setAuthFeedback("Account created. Publishing your auction…");
         } else {
-          window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
-          setEmailAuthMode("sign-in");
-          setAuthEmail(email);
-          setAuthPassword("");
-          setShowPassword(false);
-          setAuthFeedback("Account created. Confirm your email, then enter your password here to sign in.");
+          prepareEmailSignIn(email);
+          setAuthFeedback(`Account created. We sent a confirmation link to ${email}. Confirm your email, then return here and enter your password to sign in.`);
         }
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password: authPassword });
@@ -1168,7 +1167,8 @@ export function CreateLaptopForm() {
         setAuthError("Confirm your email before signing in. Check your inbox, then try again.");
       } else if (authCode === "over_email_send_rate_limit") {
         rememberEmailSent(email);
-        setAuthError("A confirmation email was sent recently. Wait 5 minutes before requesting another.");
+        prepareEmailSignIn(email);
+        setAuthError("This email is already registered, and a confirmation email was sent recently. Confirm your email, then enter your password to sign in.");
       } else {
         setAuthError(error instanceof Error ? error.message : "Email sign-in failed. Please try again.");
       }
@@ -1660,6 +1660,7 @@ export function CreateLaptopForm() {
                             Password
                             <span className={styles.passwordField}>
                               <input
+                                ref={authPasswordRef}
                                 type={showPassword ? "text" : "password"}
                                 autoComplete={emailAuthMode === "sign-up" ? "new-password" : "current-password"}
                                 minLength={emailAuthMode === "sign-up" ? 8 : 6}
