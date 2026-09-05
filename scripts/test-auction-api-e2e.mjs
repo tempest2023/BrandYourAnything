@@ -135,11 +135,9 @@ async function assertApiError(response, expectedStatus, expectedCode) {
 
 function spotLayout() {
   const definitions = [
-    ["Hood", "L", "Large panel · Up to 60% of the selected region", 40_000_000, [0, 0.6, 1], [0, 1, 0]],
-    ["Driver front door", "M", "Medium panel · Up to 35% of the selected region", 20_000_000, [-1, 0, 0.3], [-1, 0, 0]],
-    ["Passenger front door", "M", "Medium panel · Up to 35% of the selected region", 20_000_000, [1, 0, 0.3], [1, 0, 0]],
-    ["Driver rear door", "S", "Logo mark · Up to 15% of the selected region", 12_500_000, [-1, 0, -0.4], [-1, 0, 0]],
-    ["Passenger rear door", "S", "Logo mark · Up to 15% of the selected region", 12_500_000, [1, 0, -0.4], [1, 0, 0]],
+    ["Port fuselage", "L", "Large panel · Up to 60% of the selected region", 7_998_100, [-0.1039, 0.01347, 0.17807], [0.01566, 0.34136, 0.9398]],
+    ["Starboard fuselage", "L", "Large panel · Up to 60% of the selected region", 40_000_000, [-0.0843, -0.11537, -0.18705], [0.07311, -0.0414, -0.99646]],
+    ["Starboard tail", "S", "Logo mark · Up to 15% of the selected region", 2_500_000, [1.12394, 0.19101, -0.04533], [0.06769, -0.02009, -0.9975]],
   ];
   return definitions.map(([name, size, dimensions, openingBidCents, position, normal], index) => ({
     id: index + 1,
@@ -156,21 +154,21 @@ function auctionForm({ slug, idempotencyKey, auctionClosesAt }) {
   const form = new FormData();
   const values = {
     slug,
-    title: "Your brand, on this Cybertruck.",
-    tagline: "Five real-world placements on a moving electric vehicle.",
-    story: "This API E2E auction verifies that non-laptop objects can be published and bid on through HTTP.",
-    objectName: "Tesla Cybertruck",
+    title: "Your brand, aboard my private jet.",
+    tagline: "Put your brand on Long-range private jet.",
+    story: "Expected visibility: Domestic and international routes, Client, executive and charter flights, Media and production trips, FBO terminals and private airports, Airport aprons and hangars, Aviation shows and industry events, Business travel hubs, Posts, livestreams and videos. Each approved brand placement stays on for 6 months.",
+    objectName: "Long-range private jet",
     assetType: "anything",
-    assetName: "Tesla Cybertruck",
-    presetModelId: "tesla-cybertruck",
-    customShowcase: "Roads, charging stations, events & public parking",
-    layoutCount: "5",
+    assetName: "Long-range private jet",
+    presetModelId: "private-jet",
+    customShowcase: "",
+    layoutCount: "3",
     spotLayout: JSON.stringify(spotLayout()),
-    goalCents: "105000000",
-    smallOpeningBidCents: "12500000",
-    mediumOpeningBidCents: "20000000",
-    largeOpeningBidCents: "40000000",
-    minIncrementCents: "100000",
+    goalCents: "50498100",
+    smallOpeningBidCents: "2500000",
+    mediumOpeningBidCents: "20000",
+    largeOpeningBidCents: "7998100",
+    minIncrementCents: "1000",
     auctionClosesAt,
     idempotencyKey,
   };
@@ -178,7 +176,7 @@ function auctionForm({ slug, idempotencyKey, auctionClosesAt }) {
   return form;
 }
 
-function bidForm({ idempotencyKey, amountCents = 40_000_000 }) {
+function bidForm({ idempotencyKey, amountCents = 7_998_100 }) {
   const form = new FormData();
   form.set("spotId", "1");
   form.set("amountCents", String(amountCents));
@@ -265,9 +263,9 @@ test("auction HTTP API", { timeout: 120_000 }, async (t) => {
       assert.match(body.result.auctionId, /^[0-9a-f-]{36}$/i);
       assert.equal(body.location, `/${slug}`);
       assert.equal(body.snapshot.campaign.assetType, "anything");
-      assert.equal(body.snapshot.campaign.assetName, "Tesla Cybertruck");
-      assert.equal(body.snapshot.campaign.goal, 1_050_000);
-      assert.equal(body.snapshot.spots.length, 5);
+      assert.equal(body.snapshot.campaign.assetName, "Long-range private jet");
+      assert.equal(body.snapshot.campaign.goal, 504_981);
+      assert.equal(body.snapshot.spots.length, 3);
       assert.deepEqual(
         body.snapshot.spots.map(({ id, name, bid }) => ({ id, name, bid })),
         spotLayout().map(({ id, name, openingBidCents }) => ({ id, name, bid: openingBidCents / 100 })),
@@ -278,7 +276,7 @@ test("auction HTTP API", { timeout: 120_000 }, async (t) => {
       assert.equal(readResponse.status, 200);
       assert.equal(readResponse.headers.get("cache-control"), "no-store");
       assert.equal(snapshot.campaign.slug, slug);
-      assert.equal(snapshot.spots[0].surfacePosition[1], 0.6);
+      assert.deepEqual(snapshot.spots[0].surfacePosition, spotLayout()[0].position);
     });
 
     await t.test("keeps creation idempotent and reports slug conflicts as codes", async () => {
@@ -314,8 +312,8 @@ test("auction HTTP API", { timeout: 120_000 }, async (t) => {
       assert.equal(accepted.status, 201, `Bid failed: ${JSON.stringify(acceptedBody)}\n${app.logs()}`);
       assert.equal(acceptedBody.result.accepted, true);
       assert.equal(acceptedBody.result.reason, "accepted");
-      assert.equal(acceptedBody.result.currentBid, 400_000);
-      assert.equal(acceptedBody.result.minimumNextBid, 401_000);
+      assert.equal(acceptedBody.result.currentBid, 79_981);
+      assert.equal(acceptedBody.result.minimumNextBid, 79_991);
       assert.equal(acceptedBody.snapshot.spots[0].holder, "API E2E Brand");
 
       const retry = await fetch(`${auctionUrl}/bids`, {
@@ -332,14 +330,14 @@ test("auction HTTP API", { timeout: 120_000 }, async (t) => {
         body: bidForm({ idempotencyKey: randomUUID() }),
       });
       const tooLowBody = await assertApiError(tooLow, 409, "bid_too_low");
-      assert.equal(tooLowBody.result.minimumNextBid, 401_000);
+      assert.equal(tooLowBody.result.minimumNextBid, 79_991);
 
       const refreshed = await fetch(auctionUrl);
       const snapshot = await readJson(refreshed);
       assert.equal(refreshed.status, 200);
       assert.equal(snapshot.spots[0].bids, 1);
       assert.equal(snapshot.history[0].brand, "API E2E Brand");
-      assert.equal(snapshot.history[0].amount, 400_000);
+      assert.equal(snapshot.history[0].amount, 79_981);
     });
 
     await t.test("returns a coded 404 for an unknown auction", async () => {
