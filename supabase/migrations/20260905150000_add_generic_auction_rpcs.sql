@@ -1,6 +1,17 @@
--- Expose auction-named RPCs now that campaigns can feature any object.
--- The private legacy implementation functions continue to own the transactional
--- logic; only the service-facing RPC contract changes in this migration.
+-- Rename the transactional implementation and expose auction-named RPCs now
+-- that campaigns can feature any object. Function renames preserve the existing
+-- implementation and data while removing laptop terminology from the DB API.
+
+alter function public.ba_create_laptop_internal(
+  text, text, text, text, text, text, text, text, bigint, timestamptz,
+  text, bigint, bigint, bigint, integer, uuid
+) rename to ba_create_auction_internal;
+alter function public.ba_configure_laptop_spots_internal(
+  text, uuid, jsonb, bigint, bigint, bigint, integer, uuid
+) rename to ba_configure_auction_spots_internal;
+alter function public.ba_place_laptop_bid_internal(
+  text, text, smallint, bigint, text, text, text, text, text, uuid
+) rename to ba_place_auction_bid_internal;
 
 create function public.ba_dev_create_auction(
   p_slug text,
@@ -25,7 +36,7 @@ security definer
 set search_path = ''
 as $$
   select result.accepted, result.reason, result.laptop_id, result.laptop_slug
-  from public.ba_create_laptop_internal(
+  from public.ba_create_auction_internal(
     'dev', p_slug, p_owner_name, p_owner_email, p_title, p_tagline, p_story,
     p_object_name, p_goal_cents, p_auction_closes_at, p_photo_storage_path,
     p_small_opening_bid_cents, p_medium_opening_bid_cents,
@@ -56,7 +67,7 @@ security definer
 set search_path = ''
 as $$
   select result.accepted, result.reason, result.laptop_id, result.laptop_slug
-  from public.ba_create_laptop_internal(
+  from public.ba_create_auction_internal(
     'prod', p_slug, p_owner_name, p_owner_email, p_title, p_tagline, p_story,
     p_object_name, p_goal_cents, p_auction_closes_at, p_photo_storage_path,
     p_small_opening_bid_cents, p_medium_opening_bid_cents,
@@ -78,7 +89,7 @@ language sql
 security definer
 set search_path = ''
 as $$
-  select public.ba_configure_laptop_spots_internal(
+  select public.ba_configure_auction_spots_internal(
     'dev', p_auction_id, p_layout, p_small_opening_bid_cents,
     p_medium_opening_bid_cents, p_large_opening_bid_cents,
     p_min_increment_cents, p_idempotency_key
@@ -99,7 +110,7 @@ language sql
 security definer
 set search_path = ''
 as $$
-  select public.ba_configure_laptop_spots_internal(
+  select public.ba_configure_auction_spots_internal(
     'prod', p_auction_id, p_layout, p_small_opening_bid_cents,
     p_medium_opening_bid_cents, p_large_opening_bid_cents,
     p_min_increment_cents, p_idempotency_key
@@ -130,7 +141,7 @@ language sql
 security definer
 set search_path = ''
 as $$
-  select * from public.ba_place_laptop_bid_internal(
+  select * from public.ba_place_auction_bid_internal(
     'dev', p_auction_slug, p_spot_position, p_amount_cents, p_bidder_name,
     p_bidder_email, p_website, p_x_handle, p_logo_storage_path,
     p_idempotency_key
@@ -161,7 +172,7 @@ language sql
 security definer
 set search_path = ''
 as $$
-  select * from public.ba_place_laptop_bid_internal(
+  select * from public.ba_place_auction_bid_internal(
     'prod', p_auction_slug, p_spot_position, p_amount_cents, p_bidder_name,
     p_bidder_email, p_website, p_x_handle, p_logo_storage_path,
     p_idempotency_key
