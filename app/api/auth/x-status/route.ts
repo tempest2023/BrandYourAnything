@@ -31,7 +31,7 @@ export async function GET() {
   } catch (error) {
     console.error("Failed to check X authentication availability", error);
     return Response.json(
-      { error: "X authentication availability could not be checked." },
+      { errorCode: "x_auth_status_failed" },
       { status: 503, headers: NO_STORE_HEADERS },
     );
   }

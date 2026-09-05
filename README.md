@@ -75,7 +75,7 @@ Do not create these tables or buckets manually, and do not run `supabase db rese
 
 ### 4. Configure X sign in
 
-When X / Twitter OAuth 2.0 is configured, `POST /api/laptops` sends the access token back to Supabase, verifies the user, and derives the public owner identity on the server. If X sign-in is unavailable, the creator uses a browser-generated management key stored in `localStorage`; the server hashes that key into a stable private owner identity and applies the same creation rate limit.
+When X / Twitter OAuth 2.0 is configured, `POST /api/auctions` sends the access token back to Supabase, verifies the user, and derives the public owner identity on the server. If X sign-in is unavailable, the creator uses a browser-generated management key stored in `localStorage`; the server hashes that key into a stable private owner identity and applies the same creation rate limit.
 
 1. In the [X Developer Portal](https://developer.x.com/), create an OAuth 2.0 Web App and enable **Request email from users**.
 2. Add `https://<project-ref>.supabase.co/auth/v1/callback` as the X app callback URL. For a local Supabase stack, also add `http://localhost:54321/auth/v1/callback`.
@@ -160,7 +160,7 @@ The browser requests a signed upload ticket, uploads the model straight to a pri
 
 ## Multi-tenant campaign flow
 
-`POST /api/laptops` validates the multipart creation form, stores an optional laptop photo privately, and creates the campaign plus all ten spots in one database transaction. Brand Anything campaigns attach the already-uploaded model metadata immediately afterward using the same idempotency key. Each campaign is published at `/<slug>` and exposes only public fields; the former `/laptop/<slug>` route remains compatible.
+`POST /api/auctions` validates the multipart creation form, stores optional auction media privately, and creates the campaign plus its spots in one database transaction. Brand Anything campaigns attach the already-uploaded model metadata immediately afterward using the same idempotency key. Each campaign is published at `/<slug>` and exposes only public fields; the former `/laptop/<slug>` route remains compatible.
 
 Every environment adds four compact tables:
 
@@ -171,14 +171,14 @@ Every environment adds four compact tables:
 
 The owner email, bidder emails, and Storage paths are never returned by the public API. Public images use short-lived signed URLs. `anon` and `authenticated` have no direct access to the tables, buckets, or write functions.
 
-Creation goes through `ba_<env>_create_laptop(...)`. It uses advisory locks for slug and idempotency races, creates the laptop and ten spots atomically, and applies a small per-email creation limit. Tenant bids go through `ba_<env>_place_laptop_bid(...)`; it locks the exact campaign spot, re-checks the live minimum, appends the bid, and updates the winner in one transaction. Idempotency keys make network retries safe.
+Creation goes through `ba_<env>_create_auction(...)`. It uses advisory locks for slug and idempotency races, creates the auction and its spots atomically, and applies a small per-identity creation limit. Tenant bids go through `ba_<env>_place_auction_bid(...)`; it locks the exact campaign spot, re-checks the live minimum, appends the bid, and updates the winner in one transaction. Idempotency keys make network retries safe.
 
 The browser only calls Next.js Route Handlers:
 
 - `POST /api/models/upload-ticket` validates a GLB request and returns a one-use signed upload URL plus a signed metadata claim.
-- `POST /api/laptops` publishes a campaign.
-- `GET /api/laptops/<slug>` returns its public snapshot.
-- `POST /api/laptops/<slug>/bids` places a concurrency-safe bid and optionally stores a private logo.
+- `POST /api/auctions` publishes a campaign.
+- `GET /api/auctions/<slug>` returns its public snapshot.
+- `POST /api/auctions/<slug>/bids` places a concurrency-safe bid and optionally stores a private logo.
 
 ## Included starter auction
 

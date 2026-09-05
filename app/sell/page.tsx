@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { CreateLaptopForm } from "../create/create-laptop-form";
+import { CreateAuctionForm } from "../create/create-auction-form";
 
 export const metadata: Metadata = {
   title: "Brand your anything — Brand Anything",
@@ -8,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function SellLaptopPage() {
-  return <CreateLaptopForm />;
+  return <CreateAuctionForm />;
 }

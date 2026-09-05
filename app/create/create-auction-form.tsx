@@ -6,8 +6,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "@/app/i18n-provider";
 import { ModelStage } from "@/app/model-stage";
+import {
+  isAuctionPublishErrorCode,
+  type AuctionPublishErrorCode,
+} from "@/lib/auction-api-errors";
 import type { BrandModelPreview, UploadedBrandModel } from "@/lib/brand-model";
-import { LOCALES, type Locale } from "@/lib/i18n";
+import { LOCALES, type Locale, type TranslationKey } from "@/lib/i18n";
 import {
   getPresetModel,
   type PresetModelId,
@@ -20,7 +24,7 @@ import {
   showcaseOptionsFor,
   type ShowcaseMachine,
 } from "@/lib/showcase-options";
-import { laptopPath, laptopUrl, SITE_HOST } from "@/lib/site";
+import { auctionPath, auctionUrl, SITE_HOST } from "@/lib/site";
 import {
   clampSurfaceSpotCount,
   MAX_SURFACE_SPOTS,
@@ -44,11 +48,21 @@ const STEPS = ["Object", "Ownership", "Showcase", "Layout", "Prices", "Listing",
 const DRAFT_STORAGE_KEY = "brand-anything-sell-draft";
 const LEGACY_DRAFT_STORAGE_KEY = "brandmylaptop-sell-draft";
 const PUBLISH_AFTER_AUTH_KEY = "brand-anything-publish-after-auth";
-const MANAGER_KEY_STORAGE_KEY = "brand-anything-lid-manager-key";
-const MANAGED_LID_STORAGE_KEY = "brand-anything-managed-lid";
+const MANAGER_KEY_STORAGE_KEY = "brand-anything-auction-manager-key";
+const MANAGED_AUCTION_STORAGE_KEY = "brand-anything-managed-auction";
 const X_AUTH_STATUS_STORAGE_KEY = "brand-anything-x-auth-status";
 const X_AUTH_STATUS_TTL_MS = 10 * 60 * 1000;
 const X_COMPOSE_URL = "https://x.com/compose/post";
+const PUBLISH_ERROR_KEYS: Record<AuctionPublishErrorCode, TranslationKey> = {
+  publish_unavailable: "sell.error.publishUnavailable",
+  slug_taken: "sell.error.slugTaken",
+  rate_limited: "sell.error.rateLimited",
+  request_conflict: "sell.error.requestConflict",
+  authentication_required: "sell.error.authenticationRequired",
+  authentication_forbidden: "sell.error.authenticationForbidden",
+  invalid_request: "sell.error.invalidRequest",
+  publish_failed: "sell.error.publishFailed",
+};
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHARE_LANGUAGE_LABELS: Record<Locale, string> = {
   en: "English",
@@ -261,13 +275,13 @@ function ObjectIcon({ kind }: { kind: (typeof OBJECT_PRESETS)[number]["icon"] })
   );
 }
 
-type ManagedLid = {
+type ManagedAuction = {
   slug: string;
   title: string;
 };
 
 type CreateResponse = {
-  error?: string;
+  errorCode?: unknown;
   location?: string;
   result?: { reason: string; slug: string };
 };
@@ -275,7 +289,7 @@ type CreateResponse = {
 type XAuthAvailability = "checking" | "available" | "unavailable" | "unknown";
 type XAuthStatusResponse = {
   configured?: unknown;
-  error?: string;
+  errorCode?: unknown;
 };
 type CachedXAuthStatus = {
   configured: boolean;
@@ -378,7 +392,7 @@ async function fetchXAuthStatus(): Promise<boolean> {
   });
   const payload = await response.json() as XAuthStatusResponse;
   if (!response.ok || typeof payload.configured !== "boolean") {
-    throw new Error(payload.error || "X authentication availability could not be checked.");
+    throw new Error("x_auth_status_failed");
   }
   return payload.configured;
 }
@@ -457,8 +471,8 @@ function SiteFooter() {
   );
 }
 
-export function CreateLaptopForm() {
-  const { locale } = useI18n();
+export function CreateAuctionForm() {
+  const { locale, t } = useI18n();
   const formRef = useRef<HTMLFormElement>(null);
   const surfaceSpotsRef = useRef<SurfaceSpotPlacement[]>([]);
   const [step, setStep] = useState(0);
@@ -502,7 +516,7 @@ export function CreateLaptopForm() {
   const [errorMessage, setErrorMessage] = useState("");
   const [createdLocation, setCreatedLocation] = useState<string | null>(null);
   const [publishedLocation, setPublishedLocation] = useState<string | null>(null);
-  const [managedLid, setManagedLid] = useState<ManagedLid | null>(null);
+  const [managedAuction, setManagedAuction] = useState<ManagedAuction | null>(null);
   const [shareLocale, setShareLocale] = useState<Locale>(locale);
   const [copyFeedback, setCopyFeedback] = useState<"idle" | "copied">("idle");
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
@@ -641,16 +655,16 @@ export function CreateLaptopForm() {
   }, []);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(MANAGED_LID_STORAGE_KEY);
+    const saved = window.localStorage.getItem(MANAGED_AUCTION_STORAGE_KEY);
     if (!saved) return;
     const timer = window.setTimeout(() => {
       try {
-        const candidate = JSON.parse(saved) as Partial<ManagedLid>;
+        const candidate = JSON.parse(saved) as Partial<ManagedAuction>;
         if (typeof candidate.slug === "string" && typeof candidate.title === "string") {
-          setManagedLid({ slug: candidate.slug, title: candidate.title });
+          setManagedAuction({ slug: candidate.slug, title: candidate.title });
         }
       } catch {
-        window.localStorage.removeItem(MANAGED_LID_STORAGE_KEY);
+        window.localStorage.removeItem(MANAGED_AUCTION_STORAGE_KEY);
       }
     }, 0);
     return () => window.clearTimeout(timer);
@@ -734,12 +748,12 @@ export function CreateLaptopForm() {
       setAuthReady(true);
       if (callbackError || error) {
         window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
-        const message = callbackError || "Your X session could not be restored. Please try again.";
-        if (isUnavailableXAuthError(message)) {
+        const rawMessage = callbackError || error?.message || "";
+        if (isUnavailableXAuthError(rawMessage)) {
           cacheXAuthStatus(false);
           setXAuthAvailability("unavailable");
         }
-        setErrorMessage(message);
+        setErrorMessage(t(callbackError ? "sell.error.xSignIn" : "sell.error.xSession"));
       }
     });
 
@@ -747,7 +761,7 @@ export function CreateLaptopForm() {
       active = false;
       listener.subscription.unsubscribe();
     };
-  }, [xAuthAvailability]);
+  }, [t, xAuthAvailability]);
 
   const isAnything = machine !== "mac" && machine !== "pc";
   const selectedPresetId = presetIdFor(machine, teslaModel);
@@ -817,8 +831,8 @@ export function CreateLaptopForm() {
     ...showcase,
     ...(customShowcaseEnabled && customShowcaseIsValid ? [normalizedCustomShowcase] : []),
   ];
-  const desiredPublicLocation = laptopPath(slug);
-  const sharePost = X_SHARE_POSTS[shareLocale](laptopUrl(slug), objectName, isAnything);
+  const desiredPublicLocation = auctionPath(slug);
+  const sharePost = X_SHARE_POSTS[shareLocale](auctionUrl(slug), objectName, isAnything);
 
   const selectLayout = (count: LayoutCount) => {
     setLayoutCount(count);
@@ -963,14 +977,14 @@ export function CreateLaptopForm() {
       : [...current, option]);
   };
 
-  const rememberManagedLid = (location: string) => {
+  const rememberManagedAuction = (location: string) => {
     const entry = { slug, title };
-    window.localStorage.setItem(MANAGED_LID_STORAGE_KEY, JSON.stringify(entry));
-    setManagedLid(entry);
+    window.localStorage.setItem(MANAGED_AUCTION_STORAGE_KEY, JSON.stringify(entry));
+    setManagedAuction(entry);
     setPublishedLocation(location);
   };
 
-  const publishLaptop = async (form: HTMLFormElement, mode: "x" | "browser") => {
+  const publishAuction = async (form: HTMLFormElement, mode: "x" | "browser") => {
     if (publishedLocation === desiredPublicLocation) return publishedLocation;
 
     setSubmitting(true);
@@ -988,7 +1002,7 @@ export function CreateLaptopForm() {
     formData.set("title", title);
     formData.set("tagline", isAnything ? `Put your brand on ${objectName}.` : "Put your brand on the lid I carry everywhere.");
     formData.set("story", storyParts.join(" "));
-    formData.set("laptopModel", objectName);
+    formData.set("objectName", objectName);
     formData.set("assetType", isAnything ? "anything" : "laptop");
     formData.set("assetName", objectName);
     formData.set("customShowcase", customShowcaseEnabled ? normalizedCustomShowcase : "");
@@ -1022,13 +1036,16 @@ export function CreateLaptopForm() {
 
     const headers: Record<string, string> = mode === "x" && accessToken
       ? { Authorization: `Bearer ${accessToken}` }
-      : { "X-Lid-Manager-Key": getOrCreateManagerKey() };
+      : { "X-Auction-Manager-Key": getOrCreateManagerKey() };
 
     try {
-      const response = await fetch("/api/laptops", { method: "POST", headers, body: formData });
+      const response = await fetch("/api/auctions", { method: "POST", headers, body: formData });
       const payload = await response.json() as CreateResponse;
       if (!response.ok || !payload.location) {
-        setErrorMessage(payload.error || "We could not publish this auction. Please try again.");
+        const errorCode = isAuctionPublishErrorCode(payload.errorCode)
+          ? payload.errorCode
+          : "publish_failed";
+        setErrorMessage(t(PUBLISH_ERROR_KEYS[errorCode]));
         if (payload.result?.reason === "idempotency_conflict") setIdempotencyKey(crypto.randomUUID());
         if (response.status === 401 && mode === "x" && isSupabaseBrowserConfigured()) {
           await getSupabaseBrowser().auth.signOut({ scope: "local" });
@@ -1038,10 +1055,10 @@ export function CreateLaptopForm() {
       }
       window.sessionStorage.removeItem(DRAFT_STORAGE_KEY);
       window.sessionStorage.removeItem(LEGACY_DRAFT_STORAGE_KEY);
-      rememberManagedLid(payload.location);
+      rememberManagedAuction(payload.location);
       return payload.location;
     } catch {
-      setErrorMessage("The network did not confirm publication. Try again safely with the same details.");
+      setErrorMessage(t("sell.error.network"));
       return null;
     } finally {
       setSubmitting(false);
@@ -1052,11 +1069,11 @@ export function CreateLaptopForm() {
     const form = formRef.current;
     if (!form || submitting || !form.reportValidity()) return;
     if (!machineIsValid || !layoutIsValid || !objectIsValid || !customShowcaseIsValid || !surfacePricingIsValid) {
-      setErrorMessage("Please complete all required steps before publishing.");
+      setErrorMessage(t("sell.error.incomplete"));
       return;
     }
 
-    await publishLaptop(form, "browser");
+    await publishAuction(form, "browser");
   };
 
   const handleShareCopy = async () => {
@@ -1067,7 +1084,7 @@ export function CreateLaptopForm() {
       await copyText(sharePost);
       setCopyFeedback("copied");
     } catch {
-      setErrorMessage("Your browser blocked copying. Select the post text and copy it manually.");
+      setErrorMessage(t("sell.error.copyBlocked"));
     }
   };
 
@@ -1076,7 +1093,7 @@ export function CreateLaptopForm() {
     if (submitting || authRedirecting) return;
 
     if (!machineIsValid || !layoutIsValid || !objectIsValid || !customShowcaseIsValid || !surfacePricingIsValid) {
-      setErrorMessage("Please complete all required steps before publishing.");
+      setErrorMessage(t("sell.error.incomplete"));
       return;
     }
 
@@ -1086,7 +1103,7 @@ export function CreateLaptopForm() {
     }
 
     if (!authReady) {
-      setErrorMessage("Checking your X session. Please try again in a moment.");
+      setErrorMessage(t("sell.error.xChecking"));
       return;
     }
 
@@ -1104,22 +1121,22 @@ export function CreateLaptopForm() {
       } catch (error) {
         window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
         setAuthRedirecting(false);
-        const message = error instanceof Error ? error.message : "X sign-in could not be started.";
-        if (isUnavailableXAuthError(message)) {
+        const rawMessage = error instanceof Error ? error.message : "";
+        if (isUnavailableXAuthError(rawMessage)) {
           cacheXAuthStatus(false);
           setXAuthAvailability("unavailable");
           setErrorMessage("");
         } else {
           clearCachedXAuthStatus();
           setXAuthAvailability("unknown");
-          setErrorMessage(message);
+          setErrorMessage(t("sell.error.xSignIn"));
         }
       }
       return;
     }
 
     window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
-    const location = await publishLaptop(event.currentTarget, "x");
+    const location = await publishAuction(event.currentTarget, "x");
     if (location) setCreatedLocation(location);
   };
 
@@ -1155,8 +1172,8 @@ export function CreateLaptopForm() {
           <p className={styles.heroKicker}>From Mac lids to moving machines</p>
           <h1>Put anything up.</h1>
           <p>You bring the object and set the prices; Brand Anything turns it into a live sponsorship auction.</p>
-          {xAuthAvailability === "unavailable" ? managedLid && (
-            <p className={styles.signIn}>Your auction is saved in this browser. <Link href={laptopPath(managedLid.slug)}>Manage {managedLid.title}</Link>.</p>
+          {xAuthAvailability === "unavailable" ? managedAuction && (
+            <p className={styles.signIn}>Your auction is saved in this browser. <Link href={auctionPath(managedAuction.slug)}>Manage {managedAuction.title}</Link>.</p>
           ) : xAuthAvailability === "available" ? (
             <p className={styles.signIn}>Already published an auction? <Link href="/">Sign in to manage it</Link>.</p>
           ) : null}
@@ -1279,7 +1296,7 @@ export function CreateLaptopForm() {
                             setBrandModelPreview(preview);
                             clearSurfaceLayout();
                           }}
-                          getUploadHeaders={() => ({ "X-Lid-Manager-Key": getOrCreateManagerKey() })}
+                          getUploadHeaders={() => ({ "X-Auction-Manager-Key": getOrCreateManagerKey() })}
                         />
                       </>
                     )}
@@ -1528,7 +1545,7 @@ export function CreateLaptopForm() {
                       <blockquote className={styles.shareCopy} lang={shareLocale}>{sharePost}</blockquote>
                     </div>
                     {copyFeedback === "copied" && (
-                      <p className={styles.copyToast} role="status" aria-live="polite">Copied to your clipboard</p>
+                      <p className={styles.copyToast} role="status" aria-live="polite">{t("sell.copySuccess")}</p>
                     )}
                     {errorMessage && <p className={styles.error} role="alert">{errorMessage}</p>}
                     <a className={styles.xShareButton} href={X_COMPOSE_URL} target="_blank" rel="noopener noreferrer">
@@ -1548,12 +1565,12 @@ export function CreateLaptopForm() {
                   </>
                 ) : (
                   <section className={styles.shareFallback} aria-labelledby="x-status-title">
-                    <h2 id="x-status-title">{xAuthAvailability === "checking" ? "Checking publishing options…" : "We couldn’t check X sign-in."}</h2>
+                    <h2 id="x-status-title">{t(xAuthAvailability === "checking" ? "sell.xStatus.checkingTitle" : "sell.xStatus.errorTitle")}</h2>
                     <p className={styles.shareNote}>{xAuthAvailability === "checking"
-                      ? "This normally takes a moment."
-                      : "Check your connection and try again. No login option will be shown until the check succeeds."}</p>
+                      ? t("sell.xStatus.checkingNote")
+                      : t("sell.xStatus.errorNote")}</p>
                     {xAuthAvailability === "unknown" && (
-                      <button type="button" className={styles.publishButton} onClick={() => void resolveXAuthAvailability()}>Check again</button>
+                      <button type="button" className={styles.publishButton} onClick={() => void resolveXAuthAvailability()}>{t("sell.xStatus.retry")}</button>
                     )}
                   </section>
                 )}

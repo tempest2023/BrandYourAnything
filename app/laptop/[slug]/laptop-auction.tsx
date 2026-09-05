@@ -12,7 +12,7 @@ import type { Spot } from "@/lib/auction";
 import { getBrandModelFormat } from "@/lib/brand-model";
 import { formatRelativeTime, SPOT_NAME_KEYS } from "@/lib/i18n";
 import type { Locale } from "@/lib/i18n";
-import type { LaptopBidResult, LaptopSnapshot } from "@/lib/laptop";
+import type { AuctionBidResult, AuctionCampaignSnapshot } from "@/lib/campaign-auction";
 import { getPresetModelFromPublicPath } from "@/lib/preset-models";
 import {
   amountFromUsd,
@@ -44,8 +44,8 @@ function compactMoney(amountUsd: number, currency: Currency, locale: Locale) {
 
 type BidResponse = {
   error?: string;
-  result?: LaptopBidResult;
-  snapshot?: LaptopSnapshot | null;
+  result?: AuctionBidResult;
+  snapshot?: AuctionCampaignSnapshot | null;
 };
 
 function useCountdown(closesAt: string) {
@@ -113,7 +113,7 @@ function BidPanel({
   slug: string;
   spot: Spot;
   isAnything: boolean;
-  onSnapshot: (snapshot: LaptopSnapshot) => void;
+  onSnapshot: (snapshot: AuctionCampaignSnapshot) => void;
 }) {
   const { currency, locale, t } = useI18n();
   const money = (amountUsd: number) => formatCurrency(amountUsd, currency, locale, 0);
@@ -136,7 +136,7 @@ function BidPanel({
     formData.set("idempotencyKey", idempotencyKey);
 
     try {
-      const response = await fetch(`/api/laptops/${encodeURIComponent(slug)}/bids`, {
+      const response = await fetch(`/api/auctions/${encodeURIComponent(slug)}/bids`, {
         method: "POST",
         body: formData,
       });
@@ -198,7 +198,7 @@ function BidPanel({
   );
 }
 
-export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnapshot }) {
+export function LaptopAuction({ initialSnapshot }: { initialSnapshot: AuctionCampaignSnapshot }) {
   const { currency, locale, t, formatDate } = useI18n();
   const money = (amount: number) => formatCurrency(amount, currency, locale, 0);
   const [snapshot, setSnapshot] = useState(initialSnapshot);
@@ -217,9 +217,9 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
 
   const refresh = useCallback(async () => {
     try {
-      const response = await fetch(`/api/laptops/${encodeURIComponent(snapshot.campaign.slug)}`, { cache: "no-store" });
+      const response = await fetch(`/api/auctions/${encodeURIComponent(snapshot.campaign.slug)}`, { cache: "no-store" });
       if (!response.ok) throw new Error();
-      const nextSnapshot = await response.json() as LaptopSnapshot;
+      const nextSnapshot = await response.json() as AuctionCampaignSnapshot;
       setSnapshot((current) => ({
         ...nextSnapshot,
         campaign: {
@@ -289,7 +289,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
               )}
             </p>
           )}
-          <p>{isAnything ? t("laptop.orbitObject", { object: snapshot.campaign.assetName }) : t("laptop.tap", { model: snapshot.campaign.laptopModel })}</p>
+          <p>{isAnything ? t("laptop.orbitObject", { object: snapshot.campaign.assetName }) : t("laptop.tap", { model: snapshot.campaign.objectName })}</p>
         </div>
       </header>
 
@@ -343,7 +343,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: LaptopSnap
         </div>
         <div className={styles.ownerPhoto}>
           {snapshot.campaign.photoUrl ? (
-            <img src={snapshot.campaign.photoUrl} alt={t("laptop.photoAlt", { owner: snapshot.campaign.ownerName, model: snapshot.campaign.laptopModel })} />
+            <img src={snapshot.campaign.photoUrl} alt={t("laptop.photoAlt", { owner: snapshot.campaign.ownerName, model: snapshot.campaign.objectName })} />
           ) : (
             <div>
               {isAnything
