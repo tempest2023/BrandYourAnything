@@ -2349,26 +2349,6 @@
   min-height: 500px;
 }
 
-.presetAttribution {
-  margin: 0;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.5;
-  text-align: left;
-}
-
-.presetAttribution a {
-  color: var(--ink);
-  text-decoration: underline;
-  text-decoration-color: var(--hairline);
-  text-underline-offset: 2px;
-}
-
-.presetAttribution span {
-  display: block;
-  margin-top: 2px;
-}
-
 .anythingMiniStage::before {
   position: absolute;
   inset: 0;

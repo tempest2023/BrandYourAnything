@@ -1604,15 +1604,6 @@ export function CreateAuctionForm() {
                     onPlaceSpot={placeSurfaceSpot}
                     onPlacementError={setPlacementMessage}
                   />
-                  {usingPresetModel && selectedPreset && (
-                    <p className={styles.presetAttribution}>
-                      Model by <a href={selectedPreset.sourceUrl} target="_blank" rel="noreferrer">{selectedPreset.author}</a>
-                      {" · "}<a href={selectedPreset.licenseUrl} target="_blank" rel="noreferrer">{selectedPreset.licenseName}</a>
-                      {(selectedPreset.id === "flybridge-yacht" || selectedPreset.id === "private-jet") && (
-                        <span>Representative preview — not an official manufacturer digital twin.</span>
-                      )}
-                    </p>
-                  )}
                 </div>
               ) : (
                 <div className={styles.anythingMiniStage}>

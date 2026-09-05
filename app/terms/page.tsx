@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { LegalPage, type LegalSection } from "@/app/legal-page";
 import { CONTACT_URL, OPERATOR_NAME, PROJECT_NAME, SOURCE_URL } from "@/lib/legal";
+import { PRESET_MODELS } from "@/lib/preset-models";
 
 export const metadata: Metadata = {
   title: `Terms of Service — ${PROJECT_NAME}`,
@@ -105,13 +106,24 @@ const sections: LegalSection[] = [
   },
   {
     id: "third-party-brands",
-    title: "Third-party brands and trademarks",
+    title: "3D models, third-party brands, and trademarks",
     content: (
       <>
+        <p>Built-in 3D models shown by the Service are either created by us or adapted from models made publicly available under free-to-use licenses. They are representative visualizations—not official manufacturer digital twins or guaranteed exact replicas of any product. Creators may also upload models they made themselves or have permission to use.</p>
+        <p>Our bundled third-party 3D models are:</p>
+        <ul>
+          {Object.values(PRESET_MODELS).map((model) => (
+            <li key={model.id}>
+              <a href={model.sourceUrl} target="_blank" rel="noreferrer">{model.assetName}</a>
+              {" by "}{model.author}{" — "}
+              <a href={model.licenseUrl} target="_blank" rel="noreferrer">{model.licenseName}</a>
+            </li>
+          ))}
+        </ul>
         <p><strong>{PROJECT_NAME} is an independent project and is not affiliated with, endorsed by, or sponsored by Apple Inc., Tesla, Inc., Stripe, X Corp., Supabase, Vercel, or any other third-party brand shown on the Service, unless an auction page expressly states otherwise.</strong></p>
         <p>Apple, the Apple logo, Mac, MacBook, MacBook Pro, Magic Keyboard, and Magic Mouse are trademarks of Apple Inc., registered in the United States and other countries and regions. Tesla, the Tesla logo, Model 3, Model S, Model X, Model Y, and Cybertruck are trademarks of Tesla, Inc. Stripe, X, Supabase, and Vercel names and logos are owned by their respective proprietors.</p>
         <p>Third-party names, products, models, and logos are used only to identify compatible objects, payment or infrastructure providers, source assets, or advertising submitted by users. Their appearance does not imply sponsorship, endorsement, partnership, or approval. All other trademarks belong to their respective owners.</p>
-        <p>Licenses and attribution for bundled third-party 3D models and other repository assets are documented in the <a href={`${SOURCE_URL}/blob/main/THIRD_PARTY_ASSETS.md`} target="_blank" rel="noreferrer">third-party assets notice</a>.</p>
+        <p>Transformation details, checksums, and attribution for other repository assets are documented in the <a href={`${SOURCE_URL}/blob/main/THIRD_PARTY_ASSETS.md`} target="_blank" rel="noreferrer">third-party assets notice</a>.</p>
       </>
     ),
   },
