@@ -216,10 +216,10 @@ export function parseLaptopForm(formData: FormData): ParsedLaptopForm {
   const photoValue = formData.get("photo");
   const photo = photoValue instanceof File && photoValue.size > 0 ? photoValue : null;
   if (photo && photo.size > MAX_LAPTOP_PHOTO_BYTES) {
-    throw new LaptopValidationError("Laptop photos must be 5 MB or smaller.");
+    throw new LaptopValidationError("Auction photos must be 5 MB or smaller.");
   }
   if (photo && !ACCEPTED_PHOTO_TYPES.has(photo.type)) {
-    throw new LaptopValidationError("Laptop photos must be PNG, JPG, or WEBP.");
+    throw new LaptopValidationError("Auction photos must be PNG, JPG, or WEBP.");
   }
 
   return {

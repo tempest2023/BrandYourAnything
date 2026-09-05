@@ -40,7 +40,7 @@ async function removePhoto(path: string | null) {
 
 export async function POST(request: Request) {
   if (!isSupabaseConfigured()) {
-    return Response.json({ error: "Laptop creation is temporarily unavailable." }, { status: 503 });
+    return Response.json({ error: "Auction publishing is temporarily unavailable." }, { status: 503 });
   }
 
   let photoStoragePath: string | null = null;
@@ -103,7 +103,7 @@ export async function POST(request: Request) {
       const error = result.reason === "slug_taken"
         ? "That public URL is already taken. Choose another slug."
         : result.reason === "rate_limited"
-          ? "This email has created several laptops recently. Please try again in an hour."
+          ? "This email has published several auctions recently. Please try again in an hour."
           : "This creation request conflicts with one that was already processed.";
       return Response.json({ error, result }, { status });
     }
@@ -143,7 +143,7 @@ export async function POST(request: Request) {
     }
     console.error("Failed to create laptop", error);
     return Response.json(
-      { error: "We could not publish this laptop. Your details are safe; please try again." },
+      { error: "We could not publish your auction. Your details are safe; please try again." },
       { status: 500 },
     );
   }

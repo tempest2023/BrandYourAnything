@@ -42,7 +42,7 @@ export async function POST(
   context: { params: Promise<{ slug: string }> },
 ) {
   if (!isSupabaseConfigured()) {
-    return Response.json({ error: "Laptop bidding is temporarily unavailable." }, { status: 503 });
+    return Response.json({ error: "Auction bidding is temporarily unavailable." }, { status: 503 });
   }
 
   let logoStoragePath: string | null = null;
@@ -74,9 +74,9 @@ export async function POST(
       const error = result.reason === "bid_too_low"
         ? `Another bidder moved first. The new minimum is $${result.minimumNextBid.toLocaleString("en-US")}.`
         : result.reason === "auction_closed"
-          ? "This laptop auction has closed."
+          ? "This auction has closed."
           : result.reason === "campaign_not_found"
-            ? "This laptop auction does not exist."
+            ? "This auction does not exist."
             : "This request conflicts with a bid that was already processed.";
       return Response.json({ error, result, snapshot }, { status });
     }
