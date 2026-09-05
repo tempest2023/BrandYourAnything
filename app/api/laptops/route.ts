@@ -5,8 +5,8 @@ import { getBrandModelBucket, getLaptopMediaBucket } from "@/lib/database-names"
 import { attachCampaignAsset, createLaptop, getLaptopSnapshot } from "@/lib/laptop-repository";
 import { LaptopValidationError, parseLaptopForm } from "@/lib/laptop-validation";
 import { normalizeModelClaimInput, verifyModelUploadClaim } from "@/lib/model-upload-claim";
+import { getPublishingOwner, PublishingAuthenticationError } from "@/lib/publishing-auth";
 import { getSupabaseAdmin, isSupabaseConfigured } from "@/lib/supabase-admin";
-import { getPublishingOwner, XAuthenticationError } from "@/lib/x-auth";
 
 export const runtime = "nodejs";
 
@@ -129,7 +129,7 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     if (!databaseAccepted) await removePhoto(photoStoragePath);
-    if (error instanceof XAuthenticationError) {
+    if (error instanceof PublishingAuthenticationError) {
       return Response.json(
         { error: error.message },
         {

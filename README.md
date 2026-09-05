@@ -73,17 +73,20 @@ The migrations provision both isolated namespaces in one Supabase project:
 
 Do not create these tables or buckets manually, and do not run `supabase db reset --linked` against production; a linked reset erases the remote database. Future schema updates are deployed by running `npx supabase db push` again. Supabase records applied migrations and skips them on later pushes. See the official [migration deployment workflow](https://supabase.com/docs/guides/local-development/cli-workflows) for details.
 
-### 4. Configure X sign in
+### 4. Configure sign in
 
-When X / Twitter OAuth 2.0 is configured, `POST /api/laptops` sends the access token back to Supabase, verifies the user, and derives the public owner identity on the server. If X sign-in is unavailable, the creator uses a browser-generated management key stored in `localStorage`; the server hashes that key into a stable private owner identity and applies the same creation rate limit.
+The publishing flow supports Email/Password accounts and optional X / Twitter OAuth 2.0 through Supabase Auth. `POST /api/laptops` sends the access token back to Supabase, verifies the user, and derives the owner identity on the server. Brand Anything intentionally uses the Supabase project's shared Auth user pool: an account registered by another application in the same Supabase project can sign in here with the same Email/Password, and an account created here can be used by that application. No app-specific user or membership tables are required. If browser Auth credentials are not configured at all, the creator falls back to a browser-generated management key stored in `localStorage`; the server hashes that key into a stable private owner identity and applies the same creation rate limit.
 
-1. In the [X Developer Portal](https://developer.x.com/), create an OAuth 2.0 Web App and enable **Request email from users**.
-2. Add `https://<project-ref>.supabase.co/auth/v1/callback` as the X app callback URL. For a local Supabase stack, also add `http://localhost:54321/auth/v1/callback`.
-3. In **Supabase Dashboard > Authentication > Sign In / Providers**, enable **X / Twitter (OAuth 2.0)** and enter the X Client ID and Client Secret.
-4. In **Authentication > URL Configuration**, set the production Site URL and allow the production `/sell` URL plus every preview URL that should support sign in. The repository's local config already allows both `http://127.0.0.1:3000/sell` and `http://localhost:3000/sell`.
-5. Keep new-user signups enabled in Supabase Auth; a first X login creates the corresponding Supabase user.
+1. In **Supabase Dashboard > Authentication > Sign In / Providers**, keep **Email** enabled. Choose whether new accounts must confirm their email before publishing; the UI supports both immediate sessions and confirmation emails. Email uniqueness, password changes, verification state, and linked OAuth identities are shared by every application using this Supabase project.
+2. In **Authentication > URL Configuration**, set the production Site URL and allow the production `/sell` URL plus every preview URL that should support sign in. The repository's local config already allows both `http://127.0.0.1:3000/sell` and `http://localhost:3000/sell`.
+3. Keep new-user signups enabled if creators should be able to register from the publishing flow.
+4. To offer X as a second option, create an OAuth 2.0 Web App in the [X Developer Portal](https://developer.x.com/) and enable **Request email from users**.
+5. Add `https://<project-ref>.supabase.co/auth/v1/callback` as the X app callback URL. For a local Supabase stack, also add `http://localhost:54321/auth/v1/callback`.
+6. In **Supabase Dashboard > Authentication > Sign In / Providers**, enable **X / Twitter (OAuth 2.0)** and enter the X Client ID and Client Secret.
 
-The app intentionally uses the OAuth 2.0 provider name `x`, not the legacy OAuth 1.0a provider name `twitter`.
+The app intentionally uses the OAuth 2.0 provider name `x`, not the legacy OAuth 1.0a provider name `twitter`. Email/Password remains available when X is disabled or its availability check fails.
+
+If an Email already has an account through another application in this Supabase project, the user should choose **Sign in**, not **Create account**, and enter the existing password. Environment-prefixed tables such as `ba_dev_laptops` and `ba_prod_laptops` still isolate Brand Anything's application data; only authentication identities are shared.
 
 ### 5. Create and configure the Vercel project
 
@@ -106,7 +109,7 @@ In **Project Settings > Environment Variables**, configure:
 | `SUPABASE_DATABASE_PREFIX` | `ba_prod` | Production only |
 | `SUPABASE_DATABASE_PREFIX` | `ba_dev` | Preview and Development only |
 
-X sign-in is never inferred from the Vercel environment name. `/sell` asks `/api/auth/x-status`, which reads the X provider status from Supabase Auth. The X OAuth client ID and client secret belong only in **Supabase Dashboard > Authentication > Sign In / Providers**, never in the app's environment variables. The browser caches a successful availability result for ten minutes and checks again at the Publish step whenever that cache is missing or expired.
+X sign-in is never inferred from the Vercel environment name. `/sell` asks `/api/auth/x-status`, which reads the optional X provider status from Supabase Auth without blocking Email/Password sign-in. The X OAuth client ID and client secret belong only in **Supabase Dashboard > Authentication > Sign In / Providers**, never in the app's environment variables. The browser caches an availability result for ten minutes.
 
 Optionally add a high-entropy `MODEL_UPLOAD_SIGNING_SECRET` to every environment. It signs the metadata claim that binds a model upload to its file name, size, and private Storage path. When omitted, the app derives the signature from the configured Supabase server secret. The accompanying Storage upload URL is short-lived.
 
@@ -118,7 +121,7 @@ Treat `SUPABASE_SECRET_KEY` as a sensitive value if the Vercel UI offers that op
 
 1. Select **Deploy**. Vercel should detect Next.js and run `npm run build`.
 2. Open the generated URL and confirm that the homepage loads without a Supabase configuration error.
-3. Open `/sell`, choose **Anything else**, upload a self-contained `.glb`, complete the wizard, publish a test campaign, and place a test bid. Environments without X OAuth credentials use browser-owned publishing without X sign-in. Use a Preview deployment for testing so records go to the `ba_dev_*` namespace.
+3. Open `/sell`, choose **Anything else**, upload a self-contained `.glb`, complete the wizard, create or sign in to an Email/Password account, publish a test campaign, and place a test bid. If X is configured, verify that it also appears as an optional sign-in method. Deployments without browser Auth credentials use browser-owned publishing. Use a Preview deployment for testing so records go to the `ba_dev_*` namespace.
 4. In Supabase, use **Table Editor** to confirm the campaign asset record and **Storage** to confirm the model is in the matching private bucket. Open the public auction and verify that orbit, zoom, and all numbered placement controls work.
 5. When ready, merge or push to the Vercel Production Branch, normally `main`. Vercel will create the Production deployment using `ba_prod`.
 

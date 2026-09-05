@@ -205,6 +205,7 @@ type CreateResponse = {
 };
 
 type XAuthAvailability = "checking" | "available" | "unavailable" | "unknown";
+type EmailAuthMode = "sign-in" | "sign-up";
 type XAuthStatusResponse = {
   configured?: unknown;
   error?: string;
@@ -424,8 +425,16 @@ export function CreateLaptopForm() {
   const [title, setTitle] = useState("Your brand, on my Mac.");
   const [slug, setSlug] = useState("tempest");
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [accountLabel, setAccountLabel] = useState("");
   const [authReady, setAuthReady] = useState(false);
   const [authRedirecting, setAuthRedirecting] = useState(false);
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [emailAuthMode, setEmailAuthMode] = useState<EmailAuthMode>("sign-in");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [authFeedback, setAuthFeedback] = useState("");
+  const [authError, setAuthError] = useState("");
   const [xAuthAvailability, setXAuthAvailability] = useState<XAuthAvailability>("checking");
   const xAuthRequestRef = useRef<Promise<boolean> | null>(null);
   const [draftReady, setDraftReady] = useState(false);
@@ -615,19 +624,9 @@ export function CreateLaptopForm() {
     ].filter(Boolean).join("&"));
     const callbackError = callbackParameters.get("error_description")
       || callbackParameters.get("error_code")
-      || (callbackParameters.get("error") ? "X did not complete sign in. Please try again." : "");
+      || (callbackParameters.get("error") ? "Sign in did not complete. Please try again." : "");
 
-    if (xAuthAvailability === "checking" || xAuthAvailability === "unknown") {
-      const timer = window.setTimeout(() => {
-        if (active) setAuthReady(false);
-      }, 0);
-      return () => {
-        active = false;
-        window.clearTimeout(timer);
-      };
-    }
-
-    if (xAuthAvailability === "unavailable" || !isSupabaseBrowserConfigured()) {
+    if (!isSupabaseBrowserConfigured()) {
       const timer = window.setTimeout(() => {
         if (!active) return;
         window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
@@ -643,20 +642,24 @@ export function CreateLaptopForm() {
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!active) return;
       setAccessToken(session?.access_token ?? null);
+      setAccountLabel(session
+        ? session.user.email
+          || String(session.user.user_metadata.user_name || session.user.user_metadata.name || "Verified account")
+        : "");
       setAuthReady(true);
     });
 
     void supabase.auth.getSession().then(({ data, error }) => {
       if (!active) return;
       setAccessToken(data.session?.access_token ?? null);
+      setAccountLabel(data.session
+        ? data.session.user.email
+          || String(data.session.user.user_metadata.user_name || data.session.user.user_metadata.name || "Verified account")
+        : "");
       setAuthReady(true);
       if (callbackError || error) {
         window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
-        const message = callbackError || "Your X session could not be restored. Please try again.";
-        if (isUnavailableXAuthError(message)) {
-          cacheXAuthStatus(false);
-          setXAuthAvailability("unavailable");
-        }
+        const message = callbackError || "Your session could not be restored. Please try again.";
         setErrorMessage(message);
       }
     });
@@ -665,7 +668,7 @@ export function CreateLaptopForm() {
       active = false;
       listener.subscription.unsubscribe();
     };
-  }, [xAuthAvailability]);
+  }, []);
 
   const isAnything = machine !== "mac" && machine !== "pc";
   const selectedPresetId = presetIdFor(machine, teslaModel);
@@ -870,7 +873,7 @@ export function CreateLaptopForm() {
     setPublishedLocation(location);
   };
 
-  const publishLaptop = async (form: HTMLFormElement, mode: "x" | "browser") => {
+  const publishLaptop = async (form: HTMLFormElement, mode: "auth" | "browser") => {
     if (publishedLocation === desiredPublicLocation) return publishedLocation;
 
     setSubmitting(true);
@@ -920,7 +923,7 @@ export function CreateLaptopForm() {
     formData.set("auctionClosesAt", new Date(Date.now() + listingDays * 86_400_000).toISOString());
     formData.set("idempotencyKey", idempotencyKey);
 
-    const headers: Record<string, string> = mode === "x" && accessToken
+    const headers: Record<string, string> = mode === "auth" && accessToken
       ? { Authorization: `Bearer ${accessToken}` }
       : { "X-Lid-Manager-Key": getOrCreateManagerKey() };
 
@@ -930,9 +933,10 @@ export function CreateLaptopForm() {
       if (!response.ok || !payload.location) {
         setErrorMessage(payload.error || "We could not publish this auction. Please try again.");
         if (payload.result?.reason === "idempotency_conflict") setIdempotencyKey(crypto.randomUUID());
-        if (response.status === 401 && mode === "x" && isSupabaseBrowserConfigured()) {
+        if (response.status === 401 && mode === "auth" && isSupabaseBrowserConfigured()) {
           await getSupabaseBrowser().auth.signOut({ scope: "local" });
           setAccessToken(null);
+          setAccountLabel("");
         }
         return null;
       }
@@ -986,63 +990,133 @@ export function CreateLaptopForm() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (submitting || authRedirecting) return;
+    if (submitting || authRedirecting || authSubmitting) return;
 
     if (!machineIsValid || !layoutIsValid || !objectIsValid || !customShowcaseIsValid) {
       setErrorMessage("Please complete all required steps before publishing.");
       return;
     }
 
-    if (readCachedXAuthStatus() !== true || xAuthAvailability !== "available") {
-      await resolveXAuthAvailability();
-      return;
-    }
-
     if (!authReady) {
-      setErrorMessage("Checking your X session. Please try again in a moment.");
+      setErrorMessage("Checking your session. Please try again in a moment.");
       return;
     }
 
     if (!accessToken) {
-      window.sessionStorage.setItem(PUBLISH_AFTER_AUTH_KEY, "1");
-      setAuthRedirecting(true);
-      setErrorMessage("");
-
-      try {
-        const { error } = await getSupabaseBrowser().auth.signInWithOAuth({
-          provider: "x",
-          options: { redirectTo: `${window.location.origin}/sell` },
-        });
-        if (error) throw error;
-      } catch (error) {
-        window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
-        setAuthRedirecting(false);
-        const message = error instanceof Error ? error.message : "X sign-in could not be started.";
-        if (isUnavailableXAuthError(message)) {
-          cacheXAuthStatus(false);
-          setXAuthAvailability("unavailable");
-          setErrorMessage("");
-        } else {
-          clearCachedXAuthStatus();
-          setXAuthAvailability("unknown");
-          setErrorMessage(message);
-        }
-      }
+      setErrorMessage("Sign in with email and password or X before publishing.");
       return;
     }
 
     window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
-    const location = await publishLaptop(event.currentTarget, "x");
+    const location = await publishLaptop(event.currentTarget, "auth");
     if (location) setCreatedLocation(location);
   };
 
+  const handleXSignIn = async () => {
+    if (authRedirecting || authSubmitting || submitting) return;
+    setAuthError("");
+    setAuthFeedback("");
+
+    if (readCachedXAuthStatus() !== true || xAuthAvailability !== "available") {
+      const configured = await resolveXAuthAvailability();
+      if (!configured) {
+        setAuthError("X sign-in is not available right now. Use email and password instead.");
+        return;
+      }
+    }
+
+    window.sessionStorage.setItem(PUBLISH_AFTER_AUTH_KEY, "1");
+    setAuthRedirecting(true);
+    try {
+      const { error } = await getSupabaseBrowser().auth.signInWithOAuth({
+        provider: "x",
+        options: { redirectTo: `${window.location.origin}/sell` },
+      });
+      if (error) throw error;
+    } catch (error) {
+      window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
+      setAuthRedirecting(false);
+      const message = error instanceof Error ? error.message : "X sign-in could not be started.";
+      if (isUnavailableXAuthError(message)) {
+        cacheXAuthStatus(false);
+        setXAuthAvailability("unavailable");
+        setAuthError("X sign-in is not available right now. Use email and password instead.");
+      } else {
+        clearCachedXAuthStatus();
+        setXAuthAvailability("unknown");
+        setAuthError(message);
+      }
+    }
+  };
+
+  const handleEmailAuth = async () => {
+    if (authSubmitting || authRedirecting || submitting) return;
+    const email = authEmail.trim().toLowerCase();
+    const minimumPasswordLength = emailAuthMode === "sign-up" ? 8 : 6;
+    setAuthError("");
+    setAuthFeedback("");
+    setErrorMessage("");
+
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
+      setAuthError("Enter a valid email address.");
+      return;
+    }
+    if (authPassword.length < minimumPasswordLength) {
+      setAuthError(`Use at least ${minimumPasswordLength} characters for your password.`);
+      return;
+    }
+
+    setAuthSubmitting(true);
+    try {
+      const supabase = getSupabaseBrowser();
+      if (emailAuthMode === "sign-up") {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password: authPassword,
+          options: { emailRedirectTo: `${window.location.origin}/sell` },
+        });
+        if (error) throw error;
+        window.sessionStorage.setItem(PUBLISH_AFTER_AUTH_KEY, "1");
+        if (data.session) {
+          setAccessToken(data.session.access_token);
+          setAccountLabel(data.user?.email || email);
+          setAuthFeedback("Account created. Publishing your auction…");
+        } else {
+          setAuthFeedback("Check your inbox to confirm your email. Keep this page open; publishing will continue when you return.");
+        }
+      } else {
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password: authPassword });
+        if (error) throw error;
+        window.sessionStorage.setItem(PUBLISH_AFTER_AUTH_KEY, "1");
+        setAccessToken(data.session.access_token);
+        setAccountLabel(data.user.email || email);
+        setAuthFeedback("Signed in. Publishing your auction…");
+      }
+    } catch (error) {
+      window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
+      setAuthError(error instanceof Error ? error.message : "Email sign-in failed. Please try again.");
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    if (!isSupabaseBrowserConfigured()) return;
+    await getSupabaseBrowser().auth.signOut({ scope: "local" });
+    window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
+    setAccessToken(null);
+    setAccountLabel("");
+    setAuthFeedback("");
+    setAuthError("");
+  };
+
   useEffect(() => {
-    if (!draftReady || !authReady || !accessToken || submitting || step !== STEPS.length - 1) return;
+    if (!draftReady || !authReady || !accessToken || authSubmitting || submitting || step !== STEPS.length - 1) return;
     if (window.sessionStorage.getItem(PUBLISH_AFTER_AUTH_KEY) !== "1") return;
 
     const timer = window.setTimeout(() => formRef.current?.requestSubmit(), 0);
     return () => window.clearTimeout(timer);
-  }, [accessToken, authReady, draftReady, step, submitting]);
+  }, [accessToken, authReady, authSubmitting, draftReady, step, submitting]);
 
   if (createdLocation) {
     return (
@@ -1068,11 +1142,13 @@ export function CreateLaptopForm() {
           <p className={styles.heroKicker}>From Mac lids to moving machines</p>
           <h1>Put anything up.</h1>
           <p>You bring the object and set the prices; Brand Anything turns it into a live sponsorship auction.</p>
-          {xAuthAvailability === "unavailable" ? managedLid && (
+          {!isSupabaseBrowserConfigured() ? managedLid && (
             <p className={styles.signIn}>Your auction is saved in this browser. <Link href={laptopPath(managedLid.slug)}>Manage {managedLid.title}</Link>.</p>
-          ) : xAuthAvailability === "available" ? (
-            <p className={styles.signIn}>Already published an auction? <Link href="/">Sign in to manage it</Link>.</p>
-          ) : null}
+          ) : accountLabel ? (
+            <p className={styles.signIn}>Signed in as <strong>{accountLabel}</strong>.</p>
+          ) : (
+            <p className={styles.signIn}>Your draft stays here while you sign in at the Publish step.</p>
+          )}
 
           <ol className={styles.steps} aria-label="Listing steps">
             {STEPS.map((label, index) => (
@@ -1390,7 +1466,7 @@ export function CreateLaptopForm() {
                   <div><dt>Stickers stay</dt><dd>{stickerMonths} months</dd></div>
                 </dl>
                 <p className={styles.publishCopy}>Buyers pay you directly — the money lands in your own Stripe account, minus the 10% platform fee and Stripe&apos;s processing fees. You produce each placement to the agreed spec and approve every logo before it appears.</p>
-                {xAuthAvailability === "unavailable" ? (
+                {!isSupabaseBrowserConfigured() ? (
                   <section className={styles.shareFallback} aria-labelledby="x-share-title">
                     <h2 id="x-share-title">Share your auction.</h2>
                     <div className={styles.shareLanguageRow}>
@@ -1429,22 +1505,125 @@ export function CreateLaptopForm() {
                       ? "Your auction is live and saved in this browser. Copy the post again whenever you need it."
                       : "Copy or open X to publish your auction and save it in this browser. X opens in a new tab so this page stays here."}</p>
                   </section>
-                ) : xAuthAvailability === "available" ? (
-                  <>
-                    {errorMessage && <p className={styles.error} role="alert">{errorMessage}</p>}
-                    <button className={styles.publishButton} type="submit" disabled={!authReady || submitting || authRedirecting}>
-                      {submitting ? "Publishing…" : authRedirecting ? "Opening X…" : accessToken ? "Publish your auction" : "Sign in with X and publish"}
-                    </button>
-                    <p className={styles.authNote}>X is what a buyer checks before putting their logo on a stranger&apos;s {isAnything ? "object" : "laptop"}. Everything above is kept while you sign in; you land back here.</p>
-                  </>
                 ) : (
-                  <section className={styles.shareFallback} aria-labelledby="x-status-title">
-                    <h2 id="x-status-title">{xAuthAvailability === "checking" ? "Checking publishing options…" : "We couldn’t check X sign-in."}</h2>
-                    <p className={styles.shareNote}>{xAuthAvailability === "checking"
-                      ? "This normally takes a moment."
-                      : "Check your connection and try again. No login option will be shown until the check succeeds."}</p>
-                    {xAuthAvailability === "unknown" && (
-                      <button type="button" className={styles.publishButton} onClick={() => void resolveXAuthAvailability()}>Check again</button>
+                  <section
+                    className={styles.authPanel}
+                    aria-label={accessToken ? "Publishing account" : undefined}
+                    aria-labelledby={accessToken ? undefined : "publish-auth-title"}
+                    aria-busy={authSubmitting || authRedirecting}
+                    onKeyDown={(event) => {
+                      if (!accessToken && event.key === "Enter") {
+                        event.preventDefault();
+                        void handleEmailAuth();
+                      }
+                    }}
+                  >
+                    {accessToken ? (
+                      <>
+                        <div className={styles.signedInRow}>
+                          <span className={styles.accountMark} aria-hidden="true">✓</span>
+                          <span><small>Signed in as</small><strong>{accountLabel || "Verified account"}</strong></span>
+                          <button type="button" onClick={() => void handleSignOut()}>Sign out</button>
+                        </div>
+                        {errorMessage && <p className={styles.error} role="alert">{errorMessage}</p>}
+                        <button className={styles.publishButton} type="submit" disabled={!authReady || submitting}>
+                          {submitting ? "Publishing…" : "Publish your auction"}
+                        </button>
+                        <p className={styles.authNote}>Your verified account will be attached to this auction so you can return and manage it.</p>
+                      </>
+                    ) : (
+                      <>
+                        <div className={styles.authHeading}>
+                          <p>One last step</p>
+                          <h2 id="publish-auth-title">Sign in to publish.</h2>
+                          <span>Your auction draft is saved while you authenticate.</span>
+                        </div>
+                        <div className={styles.authModeTabs} role="tablist" aria-label="Email authentication">
+                          <button
+                            type="button"
+                            role="tab"
+                            aria-selected={emailAuthMode === "sign-in"}
+                            className={emailAuthMode === "sign-in" ? styles.activeAuthMode : ""}
+                            onClick={() => {
+                              setEmailAuthMode("sign-in");
+                              setAuthError("");
+                              setAuthFeedback("");
+                            }}
+                          >
+                            Sign in
+                          </button>
+                          <button
+                            type="button"
+                            role="tab"
+                            aria-selected={emailAuthMode === "sign-up"}
+                            className={emailAuthMode === "sign-up" ? styles.activeAuthMode : ""}
+                            onClick={() => {
+                              setEmailAuthMode("sign-up");
+                              setAuthError("");
+                              setAuthFeedback("");
+                            }}
+                          >
+                            Create account
+                          </button>
+                        </div>
+                        <div className={styles.authFields}>
+                          <label>
+                            Email
+                            <input
+                              type="email"
+                              inputMode="email"
+                              autoComplete="email"
+                              value={authEmail}
+                              onChange={(event) => setAuthEmail(event.target.value)}
+                              placeholder="you@example.com"
+                              disabled={authSubmitting || authRedirecting}
+                            />
+                          </label>
+                          <label>
+                            Password
+                            <span className={styles.passwordField}>
+                              <input
+                                type={showPassword ? "text" : "password"}
+                                autoComplete={emailAuthMode === "sign-up" ? "new-password" : "current-password"}
+                                minLength={emailAuthMode === "sign-up" ? 8 : 6}
+                                maxLength={128}
+                                value={authPassword}
+                                onChange={(event) => setAuthPassword(event.target.value)}
+                                placeholder={emailAuthMode === "sign-up" ? "At least 8 characters" : "Your password"}
+                                disabled={authSubmitting || authRedirecting}
+                              />
+                              <button type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Hide password" : "Show password"}>
+                                {showPassword ? "Hide" : "Show"}
+                              </button>
+                            </span>
+                          </label>
+                        </div>
+                        {authError && <p className={styles.authError} role="alert">{authError}</p>}
+                        {authFeedback && <p className={styles.authFeedback} role="status">{authFeedback}</p>}
+                        <button
+                          type="button"
+                          className={styles.emailAuthButton}
+                          disabled={!authReady || authSubmitting || authRedirecting}
+                          onClick={() => void handleEmailAuth()}
+                        >
+                          {authSubmitting
+                            ? emailAuthMode === "sign-up" ? "Creating account…" : "Signing in…"
+                            : emailAuthMode === "sign-up" ? "Create account & publish" : "Sign in & publish"}
+                        </button>
+                        {xAuthAvailability === "available" && (
+                          <>
+                            <div className={styles.authDivider}><span>or</span></div>
+                            <button type="button" className={styles.xAuthButton} disabled={authSubmitting || authRedirecting} onClick={() => void handleXSignIn()}>
+                              <span aria-hidden="true">𝕏</span>{authRedirecting ? "Opening X…" : "Continue with X"}
+                            </button>
+                          </>
+                        )}
+                        {xAuthAvailability === "checking" && <p className={styles.authProviderStatus}>Checking whether X sign-in is available…</p>}
+                        {xAuthAvailability === "unknown" && (
+                          <button type="button" className={styles.authProviderRetry} onClick={() => void resolveXAuthAvailability()}>Check X sign-in again</button>
+                        )}
+                        <p className={styles.authNote}>Already use another product on this account? Sign in with the same email and password. Credentials are handled by Supabase Auth and are never sent to Brand Anything.</p>
+                      </>
                     )}
                   </section>
                 )}

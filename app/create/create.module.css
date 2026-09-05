@@ -1122,6 +1122,273 @@
   font-size: 12px;
 }
 
+.authPanel {
+  margin-top: 22px;
+  padding: 20px;
+  border: 1px solid #dedee2;
+  border-radius: 18px;
+  background: #fbfbfc;
+}
+
+.authHeading {
+  text-align: left;
+}
+
+.authHeading p {
+  margin: 0 0 5px;
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.authHeading h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 21px;
+  font-weight: 550;
+  letter-spacing: -0.035em;
+  line-height: 1.2;
+}
+
+.authHeading span {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.authModeTabs {
+  display: grid;
+  margin-top: 17px;
+  padding: 3px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-radius: 10px;
+  background: #ebebee;
+}
+
+.authModeTabs button {
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.authModeTabs .activeAuthMode {
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(29, 29, 31, 0.12);
+  color: var(--ink);
+}
+
+.authFields {
+  display: grid;
+  margin-top: 16px;
+  gap: 12px;
+}
+
+.authFields > label {
+  display: grid;
+  gap: 6px;
+  color: #3a3a3c;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.authFields input {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  outline: none;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  transition: border-color 160ms ease-out, box-shadow 160ms ease-out;
+}
+
+.authFields input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.12);
+}
+
+.passwordField {
+  position: relative;
+  display: block;
+}
+
+.passwordField input {
+  padding-right: 58px;
+}
+
+.passwordField button {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  min-width: 44px;
+  min-height: 30px;
+  padding: 4px 7px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--blue);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  transform: translateY(-50%);
+}
+
+.emailAuthButton,
+.xAuthButton {
+  display: flex;
+  width: 100%;
+  min-height: 46px;
+  margin-top: 14px;
+  padding: 11px 18px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.emailAuthButton {
+  background: var(--blue);
+  color: #fff;
+}
+
+.xAuthButton {
+  margin-top: 0;
+  background: var(--ink);
+  color: #fff;
+}
+
+.xAuthButton span {
+  margin-right: 8px;
+  font-size: 17px;
+  line-height: 1;
+}
+
+.emailAuthButton:disabled,
+.xAuthButton:disabled {
+  cursor: default;
+  opacity: 0.58;
+}
+
+.authDivider {
+  display: grid;
+  margin: 13px 0;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+  color: var(--quiet);
+  font-size: 11px;
+}
+
+.authDivider::before,
+.authDivider::after {
+  height: 1px;
+  background: #dedee2;
+  content: "";
+}
+
+.authError,
+.authFeedback,
+.authProviderStatus {
+  margin: 11px 2px 0;
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: left;
+}
+
+.authError {
+  color: #b42318;
+}
+
+.authFeedback {
+  color: #217a3c;
+}
+
+.authProviderStatus {
+  color: var(--quiet);
+  text-align: center;
+}
+
+.authProviderRetry {
+  display: block;
+  margin: 12px auto 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--blue);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.signedInRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+
+.accountMark {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 50%;
+  background: #e6f5ea;
+  color: #217a3c;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.signedInRow > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+}
+
+.signedInRow small {
+  color: var(--quiet);
+  font-size: 10px;
+}
+
+.signedInRow strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signedInRow button {
+  padding: 5px 0 5px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--blue);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+
 .actions {
   display: flex;
   margin-top: 28px;

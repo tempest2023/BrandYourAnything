@@ -6,13 +6,13 @@ import type { User } from "@supabase/supabase-js";
 
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
-export class XAuthenticationError extends Error {
-  status: 401 | 403;
+export class PublishingAuthenticationError extends Error {
+  status: 401;
 
-  constructor(message: string, status: 401 | 403) {
+  constructor(message: string) {
     super(message);
-    this.name = "XAuthenticationError";
-    this.status = status;
+    this.name = "PublishingAuthenticationError";
+    this.status = 401;
   }
 }
 
@@ -22,16 +22,9 @@ function getBearerToken(request: Request) {
   const authorization = request.headers.get("authorization");
   const match = authorization?.match(/^Bearer\s+(\S+)$/i);
   if (!match) {
-    throw new XAuthenticationError("Sign in with X before publishing.", 401);
+    throw new PublishingAuthenticationError("Sign in before publishing.");
   }
   return match[1];
-}
-
-function userHasXIdentity(user: User) {
-  const providers = user.app_metadata.providers;
-  return user.app_metadata.provider === "x"
-    || (Array.isArray(providers) && providers.includes("x"))
-    || user.identities?.some((identity) => identity.provider === "x") === true;
 }
 
 function metadataString(metadata: Record<string, unknown>, keys: string[]) {
@@ -42,45 +35,45 @@ function metadataString(metadata: Record<string, unknown>, keys: string[]) {
   return "";
 }
 
-export async function requireXUser(request: Request) {
+async function requireUser(request: Request) {
   const token = getBearerToken(request);
   const { data, error } = await getSupabaseAdmin().auth.getUser(token);
 
   if (error || !data.user) {
-    throw new XAuthenticationError("Your X session expired. Sign in again to publish.", 401);
-  }
-  if (!userHasXIdentity(data.user)) {
-    throw new XAuthenticationError("This listing must be published with an X account.", 403);
+    throw new PublishingAuthenticationError("Your session expired. Sign in again to publish.");
   }
 
   return data.user;
 }
 
-export function getXOwnerIdentity(user: User) {
+export function getOwnerIdentity(user: User) {
   const metadata = user.user_metadata as Record<string, unknown>;
   const handle = metadataString(metadata, ["user_name", "preferred_username", "username"])
     .replace(/^@/, "");
   const displayName = metadataString(metadata, ["full_name", "name", "display_name", "nickname"]);
-  const candidateName = displayName || (handle ? `@${handle}` : "");
+  const email = user.email?.trim().toLowerCase() ?? "";
+  const emailName = email.split("@", 1)[0]?.replace(/[._-]+/g, " ").trim() ?? "";
+  const candidateName = displayName || (handle ? `@${handle}` : "") || emailName;
   const ownerName = candidateName.length >= 2
     ? candidateName.slice(0, 80)
-    : `X user ${user.id.slice(0, 8)}`;
-  const ownerEmail = user.email?.trim().toLowerCase()
-    || `x-${user.id}@auth.brand-anything.vercel.app`;
+    : `Creator ${user.id.slice(0, 8)}`;
+  const ownerEmail = email || `user-${user.id}@auth.brand-anything.vercel.app`;
 
   return { ownerEmail, ownerName };
 }
 
 export async function getPublishingOwner(request: Request) {
   if (request.headers.has("authorization")) {
-    return getXOwnerIdentity(await requireXUser(request));
+    // Brand Anything intentionally shares the Supabase Auth user pool with the
+    // other applications in this Supabase project. A valid project user does
+    // not need a second app-specific membership record.
+    return getOwnerIdentity(await requireUser(request));
   }
 
   const managerKey = request.headers.get("x-lid-manager-key")?.trim() ?? "";
   if (!MANAGER_KEY_PATTERN.test(managerKey)) {
-    throw new XAuthenticationError(
-      "Publish from the browser where you created this lid, or sign in with X.",
-      401,
+    throw new PublishingAuthenticationError(
+      "Publish from the browser where you created this auction, or sign in.",
     );
   }
 

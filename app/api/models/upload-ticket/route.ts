@@ -13,8 +13,8 @@ import {
   isModelSizeAllowed,
   normalizeModelClaimInput,
 } from "@/lib/model-upload-claim";
+import { getPublishingOwner, PublishingAuthenticationError } from "@/lib/publishing-auth";
 import { getSupabaseAdmin, isSupabaseConfigured } from "@/lib/supabase-admin";
-import { getPublishingOwner, XAuthenticationError } from "@/lib/x-auth";
 
 export const runtime = "nodejs";
 
@@ -95,7 +95,7 @@ export async function POST(request: Request) {
       uploadClaim: createModelUploadClaim(claimInput),
     });
   } catch (error) {
-    if (error instanceof XAuthenticationError) {
+    if (error instanceof PublishingAuthenticationError) {
       return Response.json({ error: error.message }, { status: error.status });
     }
     console.error("Failed to create a model upload ticket", error);
