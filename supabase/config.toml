@@ -37,9 +37,17 @@ file_size_limit = "2MiB"
 
 [auth]
 enabled = true
-site_url = "http://127.0.0.1:3000"
-additional_redirect_urls = ["http://127.0.0.1:3000/sell", "http://localhost:3000/sell", "https://brand-anything.vercel.app/sell"]
+site_url = "https://brand-anything.vercel.app"
+additional_redirect_urls = ["https://brand-anything.vercel.app", "https://brand-anything.vercel.app/sell", "https://brand-anything.vercel.app/auth/callback", "https://brand-anything.vercel.app/auth/reset-password"]
 enable_signup = true
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = true
+secure_password_change = false
+otp_length = 8
+otp_expiry = 3600
 
 [edge_runtime]
 enabled = false
