@@ -43,6 +43,8 @@ const PUBLISH_AFTER_AUTH_KEY = "brand-anything-publish-after-auth";
 const MANAGER_KEY_STORAGE_KEY = "brand-anything-lid-manager-key";
 const MANAGED_LID_STORAGE_KEY = "brand-anything-managed-lid";
 const X_AUTH_STATUS_STORAGE_KEY = "brand-anything-x-auth-status";
+const EMAIL_SEND_COOLDOWN_STORAGE_KEY = "brand-anything-email-send-cooldown";
+const EMAIL_SEND_COOLDOWN_MS = 5 * 60 * 1000;
 const X_AUTH_STATUS_TTL_MS = 10 * 60 * 1000;
 const X_COMPOSE_URL = "https://x.com/compose/post";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -99,6 +101,10 @@ type TeslaModel = "Model 3" | "Model Y" | "Model S" | "Model X" | "Cybertruck";
 type ModelMode = "preset" | "custom";
 type Ownership = "own" | "fund";
 type LayoutCount = number;
+type EmailSendCooldown = {
+  email: string;
+  sentAt: number;
+};
 type SellDraft = {
   step: number;
   furthestStep: number;
@@ -129,6 +135,33 @@ type SellDraft = {
 };
 
 const TESLA_MODELS: TeslaModel[] = ["Model 3", "Model Y", "Model S", "Model X", "Cybertruck"];
+
+function readEmailSendCooldown(): EmailSendCooldown | null {
+  try {
+    const value = window.localStorage.getItem(EMAIL_SEND_COOLDOWN_STORAGE_KEY);
+    if (!value) return null;
+    const parsed = JSON.parse(value) as Partial<EmailSendCooldown>;
+    if (typeof parsed.email !== "string" || typeof parsed.sentAt !== "number") return null;
+    if (Date.now() - parsed.sentAt >= EMAIL_SEND_COOLDOWN_MS) {
+      window.localStorage.removeItem(EMAIL_SEND_COOLDOWN_STORAGE_KEY);
+      return null;
+    }
+    return { email: parsed.email, sentAt: parsed.sentAt };
+  } catch {
+    return null;
+  }
+}
+
+function rememberEmailSent(email: string) {
+  try {
+    window.localStorage.setItem(EMAIL_SEND_COOLDOWN_STORAGE_KEY, JSON.stringify({
+      email,
+      sentAt: Date.now(),
+    } satisfies EmailSendCooldown));
+  } catch {
+    // Supabase still enforces the same cooldown if browser storage is unavailable.
+  }
+}
 
 function defaultTitleFor(machine: Machine, teslaModel: TeslaModel) {
   if (machine === "mac") return "Your brand, on my Mac.";
@@ -1065,6 +1098,24 @@ export function CreateLaptopForm() {
       setAuthError(`Use at least ${minimumPasswordLength} characters for your password.`);
       return;
     }
+    if (emailAuthMode === "sign-up") {
+      const cooldown = readEmailSendCooldown();
+      if (cooldown) {
+        const remainingMinutes = Math.max(1, Math.ceil(
+          (EMAIL_SEND_COOLDOWN_MS - (Date.now() - cooldown.sentAt)) / 60_000,
+        ));
+        if (cooldown.email === email) {
+          setEmailAuthMode("sign-in");
+          setAuthEmail(email);
+          setAuthPassword("");
+          setShowPassword(false);
+          setAuthError(`A confirmation email was already sent for this account. Confirm it, then enter your password to sign in. You can request another email in ${remainingMinutes} minute${remainingMinutes === 1 ? "" : "s"}.`);
+        } else {
+          setAuthError(`This browser requested a confirmation email recently. Try again in ${remainingMinutes} minute${remainingMinutes === 1 ? "" : "s"}.`);
+        }
+        return;
+      }
+    }
 
     setAuthSubmitting(true);
     try {
@@ -1076,13 +1127,29 @@ export function CreateLaptopForm() {
           options: { emailRedirectTo: `${window.location.origin}/sell` },
         });
         if (error) throw error;
-        window.sessionStorage.setItem(PUBLISH_AFTER_AUTH_KEY, "1");
+        if (!data.user || data.user.identities?.length === 0) {
+          window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
+          setEmailAuthMode("sign-in");
+          setAuthEmail(email);
+          setAuthPassword("");
+          setShowPassword(false);
+          setAuthError("This email is already registered. Sign in instead.");
+          return;
+        }
+
+        rememberEmailSent(email);
         if (data.session) {
+          window.sessionStorage.setItem(PUBLISH_AFTER_AUTH_KEY, "1");
           setAccessToken(data.session.access_token);
           setAccountLabel(data.user?.email || email);
           setAuthFeedback("Account created. Publishing your auction…");
         } else {
-          setAuthFeedback("Check your inbox to confirm your email. Keep this page open; publishing will continue when you return.");
+          window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
+          setEmailAuthMode("sign-in");
+          setAuthEmail(email);
+          setAuthPassword("");
+          setShowPassword(false);
+          setAuthFeedback("Account created. Confirm your email, then enter your password here to sign in.");
         }
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password: authPassword });
@@ -1094,7 +1161,17 @@ export function CreateLaptopForm() {
       }
     } catch (error) {
       window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
-      setAuthError(error instanceof Error ? error.message : "Email sign-in failed. Please try again.");
+      const authCode = typeof error === "object" && error && "code" in error
+        ? String(error.code)
+        : "";
+      if (authCode === "email_not_confirmed") {
+        setAuthError("Confirm your email before signing in. Check your inbox, then try again.");
+      } else if (authCode === "over_email_send_rate_limit") {
+        rememberEmailSent(email);
+        setAuthError("A confirmation email was sent recently. Wait 5 minutes before requesting another.");
+      } else {
+        setAuthError(error instanceof Error ? error.message : "Email sign-in failed. Please try again.");
+      }
     } finally {
       setAuthSubmitting(false);
     }
