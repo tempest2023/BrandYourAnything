@@ -38,7 +38,7 @@ file_size_limit = "2MiB"
 [auth]
 enabled = true
 site_url = "http://127.0.0.1:3000"
-additional_redirect_urls = ["http://127.0.0.1:3000/sell", "http://localhost:3000/sell"]
+additional_redirect_urls = ["http://127.0.0.1:3000/sell", "http://localhost:3000/sell", "https://brand-anything.vercel.app/sell"]
 enable_signup = true
 
 [edge_runtime]
