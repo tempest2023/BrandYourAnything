@@ -75,16 +75,17 @@ Do not create these tables or buckets manually, and do not run `supabase db rese
 
 ### 4. Configure sign in
 
-The publishing flow supports Email/Password accounts and optional X / Twitter OAuth 2.0 through Supabase Auth. `POST /api/auctions` sends the access token back to Supabase, verifies the user, and derives the owner identity on the server. Brand Anything intentionally uses the Supabase project's shared Auth user pool: an account registered by another application in the same Supabase project can sign in here with the same Email/Password, and an account created here can be used by that application. No app-specific user or membership tables are required. If browser Auth credentials are not configured at all, the creator falls back to a browser-generated management key stored in `localStorage`; the server hashes that key into a stable private owner identity and applies the same creation rate limit.
+The `/auth` page and publishing flow share one authentication component supporting Email/Password, X / Twitter OAuth 2.0, and GitHub OAuth through Supabase Auth. `POST /api/auctions` sends the access token back to Supabase, verifies the user, and derives the owner identity on the server. Brand Anything intentionally uses the Supabase project's shared Auth user pool: an account registered by another application in the same Supabase project can sign in here with the same credentials, and an account created here can be used by that application. No app-specific user or membership tables are required. If browser Auth credentials are not configured at all, the creator falls back to a browser-generated management key stored in `localStorage`; the server hashes that key into a stable private owner identity and applies the same creation rate limit.
 
 1. In **Supabase Dashboard > Authentication > Sign In / Providers**, keep **Email** enabled. Choose whether new accounts must confirm their email before publishing; the UI supports both immediate sessions and confirmation emails. Email uniqueness, password changes, verification state, and linked OAuth identities are shared by every application using this Supabase project.
-2. In **Authentication > URL Configuration**, set the production Site URL and allow the production `/sell` URL plus every preview URL that should support sign in. The repository's local config already allows both `http://127.0.0.1:3000/sell` and `http://localhost:3000/sell`.
+2. In **Authentication > URL Configuration**, set `https://brand-anything.vercel.app` as the Site URL. Allow the production domain, Vercel preview domains, and local development origins for both `/auth` and `/sell`; the repository config includes the required wildcard paths.
 3. Keep new-user signups enabled if creators should be able to register from the publishing flow.
-4. To offer X as a second option, create an OAuth 2.0 Web App in the [X Developer Portal](https://developer.x.com/) and enable **Request email from users**.
+4. To offer X, create an OAuth 2.0 Web App in the [X Developer Portal](https://developer.x.com/) and enable **Request email from users**.
 5. Add `https://<project-ref>.supabase.co/auth/v1/callback` as the X app callback URL. For a local Supabase stack, also add `http://localhost:54321/auth/v1/callback`.
 6. In **Supabase Dashboard > Authentication > Sign In / Providers**, enable **X / Twitter (OAuth 2.0)** and enter the X Client ID and Client Secret.
+7. In GitHub, create an OAuth app using the same Supabase callback URL, then enable **GitHub** in Supabase and enter its Client ID and Client Secret.
 
-The app intentionally uses the OAuth 2.0 provider name `x`, not the legacy OAuth 1.0a provider name `twitter`. Email/Password remains available when X is disabled or its availability check fails.
+The app intentionally uses the OAuth 2.0 provider name `x`, not the legacy OAuth 1.0a provider name `twitter`. Email/Password remains available if an OAuth provider is unavailable.
 
 If an Email already has an account through another application in this Supabase project, the user should choose **Sign in**, not **Create account**, and enter the existing password. Environment-prefixed tables such as `ba_dev_laptops` and `ba_prod_laptops` still isolate Brand Anything's application data; only authentication identities are shared.
 

@@ -33,12 +33,30 @@ enabled = false
 
 [storage]
 enabled = true
-file_size_limit = "2MiB"
+file_size_limit = "50MiB"
+
+[storage.vector]
+enabled = false
 
 [auth]
 enabled = true
 site_url = "https://brand-anything.vercel.app"
-additional_redirect_urls = ["https://brand-anything.vercel.app", "https://brand-anything.vercel.app/sell", "https://brand-anything.vercel.app/auth/callback", "https://brand-anything.vercel.app/auth/reset-password"]
+additional_redirect_urls = [
+  "https://brand-anything.vercel.app",
+  "https://brand-anything.vercel.app/auth",
+  "https://brand-anything.vercel.app/auth?mode=sign-in&confirmed=1",
+  "https://brand-anything.vercel.app/sell",
+  "https://brand-anything.vercel.app/auth/callback",
+  "https://brand-anything.vercel.app/auth/reset-password",
+  "https://*-agi-studio.vercel.app/auth*",
+  "https://*-agi-studio.vercel.app/sell",
+  "http://localhost:3000/auth",
+  "http://localhost:3000/auth?mode=sign-in&confirmed=1",
+  "http://localhost:3000/sell",
+  "http://127.0.0.1:3000/auth",
+  "http://127.0.0.1:3000/auth?mode=sign-in&confirmed=1",
+  "http://127.0.0.1:3000/sell",
+]
 enable_signup = true
 
 [auth.email]
@@ -49,6 +67,10 @@ secure_password_change = false
 max_frequency = "5m"
 otp_length = 8
 otp_expiry = 3600
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
 
 [edge_runtime]
 enabled = false
