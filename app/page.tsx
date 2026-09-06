@@ -400,9 +400,7 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
             <span>Brand Anything</span>
           </a>
           <div className="nav-links">
-            <a href="#spots">{t("common.liveAuction")}</a>
             <a href="#how">{t("common.how")}</a>
-            <a href="#specs">{t("common.machine")}</a>
             <a href="#faq">{t("common.faq")}</a>
             <a href={CREATE_URL}>{t("common.listLaptop")}</a>
           </div>
@@ -737,7 +735,6 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
             <p>{t("home.footerOpenSource")} <a href={SOURCE_URL} target="_blank" rel="noreferrer">Brand Anything ↗</a></p>
             <p>{t("home.footerContribute")} <a href={`${SOURCE_URL}/issues`} target="_blank" rel="noreferrer">GitHub ↗</a></p>
             <div className="footer-meta">
-              <a href={CREATE_URL}>{t("common.listLaptop")}</a>
               <Link href="/privacy">{t("common.privacy")}</Link>
               <Link href="/terms">{t("common.terms")}</Link>
               <a href={SOURCE_URL} target="_blank" rel="noreferrer">{t("home.sourceGithub")}</a>
