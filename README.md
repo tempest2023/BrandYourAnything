@@ -221,6 +221,14 @@ NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<the local PUBLISHABLE_KEY value>
 ```
 
+To confirm a user that was registered in a hosted Preview without sending another email, point the server-only variables in `.env.local` at that Preview's Supabase project and run:
+
+```bash
+bun run auth:confirm-email test@example.com
+```
+
+The command only confirms an existing exact email address; it never creates a user or sends email. It prints the target Supabase host and user UUID so you can verify which project and account were changed. Keep the Secret or legacy Service Role key local—never expose it through a `NEXT_PUBLIC_*` variable.
+
 Then start Next.js:
 
 ```bash

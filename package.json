@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "auth:confirm-email": "bun scripts/confirm-supabase-email.ts",
     "test:concurrency": "node scripts/test-concurrent-bids.mjs",
     "test:laptop-platform": "node scripts/test-laptop-platform.mjs",
     "test:api-e2e": "npm run build && node --test scripts/test-auction-api-e2e.mjs"
