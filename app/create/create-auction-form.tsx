@@ -436,7 +436,7 @@ export function CreateAuctionForm() {
   const [listingDays, setListingDays] = useState<7 | 14 | 21 | 30>(30);
   const [stickerMonths, setStickerMonths] = useState<6 | 12 | 24>(12);
   const [title, setTitle] = useState("Your brand, on my Mac.");
-  const [slug, setSlug] = useState("tempest");
+  const [slug, setSlug] = useState("");
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [accountLabel, setAccountLabel] = useState("");
   const [authReady, setAuthReady] = useState(false);
