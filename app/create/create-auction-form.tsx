@@ -1,9 +1,11 @@
 "use client";
 
+import type { Session } from "@supabase/supabase-js";
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import { AuthForm } from "@/app/auth/auth-form";
 import { useI18n } from "@/app/i18n-provider";
 import { ModelStage } from "@/app/model-stage";
 import {
@@ -50,8 +52,6 @@ const LEGACY_DRAFT_STORAGE_KEY = "brandmylaptop-sell-draft";
 const PUBLISH_AFTER_AUTH_KEY = "brand-anything-publish-after-auth";
 const MANAGER_KEY_STORAGE_KEY = "brand-anything-auction-manager-key";
 const MANAGED_AUCTION_STORAGE_KEY = "brand-anything-managed-auction";
-const X_AUTH_STATUS_STORAGE_KEY = "brand-anything-x-auth-status";
-const X_AUTH_STATUS_TTL_MS = 10 * 60 * 1000;
 const X_COMPOSE_URL = "https://x.com/compose/post";
 const PUBLISH_ERROR_KEYS: Record<AuctionPublishErrorCode, TranslationKey> = {
   publish_unavailable: "sell.error.publishUnavailable",
@@ -286,16 +286,6 @@ type CreateResponse = {
   result?: { reason: string; slug: string };
 };
 
-type XAuthAvailability = "checking" | "available" | "unavailable" | "unknown";
-type XAuthStatusResponse = {
-  configured?: unknown;
-  errorCode?: unknown;
-};
-type CachedXAuthStatus = {
-  configured: boolean;
-  expiresAt: number;
-};
-
 const moneyFormatter = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
 
 function formatMoney(amount: number) {
@@ -336,65 +326,6 @@ function isSurfaceSpotPlacement(value: unknown): value is SurfaceSpotPlacement {
     && Array.isArray(spot.normal)
     && spot.normal.length === 3
     && spot.normal.every(Number.isFinite);
-}
-
-function isUnavailableXAuthError(message: string) {
-  return /provider|not configured|not enabled|unsupported|disabled/i.test(message);
-}
-
-function readCachedXAuthStatus() {
-  try {
-    const raw = window.localStorage.getItem(X_AUTH_STATUS_STORAGE_KEY);
-    if (!raw) return null;
-    const cached = JSON.parse(raw) as Partial<CachedXAuthStatus>;
-    if (typeof cached.configured !== "boolean"
-      || typeof cached.expiresAt !== "number"
-      || !Number.isFinite(cached.expiresAt)
-      || cached.expiresAt <= Date.now()) {
-      window.localStorage.removeItem(X_AUTH_STATUS_STORAGE_KEY);
-      return null;
-    }
-    return cached.configured;
-  } catch {
-    try {
-      window.localStorage.removeItem(X_AUTH_STATUS_STORAGE_KEY);
-    } catch {
-      // A blocked storage API should not turn a successful backend check into a guess.
-    }
-    return null;
-  }
-}
-
-function cacheXAuthStatus(configured: boolean) {
-  const cached: CachedXAuthStatus = {
-    configured,
-    expiresAt: Date.now() + X_AUTH_STATUS_TTL_MS,
-  };
-  try {
-    window.localStorage.setItem(X_AUTH_STATUS_STORAGE_KEY, JSON.stringify(cached));
-  } catch {
-    // The current request result remains usable; Publish will recheck without a cache flag.
-  }
-}
-
-function clearCachedXAuthStatus() {
-  try {
-    window.localStorage.removeItem(X_AUTH_STATUS_STORAGE_KEY);
-  } catch {
-    // Storage may be unavailable in hardened browser modes.
-  }
-}
-
-async function fetchXAuthStatus(): Promise<boolean> {
-  const response = await fetch("/api/auth/x-status", {
-    headers: { Accept: "application/json" },
-    cache: "no-store",
-  });
-  const payload = await response.json() as XAuthStatusResponse;
-  if (!response.ok || typeof payload.configured !== "boolean") {
-    throw new Error("x_auth_status_failed");
-  }
-  return payload.configured;
 }
 
 function getOrCreateManagerKey() {
@@ -505,12 +436,10 @@ export function CreateAuctionForm() {
   const [listingDays, setListingDays] = useState<7 | 14 | 21 | 30>(30);
   const [stickerMonths, setStickerMonths] = useState<6 | 12 | 24>(12);
   const [title, setTitle] = useState("Your brand, on my Mac.");
-  const [slug, setSlug] = useState("tempest");
+  const [slug, setSlug] = useState("");
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [accountLabel, setAccountLabel] = useState("");
   const [authReady, setAuthReady] = useState(false);
-  const [authRedirecting, setAuthRedirecting] = useState(false);
-  const [xAuthAvailability, setXAuthAvailability] = useState<XAuthAvailability>("checking");
-  const xAuthRequestRef = useRef<Promise<boolean> | null>(null);
   const [draftReady, setDraftReady] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -536,40 +465,6 @@ export function CreateAuctionForm() {
   useEffect(() => {
     surfaceSpotsRef.current = surfaceSpots;
   }, [surfaceSpots]);
-
-  const resolveXAuthAvailability = useCallback(async () => {
-    const cached = readCachedXAuthStatus();
-    if (cached !== null) {
-      setXAuthAvailability(cached ? "available" : "unavailable");
-      return cached;
-    }
-
-    setXAuthAvailability("checking");
-    const request = xAuthRequestRef.current ?? fetchXAuthStatus();
-    xAuthRequestRef.current = request;
-    try {
-      const configured = await request;
-      cacheXAuthStatus(configured);
-      setXAuthAvailability(configured ? "available" : "unavailable");
-      return configured;
-    } catch {
-      setXAuthAvailability("unknown");
-      return null;
-    } finally {
-      if (xAuthRequestRef.current === request) xAuthRequestRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => void resolveXAuthAvailability(), 0);
-    return () => window.clearTimeout(timer);
-  }, [resolveXAuthAvailability]);
-
-  useEffect(() => {
-    if (step !== STEPS.length - 1 || readCachedXAuthStatus() !== null) return;
-    const timer = window.setTimeout(() => void resolveXAuthAvailability(), 0);
-    return () => window.clearTimeout(timer);
-  }, [resolveXAuthAvailability, step]);
 
   useEffect(() => {
     let draft: Partial<SellDraft> = {};
@@ -711,19 +606,9 @@ export function CreateAuctionForm() {
     ].filter(Boolean).join("&"));
     const callbackError = callbackParameters.get("error_description")
       || callbackParameters.get("error_code")
-      || (callbackParameters.get("error") ? "X did not complete sign in. Please try again." : "");
+      || (callbackParameters.get("error") ? "Sign in did not complete. Please try again." : "");
 
-    if (xAuthAvailability === "checking" || xAuthAvailability === "unknown") {
-      const timer = window.setTimeout(() => {
-        if (active) setAuthReady(false);
-      }, 0);
-      return () => {
-        active = false;
-        window.clearTimeout(timer);
-      };
-    }
-
-    if (xAuthAvailability === "unavailable" || !isSupabaseBrowserConfigured()) {
+    if (!isSupabaseBrowserConfigured()) {
       const timer = window.setTimeout(() => {
         if (!active) return;
         window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
@@ -739,21 +624,25 @@ export function CreateAuctionForm() {
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!active) return;
       setAccessToken(session?.access_token ?? null);
+      setAccountLabel(session
+        ? session.user.email
+          || String(session.user.user_metadata.user_name || session.user.user_metadata.name || "Verified account")
+        : "");
       setAuthReady(true);
     });
 
     void supabase.auth.getSession().then(({ data, error }) => {
       if (!active) return;
       setAccessToken(data.session?.access_token ?? null);
+      setAccountLabel(data.session
+        ? data.session.user.email
+          || String(data.session.user.user_metadata.user_name || data.session.user.user_metadata.name || "Verified account")
+        : "");
       setAuthReady(true);
       if (callbackError || error) {
         window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
         const rawMessage = callbackError || error?.message || "";
-        if (isUnavailableXAuthError(rawMessage)) {
-          cacheXAuthStatus(false);
-          setXAuthAvailability("unavailable");
-        }
-        setErrorMessage(t(callbackError ? "sell.error.xSignIn" : "sell.error.xSession"));
+        setErrorMessage(rawMessage || "Your session could not be restored. Please try again.");
       }
     });
 
@@ -761,7 +650,7 @@ export function CreateAuctionForm() {
       active = false;
       listener.subscription.unsubscribe();
     };
-  }, [t, xAuthAvailability]);
+  }, []);
 
   const isAnything = machine !== "mac" && machine !== "pc";
   const selectedPresetId = presetIdFor(machine, teslaModel);
@@ -984,7 +873,7 @@ export function CreateAuctionForm() {
     setPublishedLocation(location);
   };
 
-  const publishAuction = async (form: HTMLFormElement, mode: "x" | "browser") => {
+  const publishAuction = async (form: HTMLFormElement, mode: "auth" | "browser") => {
     if (publishedLocation === desiredPublicLocation) return publishedLocation;
 
     setSubmitting(true);
@@ -1034,7 +923,7 @@ export function CreateAuctionForm() {
     formData.set("auctionClosesAt", new Date(Date.now() + listingDays * 86_400_000).toISOString());
     formData.set("idempotencyKey", idempotencyKey);
 
-    const headers: Record<string, string> = mode === "x" && accessToken
+    const headers: Record<string, string> = mode === "auth" && accessToken
       ? { Authorization: `Bearer ${accessToken}` }
       : { "X-Auction-Manager-Key": getOrCreateManagerKey() };
 
@@ -1047,9 +936,10 @@ export function CreateAuctionForm() {
           : "publish_failed";
         setErrorMessage(t(PUBLISH_ERROR_KEYS[errorCode]));
         if (payload.result?.reason === "idempotency_conflict") setIdempotencyKey(crypto.randomUUID());
-        if (response.status === 401 && mode === "x" && isSupabaseBrowserConfigured()) {
+        if (response.status === 401 && mode === "auth" && isSupabaseBrowserConfigured()) {
           await getSupabaseBrowser().auth.signOut({ scope: "local" });
           setAccessToken(null);
+          setAccountLabel("");
         }
         return null;
       }
@@ -1090,54 +980,46 @@ export function CreateAuctionForm() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (submitting || authRedirecting) return;
+    if (submitting) return;
 
     if (!machineIsValid || !layoutIsValid || !objectIsValid || !customShowcaseIsValid || !surfacePricingIsValid) {
       setErrorMessage(t("sell.error.incomplete"));
       return;
     }
 
-    if (readCachedXAuthStatus() !== true || xAuthAvailability !== "available") {
-      await resolveXAuthAvailability();
-      return;
-    }
-
     if (!authReady) {
-      setErrorMessage(t("sell.error.xChecking"));
+      setErrorMessage("Checking your session. Please try again in a moment.");
       return;
     }
 
     if (!accessToken) {
-      window.sessionStorage.setItem(PUBLISH_AFTER_AUTH_KEY, "1");
-      setAuthRedirecting(true);
-      setErrorMessage("");
-
-      try {
-        const { error } = await getSupabaseBrowser().auth.signInWithOAuth({
-          provider: "x",
-          options: { redirectTo: `${window.location.origin}/sell` },
-        });
-        if (error) throw error;
-      } catch (error) {
-        window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
-        setAuthRedirecting(false);
-        const rawMessage = error instanceof Error ? error.message : "";
-        if (isUnavailableXAuthError(rawMessage)) {
-          cacheXAuthStatus(false);
-          setXAuthAvailability("unavailable");
-          setErrorMessage("");
-        } else {
-          clearCachedXAuthStatus();
-          setXAuthAvailability("unknown");
-          setErrorMessage(t("sell.error.xSignIn"));
-        }
-      }
+      setErrorMessage("Sign in with email and password, X, or GitHub before publishing.");
       return;
     }
 
     window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
-    const location = await publishAuction(event.currentTarget, "x");
+    const location = await publishAuction(event.currentTarget, "auth");
     if (location) setCreatedLocation(location);
+  };
+
+  const handleAuthRedirect = () => {
+    window.sessionStorage.setItem(PUBLISH_AFTER_AUTH_KEY, "1");
+  };
+
+  const handleAuthSuccess = (session: Session) => {
+    window.sessionStorage.setItem(PUBLISH_AFTER_AUTH_KEY, "1");
+    setErrorMessage("");
+    setAccessToken(session.access_token);
+    setAccountLabel(session.user.email
+      || String(session.user.user_metadata.user_name || session.user.user_metadata.name || "Verified account"));
+  };
+
+  const handleSignOut = async () => {
+    if (!isSupabaseBrowserConfigured()) return;
+    await getSupabaseBrowser().auth.signOut({ scope: "local" });
+    window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
+    setAccessToken(null);
+    setAccountLabel("");
   };
 
   useEffect(() => {
@@ -1148,17 +1030,63 @@ export function CreateAuctionForm() {
     return () => window.clearTimeout(timer);
   }, [accessToken, authReady, draftReady, step, submitting]);
 
+  const sharePanel = (
+    <section className={styles.shareFallback} aria-labelledby="x-share-title">
+      <h2 id="x-share-title">{t(publishedLocation ? "sell.share.titleLive" : "sell.share.title")}</h2>
+      <p className={styles.shareNote}>{t("sell.share.encourage")}</p>
+      {!publishedLocation && !isSupabaseBrowserConfigured() && (
+        <button type="button" className={styles.publishButton} disabled={submitting} onClick={() => void handleBrowserPublish()}>
+          {t(submitting ? "sell.share.publishing" : "sell.share.publish")}
+        </button>
+      )}
+      <div className={styles.shareLanguageRow}>
+        <span>{t("sell.share.language")}</span>
+        <div role="group" aria-label={t("sell.share.language")}>
+          {LOCALES.map((language) => (
+            <button
+              type="button"
+              key={language}
+              className={language === shareLocale ? styles.activeShareLanguage : styles.shareLanguage}
+              aria-pressed={language === shareLocale}
+              onClick={() => {
+                setShareLocale(language);
+                setCopyFeedback("idle");
+              }}
+            >
+              {SHARE_LANGUAGE_LABELS[language]}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className={styles.shareCopyBox}>
+        <button type="button" className={styles.copyPostButton} onClick={() => void handleShareCopy()}>
+          {t(copyFeedback === "copied" ? "sell.share.copied" : "sell.share.copy")}
+        </button>
+        <blockquote className={styles.shareCopy} lang={shareLocale}>{sharePost}</blockquote>
+      </div>
+      {copyFeedback === "copied" && (
+        <p className={styles.copyToast} role="status" aria-live="polite">{t("sell.copySuccess")}</p>
+      )}
+      {errorMessage && <p className={styles.error} role="alert">{errorMessage}</p>}
+      <a className={styles.xShareButton} href={X_COMPOSE_URL} target="_blank" rel="noopener noreferrer">
+        {t("sell.share.openX")}<span aria-hidden="true">↗</span>
+      </a>
+      <p className={styles.shareNote}>{t(publishedLocation ? "sell.share.liveNote" : "sell.share.draftNote")}</p>
+    </section>
+  );
+
   if (createdLocation) {
     return (
       <main className={`${styles.page} ${styles.successPage}`}>
         <div className={styles.successMark} aria-hidden="true">✓</div>
-        <p className={styles.successEyebrow}>Published</p>
-        <h1>Your {isAnything ? "object" : "lid"} is live.</h1>
-        <p>Brands can now explore {objectName}, see every spot, and join the auction.</p>
+        <p className={styles.successEyebrow}>{t("sell.share.published")}</p>
+        <h1>{t("sell.share.liveTitle")}</h1>
+        <p>{t("sell.share.liveDescription", { object: objectName })}</p>
         <div className={styles.successActions}>
-          <Link className={styles.primaryButton} href={createdLocation}>Open your public auction</Link>
-          <Link className={styles.secondaryButton} href="/">Back to Brand Anything</Link>
+          <Link className={styles.primaryButton} href={createdLocation}>{t("sell.share.view")}</Link>
+          <Link className={styles.secondaryButton} href="/">{t("sell.share.home")}</Link>
         </div>
+        {sharePanel}
       </main>
     );
   }
@@ -1172,11 +1100,13 @@ export function CreateAuctionForm() {
           <p className={styles.heroKicker}>From Mac lids to moving machines</p>
           <h1>Put anything up.</h1>
           <p>You bring the object and set the prices; Brand Anything turns it into a live sponsorship auction.</p>
-          {xAuthAvailability === "unavailable" ? managedAuction && (
+          {!isSupabaseBrowserConfigured() ? managedAuction && (
             <p className={styles.signIn}>Your auction is saved in this browser. <Link href={auctionPath(managedAuction.slug)}>Manage {managedAuction.title}</Link>.</p>
-          ) : xAuthAvailability === "available" ? (
-            <p className={styles.signIn}>Already published an auction? <Link href="/">Sign in to manage it</Link>.</p>
-          ) : null}
+          ) : accountLabel ? (
+            <p className={styles.signIn}>Signed in as <strong>{accountLabel}</strong>.</p>
+          ) : (
+            <p className={styles.signIn}>Your draft stays here while you sign in at the Publish step.</p>
+          )}
 
           <ol className={styles.steps} aria-label="Listing steps">
             {STEPS.map((label, index) => (
@@ -1511,68 +1441,35 @@ export function CreateAuctionForm() {
                   <div><dt>Stickers stay</dt><dd>{stickerMonths} months</dd></div>
                 </dl>
                 <p className={styles.publishCopy}>Buyers pay you directly — the money lands in your own Stripe account, minus the 10% platform fee and Stripe&apos;s processing fees. You produce each placement to the agreed spec and approve every logo before it appears.</p>
-                {xAuthAvailability === "unavailable" ? (
-                  <section className={styles.shareFallback} aria-labelledby="x-share-title">
-                    <h2 id="x-share-title">{publishedLocation ? "Share your auction." : "Publish, then share."}</h2>
-                    {!publishedLocation && (
-                      <button type="button" className={styles.publishButton} disabled={submitting} onClick={() => void handleBrowserPublish()}>
+                {!isSupabaseBrowserConfigured() ? (
+                  sharePanel
+                ) : accessToken ? (
+                  <>
+                    <section className={styles.authPanel} aria-label="Publishing account">
+                      <div className={styles.signedInRow}>
+                        <span className={styles.accountMark} aria-hidden="true">✓</span>
+                        <span><small>Signed in as</small><strong>{accountLabel || "Verified account"}</strong></span>
+                        <button type="button" onClick={() => void handleSignOut()}>Sign out</button>
+                      </div>
+                      <button className={styles.publishButton} type="submit" disabled={!authReady || submitting}>
                         {submitting ? "Publishing…" : "Publish your auction"}
                       </button>
-                    )}
-                    <div className={styles.shareLanguageRow}>
-                      <span>Post language</span>
-                      <div role="group" aria-label="Post language">
-                        {LOCALES.map((language) => (
-                          <button
-                            type="button"
-                            key={language}
-                            className={language === shareLocale ? styles.activeShareLanguage : styles.shareLanguage}
-                            aria-pressed={language === shareLocale}
-                            onClick={() => {
-                              setShareLocale(language);
-                              setCopyFeedback("idle");
-                            }}
-                          >
-                            {SHARE_LANGUAGE_LABELS[language]}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className={styles.shareCopyBox}>
-                      <button type="button" className={styles.copyPostButton} onClick={() => void handleShareCopy()}>
-                        {copyFeedback === "copied" ? "Copied" : "Copy"}
-                      </button>
-                      <blockquote className={styles.shareCopy} lang={shareLocale}>{sharePost}</blockquote>
-                    </div>
-                    {copyFeedback === "copied" && (
-                      <p className={styles.copyToast} role="status" aria-live="polite">{t("sell.copySuccess")}</p>
-                    )}
-                    {errorMessage && <p className={styles.error} role="alert">{errorMessage}</p>}
-                    <a className={styles.xShareButton} href={X_COMPOSE_URL} target="_blank" rel="noopener noreferrer">
-                      Post on X<span aria-hidden="true">↗</span>
-                    </a>
-                    <p className={styles.shareNote}>{publishedLocation
-                      ? "Your auction is live and saved in this browser. Copy the post or open X whenever you are ready to share it."
-                      : "Publish first so the link in your post is live. Copy and Post on X only prepare the post; they never publish it for you."}</p>
-                  </section>
-                ) : xAuthAvailability === "available" ? (
-                  <>
-                    {errorMessage && <p className={styles.error} role="alert">{errorMessage}</p>}
-                    <button className={styles.publishButton} type="submit" disabled={!authReady || submitting || authRedirecting}>
-                      {submitting ? "Publishing…" : authRedirecting ? "Opening X…" : accessToken ? "Publish your auction" : "Sign in with X and publish"}
-                    </button>
-                    <p className={styles.authNote}>X is what a buyer checks before putting their logo on a stranger&apos;s {isAnything ? "object" : "laptop"}. Everything above is kept while you sign in; you land back here.</p>
+                      <p className={styles.authNote}>Your verified account will be attached to this auction so you can return and manage it.</p>
+                    </section>
+                    {sharePanel}
                   </>
                 ) : (
-                  <section className={styles.shareFallback} aria-labelledby="x-status-title">
-                    <h2 id="x-status-title">{t(xAuthAvailability === "checking" ? "sell.xStatus.checkingTitle" : "sell.xStatus.errorTitle")}</h2>
-                    <p className={styles.shareNote}>{xAuthAvailability === "checking"
-                      ? t("sell.xStatus.checkingNote")
-                      : t("sell.xStatus.errorNote")}</p>
-                    {xAuthAvailability === "unknown" && (
-                      <button type="button" className={styles.publishButton} onClick={() => void resolveXAuthAvailability()}>{t("sell.xStatus.retry")}</button>
-                    )}
-                  </section>
+                  <AuthForm
+                    context="publish"
+                    embedded
+                    initialMode="sign-in"
+                    ready={authReady}
+                    disabled={submitting}
+                    emailRedirectPath="/sell"
+                    oauthRedirectPath="/sell"
+                    onBeforeOAuth={handleAuthRedirect}
+                    onAuthenticated={handleAuthSuccess}
+                  />
                 )}
               </fieldset>
             )}
