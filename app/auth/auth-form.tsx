@@ -3,12 +3,16 @@
 import type { Session } from "@supabase/supabase-js";
 import { useId, useRef, useState } from "react";
 
+import { useI18n } from "@/app/i18n-provider";
+import type { TranslationKey } from "@/lib/i18n";
 import { getSupabaseBrowser, isSupabaseBrowserConfigured } from "@/lib/supabase-browser";
 
 import styles from "./auth-form.module.css";
 
 const EMAIL_SEND_COOLDOWN_STORAGE_KEY = "brand-anything-email-send-cooldown";
 const EMAIL_SEND_COOLDOWN_MS = 5 * 60 * 1000;
+
+type AuthMessage = { key: TranslationKey; values?: Record<string, string | number> };
 
 type EmailSendCooldown = {
   email: string;
@@ -67,6 +71,18 @@ function authErrorCode(error: unknown) {
     : "";
 }
 
+function emailErrorKey(code: string): TranslationKey {
+  switch (code) {
+    case "invalid_credentials": return "auth.invalidCredentials";
+    case "user_already_exists":
+    case "email_exists": return "auth.exists";
+    case "weak_password": return "auth.weakPassword";
+    case "over_request_rate_limit": return "auth.rateLimit";
+    case "signup_disabled": return "auth.signupDisabled";
+    default: return "auth.failed";
+  }
+}
+
 function providerName(provider: OAuthProvider) {
   return provider === "x" ? "X" : "GitHub";
 }
@@ -86,25 +102,24 @@ export function AuthForm({
   embedded = false,
   ready = true,
   disabled = false,
-  eyebrow = context === "publish" ? "One last step" : "Your account",
-  title = context === "publish" ? "Sign in to publish." : "Make your mark.",
-  description = context === "publish"
-    ? "Your auction draft is saved while you authenticate."
-    : "Create one account for every Brand Anything auction.",
-  note = "Credentials are handled by Supabase Auth and are never sent to Brand Anything.",
+  eyebrow,
+  title,
+  description,
+  note,
   emailRedirectPath = "/auth?mode=sign-in&confirmed=1",
   oauthRedirectPath = "/auth",
   onAuthenticated,
   onBeforeOAuth,
 }: AuthFormProps) {
+  const { t } = useI18n();
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [providerBusy, setProviderBusy] = useState<OAuthProvider | null>(null);
-  const [errorMessage, setErrorMessage] = useState("");
-  const [feedback, setFeedback] = useState("");
+  const [errorMessage, setErrorMessage] = useState<AuthMessage | null>(null);
+  const [feedback, setFeedback] = useState<AuthMessage | null>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
   const generatedId = useId().replace(/:/g, "");
   const titleId = `auth-title-${generatedId}`;
@@ -114,8 +129,8 @@ export function AuthForm({
 
   const changeMode = (nextMode: AuthMode) => {
     setMode(nextMode);
-    setErrorMessage("");
-    setFeedback("");
+    setErrorMessage(null);
+    setFeedback(null);
     setShowPassword(false);
   };
 
@@ -131,15 +146,15 @@ export function AuthForm({
     if (controlsDisabled) return;
     const normalizedEmail = email.trim().toLowerCase();
     const minimumPasswordLength = mode === "sign-up" ? 8 : 6;
-    setErrorMessage("");
-    setFeedback("");
+    setErrorMessage(null);
+    setFeedback(null);
 
     if (!/^\S+@\S+\.\S+$/.test(normalizedEmail)) {
-      setErrorMessage("Enter a valid email address.");
+      setErrorMessage({ key: "auth.invalidEmail" });
       return;
     }
     if (password.length < minimumPasswordLength) {
-      setErrorMessage(`Use at least ${minimumPasswordLength} characters for your password.`);
+      setErrorMessage({ key: "auth.shortPassword", values: { minimum: minimumPasswordLength } });
       return;
     }
 
@@ -151,9 +166,9 @@ export function AuthForm({
         ));
         if (cooldown.email === normalizedEmail) {
           prepareEmailSignIn(normalizedEmail);
-          setErrorMessage(`This email is already registered. Confirm the email we sent, then enter your password to sign in. You can request another email in ${remainingMinutes} minute${remainingMinutes === 1 ? "" : "s"}.`);
+          setErrorMessage({ key: "auth.emailCooldown", values: { minutes: remainingMinutes } });
         } else {
-          setErrorMessage(`This browser requested a confirmation email recently. Try again in ${remainingMinutes} minute${remainingMinutes === 1 ? "" : "s"}.`);
+          setErrorMessage({ key: "auth.browserCooldown", values: { minutes: remainingMinutes } });
         }
         return;
       }
@@ -173,17 +188,17 @@ export function AuthForm({
         if (error) throw error;
         if (!data.user || data.user.identities?.length === 0) {
           prepareEmailSignIn(normalizedEmail);
-          setErrorMessage("This email is already registered. Enter your password to sign in.");
+          setErrorMessage({ key: "auth.exists" });
           return;
         }
 
         rememberEmailSent(normalizedEmail);
         if (data.session) {
-          setFeedback(context === "publish" ? "Account created. Publishing your auction…" : "Account created. You are signed in.");
+          setFeedback({ key: context === "publish" ? "auth.createdPublish" : "auth.createdSignedIn" });
           onAuthenticated?.(data.session);
         } else {
           prepareEmailSignIn(normalizedEmail);
-          setFeedback(`Account created. We sent a confirmation link to ${normalizedEmail}. Confirm your email, then return here and enter your password to sign in.`);
+          setFeedback({ key: "auth.confirmSent", values: { email: normalizedEmail } });
         }
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({
@@ -191,19 +206,19 @@ export function AuthForm({
           password,
         });
         if (error) throw error;
-        setFeedback(context === "publish" ? "Signed in. Publishing your auction…" : "Signed in successfully.");
+        setFeedback({ key: context === "publish" ? "auth.signedInPublish" : "auth.signedIn" });
         onAuthenticated?.(data.session);
       }
     } catch (error) {
       const code = authErrorCode(error);
       if (code === "email_not_confirmed") {
-        setErrorMessage("Confirm your email before signing in. Check your inbox, then try again.");
+        setErrorMessage({ key: "auth.confirmRequired" });
       } else if (code === "over_email_send_rate_limit") {
         rememberEmailSent(normalizedEmail);
         prepareEmailSignIn(normalizedEmail);
-        setErrorMessage("This email is already registered, and a confirmation email was sent recently. Confirm your email, then enter your password to sign in.");
+        setErrorMessage({ key: "auth.emailRateLimit" });
       } else {
-        setErrorMessage(error instanceof Error ? error.message : "Email authentication failed. Please try again.");
+        setErrorMessage({ key: emailErrorKey(code) });
       }
     } finally {
       setSubmitting(false);
@@ -212,8 +227,8 @@ export function AuthForm({
 
   const handleOAuth = async (provider: OAuthProvider) => {
     if (controlsDisabled) return;
-    setErrorMessage("");
-    setFeedback("");
+    setErrorMessage(null);
+    setFeedback(null);
     setProviderBusy(provider);
     onBeforeOAuth?.(provider);
 
@@ -225,23 +240,21 @@ export function AuthForm({
         },
       });
       if (error) throw error;
-    } catch (error) {
+    } catch {
       setProviderBusy(null);
-      setErrorMessage(error instanceof Error
-        ? error.message
-        : `${providerName(provider)} sign-in could not be started.`);
+      setErrorMessage({ key: "auth.oauthFailed", values: { provider: providerName(provider) } });
     }
   };
 
   const content = (
     <>
       <div className={styles.heading}>
-        <p>{eyebrow}</p>
-        <h2 id={titleId}>{title}</h2>
-        <span>{description}</span>
+        <p>{eyebrow ?? t(context === "publish" ? "auth.publishEyebrow" : "auth.eyebrow")}</p>
+        <h2 id={titleId}>{title ?? t(context === "publish" ? "auth.publishTitle" : "auth.title")}</h2>
+        <span>{description ?? t(context === "publish" ? "auth.publishDescription" : "auth.description")}</span>
       </div>
 
-      <div className={styles.modeTabs} role="tablist" aria-label="Email authentication">
+      <div className={styles.modeTabs} role="tablist" aria-label={t("auth.emailAuth")}>
         <button
           type="button"
           role="tab"
@@ -249,7 +262,7 @@ export function AuthForm({
           className={mode === "sign-up" ? styles.activeMode : ""}
           onClick={() => changeMode("sign-up")}
         >
-          Create account
+          {t("auth.create")}
         </button>
         <button
           type="button"
@@ -258,13 +271,13 @@ export function AuthForm({
           className={mode === "sign-in" ? styles.activeMode : ""}
           onClick={() => changeMode("sign-in")}
         >
-          Sign in
+          {t("auth.signIn")}
         </button>
       </div>
 
       <div className={styles.fields}>
         <label htmlFor={`auth-email-${generatedId}`}>
-          Email
+          {t("common.email")}
           <input
             id={`auth-email-${generatedId}`}
             type="email"
@@ -278,7 +291,7 @@ export function AuthForm({
           />
         </label>
         <label htmlFor={`auth-password-${generatedId}`}>
-          Password
+          {t("auth.password")}
           <span className={styles.passwordField}>
             <input
               ref={passwordRef}
@@ -289,27 +302,27 @@ export function AuthForm({
               maxLength={128}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder={mode === "sign-up" ? "At least 8 characters" : "Your password"}
+              placeholder={t(mode === "sign-up" ? "auth.passwordHint" : "auth.yourPassword")}
               disabled={controlsDisabled}
               required
             />
             <button
               type="button"
               onClick={() => setShowPassword((visible) => !visible)}
-              aria-label={showPassword ? "Hide password" : "Show password"}
+              aria-label={t(showPassword ? "auth.hidePassword" : "auth.showPassword")}
               disabled={controlsDisabled}
             >
-              {showPassword ? "Hide" : "Show"}
+              {t(showPassword ? "auth.hide" : "auth.show")}
             </button>
           </span>
         </label>
       </div>
 
       {!configured && (
-        <p className={styles.error} role="alert">Authentication is not configured for this environment.</p>
+        <p className={styles.error} role="alert">{t("auth.unconfigured")}</p>
       )}
-      {errorMessage && <p className={styles.error} role="alert">{errorMessage}</p>}
-      {feedback && <p className={styles.feedback} role="status">{feedback}</p>}
+      {errorMessage && <p className={styles.error} role="alert">{t(errorMessage.key, errorMessage.values)}</p>}
+      {feedback && <p className={styles.feedback} role="status">{t(feedback.key, feedback.values)}</p>}
 
       <button
         type={embedded ? "button" : "submit"}
@@ -317,14 +330,14 @@ export function AuthForm({
         disabled={controlsDisabled}
         onClick={embedded ? () => void handleEmailAuth() : undefined}
       >
-        {submitting
-          ? mode === "sign-up" ? "Creating account…" : "Signing in…"
+        {t(submitting
+          ? mode === "sign-up" ? "auth.creating" : "auth.signingIn"
           : mode === "sign-up"
-            ? context === "publish" ? "Create account & publish" : "Create account"
-            : context === "publish" ? "Sign in & publish" : "Sign in"}
+            ? context === "publish" ? "auth.createPublish" : "auth.create"
+            : context === "publish" ? "auth.signInPublish" : "auth.signIn")}
       </button>
 
-      <div className={styles.divider}><span>or continue with</span></div>
+      <div className={styles.divider}><span>{t("auth.continueWith")}</span></div>
       <div className={styles.providerGrid}>
         {(["x", "github"] as const).map((provider) => (
           <button
@@ -335,12 +348,12 @@ export function AuthForm({
             onClick={() => void handleOAuth(provider)}
           >
             {providerIcon(provider)}
-            <span>{providerBusy === provider ? "Opening…" : providerName(provider)}</span>
+            <span>{providerBusy === provider ? t("auth.opening") : providerName(provider)}</span>
           </button>
         ))}
       </div>
 
-      <p className={styles.note}>{note}</p>
+      <p className={styles.note}>{note ?? t(context === "publish" ? "auth.publishNote" : "auth.note")}</p>
     </>
   );
 
@@ -363,6 +376,7 @@ export function AuthForm({
 
   return (
     <form
+      noValidate
       className={`${styles.panel} ${styles.standalone}`}
       aria-labelledby={titleId}
       aria-busy={busy}

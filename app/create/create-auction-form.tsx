@@ -1461,7 +1461,6 @@ export function CreateAuctionForm() {
                     disabled={submitting}
                     emailRedirectPath="/sell"
                     oauthRedirectPath="/sell"
-                    note="Already use another product on this account? Sign in with the same account. Credentials are handled by Supabase Auth and are never sent to Brand Anything."
                     onBeforeOAuth={handleAuthRedirect}
                     onAuthenticated={handleAuthSuccess}
                   />

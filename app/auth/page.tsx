@@ -1,12 +1,18 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
+
+import { LOCALE_COOKIE, normalizeLocale, translate } from "@/lib/i18n";
 
 import type { AuthMode } from "./auth-form";
 import { AuthPage } from "./auth-page";
 
-export const metadata: Metadata = {
-  title: "Sign in or create an account — Brand Anything",
-  description: "Use email and password, X, or GitHub to access Brand Anything.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = normalizeLocale((await cookies()).get(LOCALE_COOKIE)?.value);
+  return {
+    title: translate(locale, "auth.metaTitle"),
+    description: translate(locale, "auth.metaDescription"),
+  };
+}
 
 type AuthRouteProps = {
   searchParams: Promise<{

@@ -9,9 +9,9 @@ import { getSupabaseBrowser, isSupabaseBrowserConfigured } from "@/lib/supabase-
 
 import styles from "./account-nav.module.css";
 
-function userLabel(user: User) {
+function userLabel(user: User, fallback = "B") {
   return user.email
-    || String(user.user_metadata.user_name || user.user_metadata.name || "Brand Anything account");
+    || String(user.user_metadata.user_name || user.user_metadata.name || fallback);
 }
 
 function avatarUrl(user: User) {
@@ -63,7 +63,7 @@ export function AccountNav() {
   }
 
   const image = avatarUrl(user);
-  const label = userLabel(user);
+  const label = userLabel(user, t("auth.accountFallback"));
 
   return (
     <Link className={styles.avatarLink} href="/auth" aria-label={`${t("common.account")}: ${label}`} title={label}>
