@@ -1030,17 +1030,63 @@ export function CreateAuctionForm() {
     return () => window.clearTimeout(timer);
   }, [accessToken, authReady, draftReady, step, submitting]);
 
+  const sharePanel = (
+    <section className={styles.shareFallback} aria-labelledby="x-share-title">
+      <h2 id="x-share-title">{t(publishedLocation ? "sell.share.titleLive" : "sell.share.title")}</h2>
+      <p className={styles.shareNote}>{t("sell.share.encourage")}</p>
+      {!publishedLocation && !isSupabaseBrowserConfigured() && (
+        <button type="button" className={styles.publishButton} disabled={submitting} onClick={() => void handleBrowserPublish()}>
+          {t(submitting ? "sell.share.publishing" : "sell.share.publish")}
+        </button>
+      )}
+      <div className={styles.shareLanguageRow}>
+        <span>{t("sell.share.language")}</span>
+        <div role="group" aria-label={t("sell.share.language")}>
+          {LOCALES.map((language) => (
+            <button
+              type="button"
+              key={language}
+              className={language === shareLocale ? styles.activeShareLanguage : styles.shareLanguage}
+              aria-pressed={language === shareLocale}
+              onClick={() => {
+                setShareLocale(language);
+                setCopyFeedback("idle");
+              }}
+            >
+              {SHARE_LANGUAGE_LABELS[language]}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className={styles.shareCopyBox}>
+        <button type="button" className={styles.copyPostButton} onClick={() => void handleShareCopy()}>
+          {t(copyFeedback === "copied" ? "sell.share.copied" : "sell.share.copy")}
+        </button>
+        <blockquote className={styles.shareCopy} lang={shareLocale}>{sharePost}</blockquote>
+      </div>
+      {copyFeedback === "copied" && (
+        <p className={styles.copyToast} role="status" aria-live="polite">{t("sell.copySuccess")}</p>
+      )}
+      {errorMessage && <p className={styles.error} role="alert">{errorMessage}</p>}
+      <a className={styles.xShareButton} href={X_COMPOSE_URL} target="_blank" rel="noopener noreferrer">
+        {t("sell.share.openX")}<span aria-hidden="true">↗</span>
+      </a>
+      <p className={styles.shareNote}>{t(publishedLocation ? "sell.share.liveNote" : "sell.share.draftNote")}</p>
+    </section>
+  );
+
   if (createdLocation) {
     return (
       <main className={`${styles.page} ${styles.successPage}`}>
         <div className={styles.successMark} aria-hidden="true">✓</div>
-        <p className={styles.successEyebrow}>Published</p>
-        <h1>Your {isAnything ? "object" : "lid"} is live.</h1>
-        <p>Brands can now explore {objectName}, see every spot, and join the auction.</p>
+        <p className={styles.successEyebrow}>{t("sell.share.published")}</p>
+        <h1>{t("sell.share.liveTitle")}</h1>
+        <p>{t("sell.share.liveDescription", { object: objectName })}</p>
         <div className={styles.successActions}>
-          <Link className={styles.primaryButton} href={createdLocation}>Open your public auction</Link>
-          <Link className={styles.secondaryButton} href="/">Back to Brand Anything</Link>
+          <Link className={styles.primaryButton} href={createdLocation}>{t("sell.share.view")}</Link>
+          <Link className={styles.secondaryButton} href="/">{t("sell.share.home")}</Link>
         </div>
+        {sharePanel}
       </main>
     );
   }
@@ -1396,62 +1442,22 @@ export function CreateAuctionForm() {
                 </dl>
                 <p className={styles.publishCopy}>Buyers pay you directly — the money lands in your own Stripe account, minus the 10% platform fee and Stripe&apos;s processing fees. You produce each placement to the agreed spec and approve every logo before it appears.</p>
                 {!isSupabaseBrowserConfigured() ? (
-                  <section className={styles.shareFallback} aria-labelledby="x-share-title">
-                    <h2 id="x-share-title">{publishedLocation ? "Share your auction." : "Publish, then share."}</h2>
-                    {!publishedLocation && (
-                      <button type="button" className={styles.publishButton} disabled={submitting} onClick={() => void handleBrowserPublish()}>
+                  sharePanel
+                ) : accessToken ? (
+                  <>
+                    <section className={styles.authPanel} aria-label="Publishing account">
+                      <div className={styles.signedInRow}>
+                        <span className={styles.accountMark} aria-hidden="true">✓</span>
+                        <span><small>Signed in as</small><strong>{accountLabel || "Verified account"}</strong></span>
+                        <button type="button" onClick={() => void handleSignOut()}>Sign out</button>
+                      </div>
+                      <button className={styles.publishButton} type="submit" disabled={!authReady || submitting}>
                         {submitting ? "Publishing…" : "Publish your auction"}
                       </button>
-                    )}
-                    <div className={styles.shareLanguageRow}>
-                      <span>Post language</span>
-                      <div role="group" aria-label="Post language">
-                        {LOCALES.map((language) => (
-                          <button
-                            type="button"
-                            key={language}
-                            className={language === shareLocale ? styles.activeShareLanguage : styles.shareLanguage}
-                            aria-pressed={language === shareLocale}
-                            onClick={() => {
-                              setShareLocale(language);
-                              setCopyFeedback("idle");
-                            }}
-                          >
-                            {SHARE_LANGUAGE_LABELS[language]}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className={styles.shareCopyBox}>
-                      <button type="button" className={styles.copyPostButton} onClick={() => void handleShareCopy()}>
-                        {copyFeedback === "copied" ? "Copied" : "Copy"}
-                      </button>
-                      <blockquote className={styles.shareCopy} lang={shareLocale}>{sharePost}</blockquote>
-                    </div>
-                    {copyFeedback === "copied" && (
-                      <p className={styles.copyToast} role="status" aria-live="polite">{t("sell.copySuccess")}</p>
-                    )}
-                    {errorMessage && <p className={styles.error} role="alert">{errorMessage}</p>}
-                    <a className={styles.xShareButton} href={X_COMPOSE_URL} target="_blank" rel="noopener noreferrer">
-                      Post on X<span aria-hidden="true">↗</span>
-                    </a>
-                    <p className={styles.shareNote}>{publishedLocation
-                      ? "Your auction is live and saved in this browser. Copy the post or open X whenever you are ready to share it."
-                      : "Publish first so the link in your post is live. Copy and Post on X only prepare the post; they never publish it for you."}</p>
-                  </section>
-                ) : accessToken ? (
-                  <section className={styles.authPanel} aria-label="Publishing account">
-                    <div className={styles.signedInRow}>
-                      <span className={styles.accountMark} aria-hidden="true">✓</span>
-                      <span><small>Signed in as</small><strong>{accountLabel || "Verified account"}</strong></span>
-                      <button type="button" onClick={() => void handleSignOut()}>Sign out</button>
-                    </div>
-                    {errorMessage && <p className={styles.error} role="alert">{errorMessage}</p>}
-                    <button className={styles.publishButton} type="submit" disabled={!authReady || submitting}>
-                      {submitting ? "Publishing…" : "Publish your auction"}
-                    </button>
-                    <p className={styles.authNote}>Your verified account will be attached to this auction so you can return and manage it.</p>
-                  </section>
+                      <p className={styles.authNote}>Your verified account will be attached to this auction so you can return and manage it.</p>
+                    </section>
+                    {sharePanel}
+                  </>
                 ) : (
                   <AuthForm
                     context="publish"

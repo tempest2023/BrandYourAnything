@@ -1290,7 +1290,7 @@
 
 .shareCopy {
   margin: 0;
-  padding: 14px 82px 14px 16px;
+  padding: 50px 16px 14px;
   border: 0;
   border-left: 2px solid var(--ink);
   border-radius: 0 11px 11px 0;
@@ -2611,6 +2611,13 @@
   background: #eaf6ee;
   color: #248a3d;
   font-size: 24px;
+}
+
+.successPage > .shareFallback {
+  width: min(100%, 560px);
+  min-width: 0;
+  margin: 28px auto 0;
+  text-align: left;
 }
 
 .successEyebrow {
