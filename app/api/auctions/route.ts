@@ -6,7 +6,7 @@ import { getAuctionMediaBucket, getBrandModelBucket } from "@/lib/database-names
 import { attachCampaignAsset, createAuction, getAuctionSnapshot } from "@/lib/campaign-auction-repository";
 import { AuctionValidationError, parseAuctionForm } from "@/lib/auction-validation";
 import { normalizeModelClaimInput, verifyModelUploadClaim } from "@/lib/model-upload-claim";
-import { getPublishingOwner, PublishingAuthenticationError } from "@/lib/publishing-auth";
+import { getPublishingOwnerCredential, PublishingAuthenticationError } from "@/lib/publishing-auth";
 import { getSupabaseAdmin, isSupabaseConfigured } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
@@ -52,7 +52,7 @@ export async function POST(request: Request) {
   let databaseAccepted = false;
 
   try {
-    const owner = await getPublishingOwner(request);
+    const owner = await getPublishingOwnerCredential(request);
     const formData = await request.formData();
     formData.set("ownerName", owner.ownerName);
     formData.set("ownerEmail", owner.ownerEmail);
@@ -100,6 +100,8 @@ export async function POST(request: Request) {
       minIncrementCents: input.minIncrementCents,
       spotLayout: input.spotLayout,
       idempotencyKey: input.idempotencyKey,
+      ownerUserId: owner.ownerUserId,
+      managerKeyHash: owner.managerKeyHash,
     });
 
     if (!result.accepted) {

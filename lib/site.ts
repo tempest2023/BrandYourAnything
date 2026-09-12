@@ -11,3 +11,6 @@ export function auctionPath(slug: string) {
 export function auctionUrl(slug: string) {
   return `${SITE_URL}${auctionPath(slug)}`;
 }
+
+export const laptopUrl = auctionUrl;
+export const publicLaptopUrl = auctionUrl;

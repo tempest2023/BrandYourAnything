@@ -6,6 +6,15 @@ import type { User } from "@supabase/supabase-js";
 
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
+export type AuctionOwnerCredential = {
+  kind: "auth" | "manager";
+  ownerUserId: string | null;
+  managerKeyHash: string | null;
+  managerKeyHashCandidates: string[];
+  ownerEmail: string;
+  ownerName: string;
+};
+
 export class PublishingAuthenticationError extends Error {
   status: 401;
 
@@ -17,6 +26,7 @@ export class PublishingAuthenticationError extends Error {
 }
 
 const MANAGER_KEY_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const MANAGER_RECOVERY_CODE_PATTERN = /^ba_mgr_[A-Za-z0-9_-]{43}$/;
 
 function getBearerToken(request: Request) {
   const authorization = request.headers.get("authorization");
@@ -62,24 +72,50 @@ export function getOwnerIdentity(user: User) {
   return { ownerEmail, ownerName };
 }
 
-export async function getPublishingOwner(request: Request) {
-  if (request.headers.has("authorization")) {
-    // Brand Anything intentionally shares the Supabase Auth user pool with the
-    // other applications in this Supabase project. A valid project user does
-    // not need a second app-specific membership record.
-    return getOwnerIdentity(await requireUser(request));
-  }
-
-  const managerKey = request.headers.get("x-auction-manager-key")?.trim() ?? "";
-  if (!MANAGER_KEY_PATTERN.test(managerKey)) {
-    throw new PublishingAuthenticationError(
-      "Publish from the browser where you created this auction, or sign in.",
-    );
-  }
-
-  const fingerprint = createHash("sha256").update(managerKey).digest("hex").slice(0, 32);
+function ownerCredential(user: User): AuctionOwnerCredential {
+  const identity = getOwnerIdentity(user);
   return {
-    ownerName: "Campaign owner",
-    ownerEmail: `auction-${fingerprint}@auth.brand-anything.vercel.app`,
+    kind: "auth",
+    ownerUserId: user.id,
+    managerKeyHash: null,
+    managerKeyHashCandidates: [],
+    ...identity,
   };
+}
+
+export function getManagerCredentialFromValue(value: string): AuctionOwnerCredential {
+  const managerKey = value.trim();
+  if (!MANAGER_KEY_PATTERN.test(managerKey) && !MANAGER_RECOVERY_CODE_PATTERN.test(managerKey)) {
+    throw new PublishingAuthenticationError("Sign in before managing this auction.");
+  }
+  const fullHash = createHash("sha256").update(managerKey).digest("hex");
+  const legacyHash = fullHash.slice(0, 32);
+  return {
+    kind: "manager",
+    ownerUserId: null,
+    managerKeyHash: fullHash,
+    managerKeyHashCandidates: [fullHash, legacyHash],
+    ownerName: "Campaign owner",
+    ownerEmail: `auction-${legacyHash}@auth.brand-anything.vercel.app`,
+  };
+}
+
+export function getManagerCredential(request: Request) {
+  return getManagerCredentialFromValue(
+    request.headers.get("x-auction-manager-key")
+      || request.headers.get("x-lid-manager-key")
+      || "",
+  );
+}
+
+export async function getPublishingOwnerCredential(request: Request): Promise<AuctionOwnerCredential> {
+  if (request.headers.has("authorization")) {
+    return ownerCredential(await requireUser(request));
+  }
+  return getManagerCredential(request);
+}
+
+export async function getPublishingOwner(request: Request) {
+  const owner = await getPublishingOwnerCredential(request);
+  return { ownerName: owner.ownerName, ownerEmail: owner.ownerEmail };
 }

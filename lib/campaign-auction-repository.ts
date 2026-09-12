@@ -8,6 +8,7 @@ import {
   getCampaignTable,
   getConfigureAuctionSpotsFunction,
   getCreateAuctionFunction,
+  getCreateOwnedAuctionFunction,
   getAuctionMediaBucket,
   getLogoBucket,
   getPlaceAuctionBidFunction,
@@ -250,8 +251,18 @@ export async function attachCampaignAsset(input: AttachCampaignAssetInput) {
 
 export async function createAuction(input: CreateAuctionInput): Promise<CreateAuctionResult> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.rpc(getCreateAuctionFunction(), {
+  const ownerParams = input.ownerUserId || input.managerKeyHash
+    ? {
+      p_owner_user_id: input.ownerUserId ?? null,
+      p_manager_key_hash: input.managerKeyHash ?? null,
+    }
+    : {};
+  const rpcName = input.ownerUserId || input.managerKeyHash
+    ? getCreateOwnedAuctionFunction()
+    : getCreateAuctionFunction();
+  const { data, error } = await supabase.rpc(rpcName, {
     p_slug: input.slug,
+    ...ownerParams,
     p_owner_name: input.ownerName,
     p_owner_email: input.ownerEmail,
     p_title: input.title,
