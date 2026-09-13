@@ -14,7 +14,6 @@ import {
   getStripeBidContext,
   markBidPaymentPaid,
   markBidPaymentStatus,
-  markPaymentIntentRefunded,
   settleLaptopBidPayment,
   stripeEnvironment,
   type LaptopBidPayment,
@@ -24,6 +23,7 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 const DEPOSIT_RATE = 0.2;
 const PLATFORM_FEE_RATE = 0.1;
+type RefundReason = "outbid" | "auction_closed" | "bid_too_low" | "payment_rejected";
 
 export type StripeBidErrorCode =
   | "campaign_not_found"
@@ -197,7 +197,7 @@ async function refundPaymentIntent(
   paymentIntent: string,
   paymentId: string,
   stripeAccountId: string,
-  reason: "outbid" | "auction_closed" | "bid_too_low" | "payment_rejected",
+  reason: RefundReason,
 ) {
   await markBidPaymentStatus(paymentId, "refund_pending", reason);
   await getStripe().refunds.create({
@@ -210,6 +210,33 @@ async function refundPaymentIntent(
     stripeAccount: stripeAccountId,
   });
   await markBidPaymentStatus(paymentId, "refunded", reason);
+}
+
+function refundReason(value: string | null): RefundReason {
+  if (value === "outbid" || value === "auction_closed" || value === "bid_too_low") return value;
+  return "payment_rejected";
+}
+
+async function refundPreviousBid(
+  previousPaymentIntentId: string | null,
+  currentPaymentIntentId: string | null,
+  stripeAccountId: string,
+) {
+  if (!previousPaymentIntentId || previousPaymentIntentId === currentPaymentIntentId) return;
+  const previousPayment = await getSupabaseAdmin()
+    .from(getLaptopBidPaymentTable())
+    .select("id,logo_storage_path,status")
+    .eq("stripe_payment_intent_id", previousPaymentIntentId)
+    .maybeSingle();
+  if (previousPayment.error) throw previousPayment.error;
+  if (!previousPayment.data || previousPayment.data.status === "refunded") return;
+  await refundPaymentIntent(
+    previousPaymentIntentId,
+    String(previousPayment.data.id),
+    stripeAccountId,
+    "outbid",
+  );
+  await removeLogo(previousPayment.data.logo_storage_path as string | null);
 }
 
 export type CheckoutFulfillment = {
@@ -238,6 +265,11 @@ export async function fulfillCheckoutSession(
   );
 
   if (payment.status === "accepted") {
+    await refundPreviousBid(
+      payment.previousPaymentIntentId,
+      payment.paymentIntentId,
+      stripeAccountId,
+    );
     return {
       status: "accepted",
       reason: payment.failureReason ?? undefined,
@@ -254,7 +286,13 @@ export async function fulfillCheckoutSession(
     return { status: "failed", reason: payment.failureReason ?? undefined };
   }
   if (payment.status === "refund_pending") {
-    return { status: "pending", reason: payment.failureReason ?? undefined };
+    if (!payment.paymentIntentId) {
+      throw new Error("A refund-pending bid is missing its PaymentIntent.");
+    }
+    const reason = refundReason(payment.failureReason);
+    await refundPaymentIntent(payment.paymentIntentId, payment.id, stripeAccountId, reason);
+    await removeLogo(payment.logoStoragePath);
+    return { status: "refunded", reason };
   }
 
   if (session.status === "expired" && payment.status === "pending") {
@@ -280,24 +318,7 @@ export async function fulfillCheckoutSession(
     return { status: "refunded", reason: result.reason };
   }
 
-  if (result.previousPaymentIntentId && result.previousPaymentIntentId !== intentId) {
-    const previousPayment = await getSupabaseAdmin()
-      .from(getLaptopBidPaymentTable())
-      .select("id,logo_storage_path")
-      .eq("stripe_payment_intent_id", result.previousPaymentIntentId)
-      .maybeSingle();
-    if (previousPayment.error) throw previousPayment.error;
-    if (previousPayment.data) {
-      await refundPaymentIntent(
-        result.previousPaymentIntentId,
-        String(previousPayment.data.id),
-        stripeAccountId,
-        "outbid",
-      );
-      await markPaymentIntentRefunded(result.previousPaymentIntentId, "outbid");
-      await removeLogo(previousPayment.data.logo_storage_path as string | null);
-    }
-  }
+  await refundPreviousBid(result.previousPaymentIntentId, intentId, stripeAccountId);
 
   return {
     status: "accepted",

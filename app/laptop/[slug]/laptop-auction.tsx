@@ -9,13 +9,13 @@ import { useI18n } from "@/app/i18n-provider";
 import { ModelStage } from "@/app/model-stage";
 import { PreferenceControls } from "@/app/preference-controls";
 import type { Spot } from "@/lib/auction";
+import { MAX_BID_AMOUNT_USD } from "@/lib/bid-limits";
 import { getBrandModelFormat } from "@/lib/brand-model";
 import { formatRelativeTime, SPOT_NAME_KEYS } from "@/lib/i18n";
 import type { Locale } from "@/lib/i18n";
-import type { AuctionBidResult, AuctionCampaignSnapshot } from "@/lib/campaign-auction";
+import type { AuctionCampaignSnapshot } from "@/lib/campaign-auction";
 import {
   amountFromUsd,
-  amountToUsd,
   amountToUsdCents,
   currencyDisplayName,
   currencySymbol,
@@ -43,8 +43,7 @@ function compactMoney(amountUsd: number, currency: Currency, locale: Locale) {
 
 type BidResponse = {
   error?: string;
-  result?: AuctionBidResult;
-  snapshot?: AuctionCampaignSnapshot | null;
+  checkoutUrl?: string;
 };
 
 function useCountdown(closesAt: string) {
@@ -107,20 +106,18 @@ function BidPanel({
   slug,
   spot,
   isAnything,
-  onSnapshot,
 }: {
   slug: string;
   spot: Spot;
   isAnything: boolean;
-  onSnapshot: (snapshot: AuctionCampaignSnapshot) => void;
 }) {
   const { currency, locale, t } = useI18n();
   const money = (amountUsd: number) => formatCurrency(amountUsd, currency, locale, 0);
+  const maximumDisplayBid = Math.floor(amountFromUsd(MAX_BID_AMOUNT_USD, currency) * 100) / 100;
   const [amount, setAmount] = useState(String(minimumDisplayAmount(spot.minBid, currency)));
   const [logoName, setLogoName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -128,46 +125,29 @@ function BidPanel({
     if (submitting) return;
     setSubmitting(true);
     setErrorMessage("");
-    setSuccessMessage("");
     const formData = new FormData(event.currentTarget);
     formData.set("spotId", String(spot.id));
     formData.set("amountCents", String(amountToUsdCents(Number(amount), currency)));
     formData.set("idempotencyKey", idempotencyKey);
 
     try {
-      const response = await fetch(`/api/auctions/${encodeURIComponent(slug)}/bids`, {
+      const response = await fetch(`/api/auctions/${encodeURIComponent(slug)}/bids/checkout`, {
         method: "POST",
         body: formData,
       });
       const payload = await response.json() as BidResponse;
-      if (payload.snapshot) onSnapshot(payload.snapshot);
-      if (!response.ok || !payload.result?.accepted) {
-        setErrorMessage(t("home.bidError"));
-        if (response.status === 409) {
-          setIdempotencyKey(crypto.randomUUID());
-          if (payload.result?.minimumNextBid) setAmount(String(minimumDisplayAmount(payload.result.minimumNextBid, currency)));
-        }
+      if (response.ok && payload.checkoutUrl) {
+        window.location.assign(payload.checkoutUrl);
         return;
       }
-      setSuccessMessage(payload.result.reason === "already_processed"
-        ? t("laptop.alreadyRecorded", { amount: money(amountToUsd(Number(amount), currency)), spot: spot.id })
-        : t("laptop.leading", { amount: money(payload.result.currentBid), spot: spot.id }));
+      setErrorMessage(payload.error || t("home.bidError"));
+      if (response.status === 409) setIdempotencyKey(crypto.randomUUID());
     } catch {
       setErrorMessage(t("home.networkError"));
     } finally {
       setSubmitting(false);
     }
   };
-
-  if (successMessage) {
-    return (
-      <div className={styles.bidSuccess} role="status">
-        <span aria-hidden="true">✓</span>
-        <h3>{t("home.bidLive")}</h3>
-        <p>{successMessage}</p>
-      </div>
-    );
-  }
 
   return (
     <form className={styles.bidForm} onSubmit={handleSubmit}>
@@ -176,7 +156,7 @@ function BidPanel({
         <h3>{isAnything ? spot.name : SPOT_NAME_KEYS[spot.id] ? t(SPOT_NAME_KEYS[spot.id]!) : spot.name}</h3>
         <span>{spot.bids > 0 ? t("laptop.leadingLine", { holder: spot.holder, amount: money(spot.bid) }) : `${t("common.openingBid")} ${money(spot.minBid)}`}</span>
       </div>
-      <label>{t("laptop.yourBid", { currency: currencyDisplayName(currency) })}<input type="number" min={minimumDisplayAmount(spot.minBid, currency)} step="1" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>
+      <label>{t("laptop.yourBid", { currency: currencyDisplayName(currency) })}<input type="number" min={minimumDisplayAmount(spot.minBid, currency)} max={maximumDisplayBid} step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>
       <div className={styles.fieldPair}>
         <label>{t("common.brandName")}<input name="brandName" type="text" maxLength={80} placeholder={t("common.brand")} required /></label>
         <label>{t("common.email")}<input name="email" type="email" maxLength={254} placeholder="you@company.com" required /></label>
@@ -191,8 +171,10 @@ function BidPanel({
         <span>{logoName || t("laptop.chooseLogo")}</span>
       </label>
       {errorMessage && <p className={styles.bidError} role="alert">{errorMessage}</p>}
-      <button type="submit" disabled={submitting}>{submitting ? t("home.savingBid") : spot.bids > 0 ? `${t("common.outbid")} ${spot.holder} →` : `${t("common.placeFirstBid")} →`}</button>
-      <small>{t(isAnything ? "laptop.bidFinalCampaign" : "laptop.bidFinal")}</small>
+      <button type="submit" disabled={submitting}>
+        {submitting ? t("home.redirectingCheckout") : `${t("home.payDeposit")} →`}
+      </button>
+      <small>{t("laptop.stripeDeposit")}</small>
     </form>
   );
 }
@@ -313,7 +295,6 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: AuctionCam
                 slug={snapshot.campaign.slug}
                 spot={selectedSpot}
                 isAnything={isAnything}
-                onSnapshot={setSnapshot}
               />
             )}
           </div>

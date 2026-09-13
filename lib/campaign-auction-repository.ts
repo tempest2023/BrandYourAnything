@@ -11,11 +11,9 @@ import {
   getCreateOwnedAuctionFunction,
   getAuctionMediaBucket,
   getLogoBucket,
-  getPlaceAuctionBidFunction,
 } from "@/lib/database-names";
 import type {
   AuctionCampaignSnapshot,
-  AuctionBidResult,
   CreateAuctionInput,
   CreateAuctionResult,
 } from "@/lib/campaign-auction";
@@ -75,28 +73,6 @@ type CreateAuctionRow = {
   reason: CreateAuctionResult["reason"];
   auction_id: string | null;
   auction_slug: string;
-};
-
-type PlaceAuctionBidRow = {
-  accepted: boolean;
-  reason: AuctionBidResult["reason"];
-  current_bid_cents: number;
-  minimum_next_bid_cents: number;
-  current_bidder_name: string;
-  bid_count: number;
-  bid_id: string | null;
-};
-
-export type PlaceAuctionBidInput = {
-  slug: string;
-  spotPosition: number;
-  amountCents: number;
-  brandName: string;
-  email: string;
-  website: string | null;
-  xHandle: string | null;
-  logoStoragePath: string | null;
-  idempotencyKey: string;
 };
 
 export type AttachCampaignAssetInput = {
@@ -299,33 +275,5 @@ export async function createAuction(input: CreateAuctionInput): Promise<CreateAu
     reason: row.reason,
     auctionId: row.auction_id,
     slug: row.auction_slug,
-  };
-}
-
-export async function placeAuctionBid(input: PlaceAuctionBidInput): Promise<AuctionBidResult> {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.rpc(getPlaceAuctionBidFunction(), {
-    p_auction_slug: input.slug,
-    p_spot_position: input.spotPosition,
-    p_amount_cents: input.amountCents,
-    p_bidder_name: input.brandName,
-    p_bidder_email: input.email,
-    p_website: input.website,
-    p_x_handle: input.xHandle,
-    p_logo_storage_path: input.logoStoragePath,
-    p_idempotency_key: input.idempotencyKey,
-  });
-
-  if (error) throw error;
-  const row = (Array.isArray(data) ? data[0] : data) as PlaceAuctionBidRow | undefined;
-  if (!row) throw new Error("The database returned no result for the auction bid.");
-  return {
-    accepted: row.accepted,
-    reason: row.reason,
-    currentBid: row.current_bid_cents / 100,
-    minimumNextBid: row.minimum_next_bid_cents / 100,
-    currentBidderName: row.current_bidder_name,
-    bidCount: row.bid_count,
-    bidId: row.bid_id,
   };
 }

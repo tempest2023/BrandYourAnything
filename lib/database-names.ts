@@ -18,14 +18,6 @@ export function getDatabasePrefix(): DatabasePrefix {
   return prefix as DatabasePrefix;
 }
 
-export function getAuctionTable(name: "spots" | "bids") {
-  return `${getDatabasePrefix()}_${name}`;
-}
-
-export function getPlaceBidFunction() {
-  return `${getDatabasePrefix()}_place_bid`;
-}
-
 export function getLogoBucket() {
   return `${getDatabasePrefix()}_bid_logos`;
 }
@@ -52,10 +44,6 @@ export function getCreateOwnedAuctionFunction() {
 
 export function getConfigureAuctionSpotsFunction() {
   return `${getDatabasePrefix()}_configure_auction_spots`;
-}
-
-export function getPlaceAuctionBidFunction() {
-  return `${getDatabasePrefix()}_place_auction_bid`;
 }
 
 export function getAuctionMediaBucket() {

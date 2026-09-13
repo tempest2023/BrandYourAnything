@@ -7,6 +7,7 @@ import { getLogoBucket } from "@/lib/database-names";
 import { createLaptopBidCheckout, StripeBidError } from "@/lib/stripe-bids";
 import { isStripeConfigured } from "@/lib/stripe";
 import { getSupabaseAdmin, isSupabaseConfigured } from "@/lib/supabase-admin";
+import { MAX_SURFACE_SPOTS } from "@/lib/surface-spots";
 
 export const runtime = "nodejs";
 
@@ -44,7 +45,7 @@ export async function POST(request: Request, context: { params: Promise<{ slug: 
   let logoStoragePath: string | null = null;
   try {
     const { slug } = await context.params;
-    const input = parseBidForm(await request.formData());
+    const input = parseBidForm(await request.formData(), MAX_SURFACE_SPOTS);
     if (input.logo) logoStoragePath = await uploadLogo(input.logo, slug, input.spotId, input.idempotencyKey);
     return Response.json(await createLaptopBidCheckout(slug, input, logoStoragePath), { status: 201 });
   } catch (error) {

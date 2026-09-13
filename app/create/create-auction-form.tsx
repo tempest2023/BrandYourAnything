@@ -12,6 +12,7 @@ import {
   isAuctionPublishErrorCode,
   type AuctionPublishErrorCode,
 } from "@/lib/auction-api-errors";
+import { MAX_BID_AMOUNT_USD } from "@/lib/bid-limits";
 import type { BrandModelPreview, UploadedBrandModel } from "@/lib/brand-model";
 import { LOCALES, type Locale, type TranslationKey } from "@/lib/i18n";
 import {
@@ -209,7 +210,7 @@ function normalizeSurfaceSpotPricing(
 
 function validSurfacePrice(value: string) {
   const amount = Number(value);
-  return Number.isFinite(amount) && amount >= 1;
+  return Number.isFinite(amount) && amount >= 1 && amount <= MAX_BID_AMOUNT_USD;
 }
 
 function defaultTitleFor(machine: Machine, teslaModel: TeslaModel) {
@@ -1398,7 +1399,7 @@ export function CreateAuctionForm() {
                   <label className={specialSpot ? styles.checkedSpecial : styles.specialSpot}>
                     <input type="checkbox" checked={specialSpot} onChange={(event) => setSpecialSpot(event.target.checked)} />
                     <span><strong>Add a special spot over the logo</strong><small>6 × 6 cm, covering the Apple mark in the middle of the lid. Name your own price — it is the one placement size says nothing about.</small></span>
-                    {specialSpot && <span className={styles.specialPrice}><small>Starts at</small><span><input type="number" min="1" value={specialPrice} onChange={(event) => setSpecialPrice(event.target.value)} /><b>€</b></span></span>}
+                    {specialSpot && <span className={styles.specialPrice}><small>Starts at</small><span><input type="number" min="1" max={MAX_BID_AMOUNT_USD} step="0.01" value={specialPrice} onChange={(event) => setSpecialPrice(event.target.value)} /><b>€</b></span></span>}
                   </label>
                 )}
                 <p className={styles.totalCopy}>{surfacePricingIsValid
@@ -1540,7 +1541,7 @@ function PriceField({ label, dimensions, value, onChange }: { label: string; dim
   return (
     <label className={styles.priceField}>
       <span><strong>{label}</strong><small>{dimensions}</small></span>
-      <span className={styles.priceInput}><input type="number" min="1" value={value} onChange={(event) => onChange(event.target.value)} /><b>€</b></span>
+      <span className={styles.priceInput}><input type="number" min="1" max={MAX_BID_AMOUNT_USD} step="0.01" value={value} onChange={(event) => onChange(event.target.value)} /><b>€</b></span>
     </label>
   );
 }
@@ -1633,7 +1634,8 @@ function SurfacePriceEditor({
               type="number"
               inputMode="decimal"
               min="1"
-              step="1"
+              max={MAX_BID_AMOUNT_USD}
+              step="0.01"
               value={selectedSpot.price}
               aria-invalid={!validSurfacePrice(selectedSpot.price)}
               aria-describedby="surface-price-hint"

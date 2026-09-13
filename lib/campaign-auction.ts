@@ -1,4 +1,4 @@
-import type { AuctionSnapshot, PlaceBidResult } from "@/lib/auction";
+import type { AuctionSnapshot } from "@/lib/auction";
 import type { CampaignAssetType } from "@/lib/brand-model";
 import type { SpotLayoutItem } from "@/lib/surface-spots";
 
@@ -49,8 +49,4 @@ export type CreateAuctionResult = {
   reason: "created" | "already_processed" | "slug_taken" | "rate_limited" | "idempotency_conflict";
   auctionId: string | null;
   slug: string;
-};
-
-export type AuctionBidResult = Omit<PlaceBidResult, "reason"> & {
-  reason: PlaceBidResult["reason"] | "campaign_not_found";
 };

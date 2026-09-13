@@ -3,6 +3,7 @@ export const SITE_URL = (
 ).replace(/\/+$/, "");
 
 export const SITE_HOST = new URL(SITE_URL).host;
+export const DEFAULT_AUCTION_SLUG = "brand-my-mac";
 
 export function auctionPath(slug: string) {
   return `/${slug}`;

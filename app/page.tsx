@@ -11,12 +11,12 @@ import {
   STARTER_HISTORY,
   STARTER_SPOTS,
   type AuctionSnapshot,
-  type PlaceBidResult,
   type Spot,
 } from "@/lib/auction";
 import { formatRelativeTime, SPOT_NAME_KEYS } from "@/lib/i18n";
 import type { Locale } from "@/lib/i18n";
 import type { AuctionCampaign } from "@/lib/campaign-auction";
+import { MAX_BID_AMOUNT_USD } from "@/lib/bid-limits";
 import {
   amountFromUsd,
   amountToUsd,
@@ -27,6 +27,7 @@ import {
   minimumDisplayAmount,
 } from "@/lib/money";
 import type { Currency } from "@/lib/money";
+import { DEFAULT_AUCTION_SLUG } from "@/lib/site";
 
 function compactMoney(amountUsd: number, currency: Currency, locale: Locale) {
   const converted = amountFromUsd(amountUsd, currency);
@@ -149,34 +150,30 @@ function MacLid({
 
 type BidApiResponse = {
   error?: string;
-  result?: PlaceBidResult;
-  snapshot?: AuctionSnapshot;
+  checkoutUrl?: string;
 };
 
 function BidDialog({
   spot,
   endpoint,
   onClose,
-  onSnapshot,
 }: {
   spot: Spot | null;
   endpoint: string;
   onClose: () => void;
-  onSnapshot: (snapshot: AuctionSnapshot) => void;
 }) {
   const { currency, locale, t } = useI18n();
   const money = (amountUsd: number) => formatCurrency(amountUsd, currency, locale);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const minimumDisplayBid = spot ? minimumDisplayAmount(spot.minBid, currency) : 0;
+  const maximumDisplayBid = Math.floor(amountFromUsd(MAX_BID_AMOUNT_USD, currency) * 100) / 100;
   const bidContext = `${spot?.id ?? "closed"}-${spot?.minBid ?? 0}-${currency}`;
   const [bidInput, setBidInput] = useState(() => ({ context: bidContext, value: String(minimumDisplayBid) }));
   const bid = bidInput.context === bidContext ? bidInput.value : String(minimumDisplayBid);
   const [logoName, setLogoName] = useState("");
-  const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
-  const [acceptedBid, setAcceptedBid] = useState<{ brand: string; amountUsd: number } | null>(null);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -206,19 +203,12 @@ function BidDialog({
     try {
       const response = await fetch(endpoint, { method: "POST", body: formData });
       const payload = await response.json() as BidApiResponse;
-      if (payload.snapshot) onSnapshot(payload.snapshot);
-
-      if (!response.ok || !payload.result?.accepted) {
-        setErrorMessage(t("home.bidError"));
-        if (response.status === 409) setIdempotencyKey(crypto.randomUUID());
+      if (response.ok && payload.checkoutUrl) {
+        window.location.assign(payload.checkoutUrl);
         return;
       }
-
-      setAcceptedBid({
-        brand: String(formData.get("brandName")),
-        amountUsd: amountCents / 100,
-      });
-      setSubmitted(true);
+      setErrorMessage(payload.error || t("home.bidError"));
+      if (response.status === 409) setIdempotencyKey(crypto.randomUUID());
     } catch {
       setErrorMessage(t("home.networkError"));
     } finally {
@@ -233,8 +223,7 @@ function BidDialog({
       {spot && (
         <div className="bid-panel">
           <button className="dialog-close" onClick={onClose} aria-label={t("common.close")}>×</button>
-          {!submitted ? (
-            <form onSubmit={handleSubmit}>
+          <form onSubmit={handleSubmit}>
               <div className="bid-heading">
                 <p className="eyebrow">{t("common.spot")} {spot.id}</p>
                 <h3>{SPOT_NAME_KEYS[spot.id] ? t(SPOT_NAME_KEYS[spot.id]!) : spot.name}</h3>
@@ -254,15 +243,15 @@ function BidDialog({
 
               <label htmlFor="bid">{t("home.yourBid", { currency: currencyDisplayName(currency) })}</label>
               <div className="money-input">
-                <input id="bid" type="number" min={minimumDisplayBid} step="1" value={bid} onChange={(event) => setBidInput({ context: bidContext, value: event.target.value })} required />
+                <input id="bid" type="number" min={minimumDisplayBid} max={maximumDisplayBid} step="0.01" value={bid} onChange={(event) => setBidInput({ context: bidContext, value: event.target.value })} required />
                 <span>{currencySymbol(currency)}</span>
               </div>
               <p className="field-note">{t("home.minimumBid", { amount: money(spot.minBid) })}</p>
 
               <div className="deposit-box">
                 <p><span>{t("home.expectedDeposit", { amount: money(amountUsd) })}</span><span>{money(depositUsd)}</span></p>
-                <p className="due"><span>{t("home.paymentIntegration")}</span><strong>{t("home.notCharged")}</strong></p>
-                <small>{t("home.depositNote")}</small>
+                <p className="due"><span>{t("home.paymentIntegration")}</span><strong>{t("home.stripeCheckout")}</strong></p>
+                <small>{t("home.stripeDepositNote")}</small>
               </div>
 
               <div className="form-grid">
@@ -282,18 +271,10 @@ function BidDialog({
 
               {errorMessage && <p className="bid-error" role="alert">{errorMessage}</p>}
               <button className="primary-button bid-submit" type="submit" disabled={submitting}>
-                {submitting ? t("home.savingBid") : spot.bids > 0 ? `${t("common.outbid")} ${spot.holder}` : t("common.placeFirstBid")}
+                {submitting ? t("home.redirectingCheckout") : t("home.payDeposit")}
               </button>
               <p className="hand-check">{t("home.reviewNote")}</p>
             </form>
-          ) : (
-            <div className="bid-success" role="status">
-              <span>✓</span>
-              <h3>{t("home.bidLive")}</h3>
-              <p>{t("home.bidLiveBody", { brand: acceptedBid?.brand ?? "", amount: money(acceptedBid?.amountUsd ?? spot.bid) })}</p>
-              <button className="primary-button" onClick={onClose}>{t("home.backAuction")}</button>
-            </div>
-          )}
         </div>
       )}
     </dialog>
@@ -308,8 +289,8 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
     ? `/api/auctions/${encodeURIComponent(campaign.slug)}`
     : "/api/auction";
   const bidEndpoint = campaign
-    ? `/api/auctions/${encodeURIComponent(campaign.slug)}/bids`
-    : "/api/bids";
+    ? `/api/auctions/${encodeURIComponent(campaign.slug)}/bids/checkout`
+    : `/api/auctions/${DEFAULT_AUCTION_SLUG}/bids/checkout`;
   const isMac = !campaign || /^mac\b/i.test(campaign.objectName);
   const machineImage = campaign?.photoUrl ?? "/macbook.webp";
   const machineAssetKey = campaign && !campaign.photoUrl && !isMac
@@ -740,7 +721,6 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
         spot={selectedSpot}
         endpoint={bidEndpoint}
         onClose={() => setSelectedSpotId(null)}
-        onSnapshot={applySnapshot}
       />
     </>
   );

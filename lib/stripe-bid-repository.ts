@@ -362,14 +362,6 @@ export async function markBidPaymentStatus(
   if (error) throw error;
 }
 
-export async function markPaymentIntentRefunded(paymentIntentId: string, reason: string) {
-  const { error } = await getSupabaseAdmin()
-    .from(getLaptopBidPaymentTable())
-    .update({ status: "refunded", failure_reason: reason, updated_at: new Date().toISOString() })
-    .eq("stripe_payment_intent_id", paymentIntentId);
-  if (error) throw error;
-}
-
 export async function settleLaptopBidPayment(paymentId: string) {
   const { data, error } = await getSupabaseAdmin().rpc(getSettleLaptopBidPaymentFunction(), {
     p_payment_id: paymentId,

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { MAX_BID_AMOUNT_CENTS } from "@/lib/bid-limits";
 import { isSupportedBrandModelFileName } from "@/lib/brand-model";
 import type { CampaignAssetType } from "@/lib/brand-model";
 import { isModelSizeAllowed } from "@/lib/model-upload-claim";
@@ -129,7 +130,7 @@ function parseSpotLayout(formData: FormData, assetType: CampaignAssetType) {
     if (spot.id !== index + 1 || !expectedSurfaceDimensions
       || name.length < 2 || name.length > 80 || dimensions.length < 2 || dimensions.length > 100
       || !Number.isSafeInteger(openingBidCents) || Number(openingBidCents) < 100
-      || Number(openingBidCents) > 100_000_000_000
+      || Number(openingBidCents) > MAX_BID_AMOUNT_CENTS
       || (assetType === "anything" && dimensions !== `${expectedSurfaceDimensions.label} · ${expectedSurfaceDimensions.coverage}`)
       || (assetType === "anything" && (!position || !normal))) {
       throw new AuctionValidationError(`Spot ${index + 1} has invalid placement or pricing details.`);
@@ -175,9 +176,9 @@ export function parseAuctionForm(formData: FormData): ParsedAuctionForm {
   const modelFileSize = modelFileSizeText === null ? null : Number(modelFileSizeText);
   const idempotencyKey = requiredText(formData, "idempotencyKey", 36, 36).toLowerCase();
   const goalCents = cents(formData, "goalCents", 100, 100_000_000_000);
-  const smallOpeningBidCents = cents(formData, "smallOpeningBidCents", 100, 100_000_000_000);
-  const mediumOpeningBidCents = cents(formData, "mediumOpeningBidCents", 100, 100_000_000_000);
-  const largeOpeningBidCents = cents(formData, "largeOpeningBidCents", 100, 100_000_000_000);
+  const smallOpeningBidCents = cents(formData, "smallOpeningBidCents", 100, MAX_BID_AMOUNT_CENTS);
+  const mediumOpeningBidCents = cents(formData, "mediumOpeningBidCents", 100, MAX_BID_AMOUNT_CENTS);
+  const largeOpeningBidCents = cents(formData, "largeOpeningBidCents", 100, MAX_BID_AMOUNT_CENTS);
   const minIncrementCents = cents(formData, "minIncrementCents", 100, 100_000_000);
   const auctionClosesAtInput = requiredText(formData, "auctionClosesAt", 10, 40);
   const auctionClosesAtDate = new Date(auctionClosesAtInput);

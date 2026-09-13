@@ -175,30 +175,22 @@ Every environment adds four compact tables:
 
 The owner email, bidder emails, and Storage paths are never returned by the public API. Public images use short-lived signed URLs. `anon` and `authenticated` have no direct access to the tables, buckets, or write functions.
 
-Creation goes through `ba_<env>_create_auction(...)`. It uses advisory locks for slug and idempotency races, creates the auction and its spots atomically, and applies a small per-identity creation limit. Tenant bids go through `ba_<env>_place_auction_bid(...)`; it locks the exact campaign spot, re-checks the live minimum, appends the bid, and updates the winner in one transaction. Idempotency keys make network retries safe.
+Creation goes through `ba_<env>_create_auction(...)`. It uses advisory locks for slug and idempotency races, creates the auction and its spots atomically, and applies a small per-identity creation limit. Paid bids create Stripe Checkout Sessions; after payment, `ba_<env>_settle_laptop_bid_payment(...)` locks the exact campaign spot, re-checks the live minimum, appends the bid, and updates the winner in one transaction. Idempotency keys make Checkout, settlement, and refund retries safe.
 
 The browser only calls Next.js Route Handlers:
 
 - `POST /api/models/upload-ticket` validates a GLB request and returns a one-use signed upload URL plus a signed metadata claim.
 - `POST /api/auctions` publishes a campaign.
 - `GET /api/auctions/<slug>` returns its public snapshot.
-- `POST /api/auctions/<slug>/bids` places a concurrency-safe bid and optionally stores a private logo.
+- `POST /api/auctions/<slug>/bids/checkout` validates the bid, stores an optional private logo, and starts Stripe Checkout for the required 20% deposit.
+- `GET /api/stripe/checkout/<sessionId>` confirms and settles a paid Checkout Session.
+- `POST /api/stripe/webhook` settles completed payments and resumes any required refunds.
 
 ## Included starter auction
 
-The original single-laptop homepage remains available and uses two application tables per environment:
-
-- `ba_<env>_spots` stores the ten auction slots and their current winning state.
-- `ba_<env>_bids` is an append-only bid ledger. Bidder emails and private logo paths are never returned by the public API.
+The homepage reads the durable `brand-my-mac` tenant campaign through `GET /api/auction` and submits every bid to its Stripe Checkout endpoint. The former standalone auction repository and unpaid `POST /api/bids` and `POST /api/auctions/<slug>/bids` endpoints have been removed.
 
 `ba_dev_*` and `ba_prod_*` can safely share a Supabase project with each other and with unrelated applications. `SUPABASE_DATABASE_PREFIX` selects the environment. Production uses `ba_prod`; local development and Vercel previews use `ba_dev`.
-
-All writes go through `public.ba_<env>_place_bid(...)`. The function takes a PostgreSQL row lock on the selected spot, re-checks the latest minimum, inserts the bid, and updates the winner inside one transaction. An advisory transaction lock plus a unique key makes retries idempotent, including accidental key reuse across different spots.
-
-Its browser flow uses these Route Handlers:
-
-- `GET /api/auction` returns public spots and recent bid history.
-- `POST /api/bids` validates multipart form data, stores an optional logo in the private `ba_<env>_bid_logos` bucket, and calls the atomic database function.
 
 Supabase secret keys are server-only for both flows.
 
