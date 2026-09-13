@@ -529,7 +529,7 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
                         <td data-label={t("common.size")}><span className={`size-tag size-tag--${spot.size.toLowerCase()}`}>{spot.size}</span>{spot.dimensions}</td>
                         <td data-label={t("common.brand")}>{spot.bids === 0 ? <span className="availability-pill">{t("common.available")}</span> : spot.website ? <a href={spot.website} target="_blank" rel="noreferrer"><Logo spot={spot} compact /></a> : <Logo spot={spot} compact />}</td>
                         <td data-label={spot.bids === 0 ? t("home.startingBid") : t("common.currentBid")}><strong>{compactMoney(spot.bids === 0 ? spot.minBid : spot.bid, currency, locale)}</strong><small>{spot.bids === 0 ? t("common.noBids") : `${spot.bids} ${spot.bids === 1 ? t("common.bid").toLowerCase() : t("common.bids")}`}</small></td>
-                        <td data-label={t("common.action")}><button className="outbid-button" onClick={() => setSelectedSpotId(spot.id)}>{spot.bids === 0 ? t("common.placeBid") : t("common.outbid")}</button></td>
+                        <td data-label={t("common.action")}><button className={`outbid-button ${spot.bids > 0 ? "outbid-button--outbid" : ""}`.trim()} onClick={() => setSelectedSpotId(spot.id)}>{spot.bids === 0 ? t("common.placeBid") : t("common.outbid")}</button></td>
                       </tr>
                     ))}
                   </tbody>

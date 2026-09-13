@@ -380,6 +380,8 @@ test("homepage Stripe Bid → Outbid flow", { timeout: 180_000 }, async () => {
     const context = await browser.newContext({ locale: "en-US" });
     const page = await context.newPage();
     await page.goto(`${baseUrl}/${fixtureSlug}`, { waitUntil: "domcontentloaded" });
+    const actionButton = page.locator(".spots-table .outbid-button");
+    const bidButtonBackground = await actionButton.evaluate((button) => getComputedStyle(button).backgroundColor);
 
     await placeBid(page, fixture.accountId, {
       amount: 400,
@@ -396,6 +398,14 @@ test("homepage Stripe Bid → Outbid flow", { timeout: 180_000 }, async () => {
       assert.match(text, /Alpha Brand/);
       assert.match(text, /Outbid/);
       assert.match(text, /\$400/);
+    });
+    await expectEventually("Outbid should use a distinct action color", async () => {
+      assert.equal(await actionButton.textContent(), "Outbid");
+      assert.equal(await actionButton.evaluate((button) => button.classList.contains("outbid-button--outbid")), true);
+      assert.notEqual(
+        await actionButton.evaluate((button) => getComputedStyle(button).backgroundColor),
+        bidButtonBackground,
+      );
     });
     await expectEventually("the winning logo should load through Next.js image optimization", async () => {
       const logo = page.locator('.lid-spot--2 img[alt="Alpha Brand"]');

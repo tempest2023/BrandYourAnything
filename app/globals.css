@@ -1025,6 +1025,10 @@ p {
   white-space: nowrap;
 }
 
+.outbid-button--outbid {
+  background: var(--ink);
+}
+
 .history-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -2099,6 +2103,11 @@ p {
     background: var(--blue-dark);
     box-shadow: 0 0.75rem 1.8rem oklch(45% 0.17 255 / 0.3);
     transform: translateY(-1px);
+  }
+
+  .outbid-button--outbid:hover {
+    background: oklch(30% 0.01 255);
+    box-shadow: 0 0.75rem 1.8rem oklch(20% 0.01 255 / 0.22);
   }
 
   .lid-spot:hover {
