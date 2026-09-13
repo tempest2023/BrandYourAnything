@@ -97,3 +97,25 @@ Remaining release gates (the resolved payment findings above do not close these)
   payment-copy consistency (low-price rule awaiting user choice).
 - Legacy test replacement, remote migrations/configuration, PR description,
   push and deployment verification. No remote migrations have been applied here.
+
+2026-09-13 Connect follow-up (local; not yet pushed):
+
+- Replaced read-then-write account association with owner-checked, row-locked
+  reserve/bind/status/check RPCs in both environments. A competing bind cannot
+  replace the original account; revocation during Stripe calls prevents binding
+  and prevents returning a newly created onboarding link.
+- Added durable account-create parameters, original operation identity, legacy
+  orphan lookup (open and closed accounts), and a guard outside the v2 30-day
+  idempotency window. Closed Stripe accounts now persist disabled readiness.
+- Real Stripe creation exposed three defects not caught by injected fixtures:
+  unsupported Express + Stripe responsibilities, missing merchant country, and
+  localhost being passed as the business website. Fixed with full Dashboard
+  (unchanged fee/loss responsibilities), explicit persisted country selection,
+  and omission of non-public website defaults in local tests.
+- `npm run test:connect-core`: 29/29 passing across real local dev/prod SQL;
+  `npm run test:payment-core`: 19/19 still passing. Typecheck/lint/build passed.
+- `npm run test:connect-e2e` now reaches real Stripe hosted onboarding through
+  local authenticated publication and the dashboard. It is NOT passing: Stripe
+  presents hCaptcha after the email step (verified screenshot). Added a headed
+  interactive mode for a human to finish, followed by automatic return/readiness
+  assertions. Do not weaken or skip that release gate to claim completion.

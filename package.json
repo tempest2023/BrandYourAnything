@@ -14,7 +14,9 @@
     "test:api-e2e": "npm run build && node --test scripts/test-auction-api-e2e.mjs",
     "test:stripe-e2e": "node --test scripts/test-homepage-stripe-e2e.mjs",
     "test:management-e2e": "node --test scripts/test-auction-management-e2e.mjs",
-    "test:payment-core": "node --test scripts/test-payment-core.mjs"
+    "test:payment-core": "node --test scripts/test-payment-core.mjs",
+    "test:connect-core": "node --test scripts/test-stripe-connect-core.mjs",
+    "test:connect-e2e": "node --test scripts/test-stripe-connect-e2e.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",

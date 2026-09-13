@@ -38,6 +38,8 @@ npx supabase start
 npx supabase migration up --local
 npm run test:payment-core
 npm run test:management-e2e
+npm run test:connect-core
+npm run test:connect-e2e
 npm run test:stripe-e2e
 ```
 
@@ -66,6 +68,46 @@ finish, it preserves database records for reconciliation. Do not reset the
 whole local database to clean up a failed test.
 
 Run browser suites serially: they share the `.next` build directory.
+
+## Creator Connect setup
+
+From `/manage`, choose **Connect Stripe**, select the country where your business
+is legally based, and continue to Stripe's hosted form. The country choices are
+loaded from Stripe Country Specs; a restricted key needs read access to that
+resource as well as Core Accounts/Account Links read/write access.
+
+New merchant accounts use the **full Stripe Dashboard**, with Stripe collecting
+its payment fees from the merchant and retaining the configured merchant loss
+responsibility. The old combination of Express Dashboard and Stripe collection
+responsibilities was rejected by Stripe. Switching to Express would require a
+different financial-responsibility model, not just a UI change.
+[Supported account configurations](https://docs.stripe.com/connect/accounts-v2/connected-account-configuration).
+
+The first account-create request is saved in the database before calling Stripe.
+Retries preserve its country, profile, parameters and operation key. Account
+binding/status updates check current ownership inside the database transaction;
+revoked recovery codes cannot bind accounts or obtain a newly generated
+onboarding link. A closed account disables bidding and requires operator review
+instead of silently creating a replacement.
+
+Accounts v2 retain idempotent operations for 30 days (unlike v1 Checkout's
+24-hour window). After 29 days, unbound attempts only recover a matching existing
+account from Stripe inventory; they never create again automatically. Legacy
+unbound auctions are checked for old open and closed accounts before creation.
+Ambiguous duplicates or an inventory scan over 1,000 accounts in either state
+require operator reconciliation.
+[Accounts v2 idempotency](https://docs.stripe.com/api-v2-overview#idempotency).
+
+`test:connect-core` exercises real local dev/prod SQL and simulated network races.
+`test:connect-e2e` creates a local authenticated owner and auction, then uses real
+Stripe sandbox account creation/hosted onboarding. It closes only its own test
+account and deletes its local fixture/user afterward. The full hosted flow is a
+release gate; merely reaching Stripe's form does not prove onboarding readiness.
+If Stripe presents a CAPTCHA, rerun with
+`STRIPE_CONNECT_INTERACTIVE=1 npm run test:connect-e2e`. Complete the sandbox
+form in the open test browser; the test then verifies the dashboard return and
+readiness automatically. Human verification is never bypassed or counted as a
+passing automated run.
 
 ## Webhooks and return URLs
 

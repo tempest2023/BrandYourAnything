@@ -551,6 +551,21 @@
   font-weight: 600;
 }
 
+.countryField {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+}
+
+.countryField select {
+  max-width: 100%;
+  padding: 0.5rem;
+  border: 1px solid var(--hairline);
+  border-radius: 0.4rem;
+  background: var(--surface);
+  color: var(--ink);
+}
+
 .importSection input {
   width: 100%;
   min-height: 3.2rem;

@@ -10,7 +10,6 @@ import {
 } from "@/lib/database-names";
 import type { LaptopBidPaymentStatus } from "@/lib/laptop";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import type { AuctionOwnerCredential } from "@/lib/publishing-auth";
 
 type LaptopPaymentRow = {
   id: string;
@@ -44,14 +43,6 @@ export type StripeBidContext = {
   stripeAccountId: string;
 };
 
-export type StripeCampaignAccount = {
-  id: string;
-  slug: string;
-  title: string;
-  stripeAccountId: string | null;
-  chargesEnabled: boolean;
-  payoutsEnabled: boolean;
-};
 
 export type LaptopBidPayment = {
   id: string;
@@ -141,49 +132,6 @@ function mapPayment(row: LaptopBidPaymentRow): LaptopBidPayment {
     refundStatus: row.refund_status,
     checkoutRequestVersion: row.checkout_request_version,
   };
-}
-
-export async function getOwnedStripeCampaign(slug: string, owner: AuctionOwnerCredential) {
-  const { data, error } = await getSupabaseAdmin()
-    .from(getLaptopTable("laptops"))
-    .select("id,slug,owner_email,owner_user_id,manager_key_hash,title,auction_closes_at,status,stripe_account_id,stripe_charges_enabled,stripe_payouts_enabled")
-    .eq("slug", slug.toLowerCase())
-    .maybeSingle();
-  if (error) throw error;
-  if (!data) return null;
-  const row = data as LaptopPaymentRow;
-  const ownedByUser = Boolean(owner.ownerUserId && row.owner_user_id === owner.ownerUserId);
-  const ownedByManager = Boolean(
-    row.manager_key_hash
-    && owner.managerKeyHashCandidates.includes(row.manager_key_hash),
-  );
-  if (!ownedByUser && !ownedByManager) return null;
-  return {
-    id: row.id,
-    slug: row.slug,
-    title: row.title,
-    stripeAccountId: row.stripe_account_id,
-    chargesEnabled: row.stripe_charges_enabled,
-    payoutsEnabled: row.stripe_payouts_enabled,
-  } satisfies StripeCampaignAccount;
-}
-
-export async function setStripeCampaignAccount(
-  laptopId: string,
-  accountId: string,
-  chargesEnabled: boolean,
-  payoutsEnabled: boolean,
-) {
-  const { error } = await getSupabaseAdmin()
-    .from(getLaptopTable("laptops"))
-    .update({
-      stripe_account_id: accountId,
-      stripe_charges_enabled: chargesEnabled,
-      stripe_payouts_enabled: payoutsEnabled,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", laptopId);
-  if (error) throw error;
 }
 
 export async function updateCampaignsForStripeAccount(
