@@ -1,4 +1,4 @@
-import { listXOwnedAuctions } from "@/lib/auction-ownership";
+import { listAccountOwnedAuctions } from "@/lib/auction-ownership";
 import { isSupabaseConfigured } from "@/lib/supabase-admin";
 import { getPublishingOwnerCredential, PublishingAuthenticationError } from "@/lib/publishing-auth";
 
@@ -11,7 +11,7 @@ export async function GET(request: Request) {
   try {
     const owner = await getPublishingOwnerCredential(request);
     return Response.json(
-      { auctions: await listXOwnedAuctions(owner) },
+      { auctions: await listAccountOwnedAuctions(owner) },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {

@@ -19,10 +19,15 @@ import type {
 } from "@/lib/campaign-auction";
 import { getPresetModelFromStoragePath } from "@/lib/preset-models";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { isStripeConfigured } from "@/lib/stripe";
 
 type CampaignRow = {
   id: string;
   slug: string;
+  status: "published" | "closed";
+  stripe_account_id: string | null;
+  stripe_charges_enabled: boolean;
+  stripe_payouts_enabled: boolean;
   owner_name: string;
   title: string;
   tagline: string;
@@ -99,9 +104,9 @@ export async function getAuctionSnapshot(slug: string): Promise<AuctionCampaignS
   const supabase = getSupabaseAdmin();
   const { data: campaignData, error: campaignError } = await supabase
     .from(getCampaignTable("campaigns"))
-    .select("id,slug,owner_name,title,tagline,story,laptop_model,goal_cents,auction_closes_at,photo_storage_path,created_at")
+    .select("id,slug,status,stripe_account_id,stripe_charges_enabled,stripe_payouts_enabled,owner_name,title,tagline,story,laptop_model,goal_cents,auction_closes_at,photo_storage_path,created_at")
     .eq("slug", slug.toLowerCase())
-    .eq("status", "published")
+    .in("status", ["published", "closed"])
     .maybeSingle();
 
   if (campaignError) throw campaignError;
@@ -176,6 +181,9 @@ export async function getAuctionSnapshot(slug: string): Promise<AuctionCampaignS
   return {
     campaign: {
       slug: campaign.slug,
+      status: campaign.status,
+      paymentsEnabled: isStripeConfigured() && Boolean(campaign.stripe_account_id)
+        && campaign.stripe_charges_enabled && campaign.stripe_payouts_enabled,
       title: campaign.title,
       tagline: campaign.tagline,
       story: campaign.story,

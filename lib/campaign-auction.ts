@@ -4,6 +4,8 @@ import type { SpotLayoutItem } from "@/lib/surface-spots";
 
 export type AuctionCampaign = {
   slug: string;
+  status: "published" | "closed";
+  paymentsEnabled: boolean;
   title: string;
   tagline: string;
   story: string;

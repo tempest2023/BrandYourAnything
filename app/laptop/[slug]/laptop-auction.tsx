@@ -9,6 +9,9 @@ import { useI18n } from "@/app/i18n-provider";
 import { ModelStage } from "@/app/model-stage";
 import { PreferenceControls } from "@/app/preference-controls";
 import { useCheckoutReturn } from "@/app/use-checkout-return";
+import { useAuctionAvailability } from "@/app/use-auction-availability";
+import { AuctionStatus } from "@/app/auction-status";
+import { PaymentNotice } from "@/app/payment-notice";
 import type { Spot } from "@/lib/auction";
 import { MAX_BID_AMOUNT_USD } from "@/lib/bid-limits";
 import { getBrandModelFormat } from "@/lib/brand-model";
@@ -184,6 +187,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: AuctionCam
   const { currency, locale, t, formatDate } = useI18n();
   const money = (amount: number) => formatCurrency(amount, currency, locale, 0);
   const [snapshot, setSnapshot] = useState(initialSnapshot);
+  const { closed, canBid } = useAuctionAvailability(snapshot.campaign);
   const [selectedSpotId, setSelectedSpotId] = useState(initialSnapshot.spots[0]?.id ?? 1);
   const [backendStatus, setBackendStatus] = useState<"live" | "offline">("live");
   const countdown = useCountdown(snapshot.campaign.closesAt);
@@ -208,7 +212,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: AuctionCam
     }));
     setBackendStatus("live");
   }, []);
-  useCheckoutReturn(applySnapshot);
+  const paymentState = useCheckoutReturn(applySnapshot, snapshot.campaign.slug);
 
   const refresh = useCallback(async () => {
     try {
@@ -230,7 +234,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: AuctionCam
     <main className={styles.page}>
       <nav className={styles.nav}>
         <Link href="/" className={styles.wordmark}>Brand Anything</Link>
-        <span className={backendStatus === "live" ? styles.live : styles.offline}>{backendStatus === "live" ? t("common.liveAuction") : t("laptop.reconnecting")}</span>
+        <span className={!closed && backendStatus === "live" ? styles.live : styles.offline}>{closed ? t("laptop.closed") : backendStatus === "live" ? t("common.liveAuction") : t("laptop.reconnecting")}</span>
         <div className={styles.navActions}>
           <PreferenceControls />
           <Link href="/sell" className={styles.createLink}>{t("common.listLaptopArrow")}</Link>
@@ -242,10 +246,12 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: AuctionCam
           <p className={styles.ownerLine}>{t(isAnything ? "laptop.byCampaignOwner" : "laptop.byOwner", { owner: snapshot.campaign.ownerName })}</p>
           <h1>{snapshot.campaign.title}</h1>
           <p>{snapshot.campaign.tagline}</p>
+          <PaymentNotice {...paymentState} />
+          {(closed || !snapshot.campaign.paymentsEnabled) && <AuctionStatus closed={closed} />}
           <div className={styles.heroStats}>
             <span><b>{money(totalRaised)}</b> {t("home.raised")}</span>
             <span><b>{t(snapshot.spots.length === 1 ? "laptop.spotClaimed" : "laptop.spotsClaimed", { filled, count: snapshot.spots.length })}</b></span>
-            <span><b>{countdown}</b></span>
+            <span><b>{closed ? t("common.finalResults") : countdown}</b></span>
           </div>
         </div>
         <div className={styles.lidWrap}>
@@ -295,7 +301,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: AuctionCam
             ))}
           </div>
           <div className={styles.bidColumn}>
-            {selectedSpot && (
+            {selectedSpot && canBid && (
               <BidPanel
                 key={`${selectedSpot.id}-${currency}`}
                 slug={snapshot.campaign.slug}

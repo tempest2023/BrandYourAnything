@@ -1,7 +1,7 @@
 import Stripe from "stripe";
 
 import { getOwnedStripeCampaign, setStripeCampaignAccount, stripeEnvironment } from "@/lib/stripe-bid-repository";
-import { auctionUrl, SITE_URL } from "@/lib/site";
+import { auctionUrl, auctionPath } from "@/lib/site";
 import { getStripe, getStripeMerchantAccountState, isStripeConfigured } from "@/lib/stripe";
 import { isSupabaseConfigured } from "@/lib/supabase-admin";
 import { getPublishingOwnerCredential, PublishingAuthenticationError } from "@/lib/publishing-auth";
@@ -113,13 +113,13 @@ export async function POST(
 
     const account = await syncAccount(campaign.id, accountId);
     if (account.chargesEnabled && account.payoutsEnabled) {
-      return Response.json({ connected: true, ready: true, returnUrl: auctionUrl(campaign.slug) });
+      return Response.json({ connected: true, ready: true, returnUrl: new URL(auctionPath(campaign.slug), request.url).toString() });
     }
 
-    const returnUrl = new URL("/sell", SITE_URL);
+    const returnUrl = new URL("/manage", request.url);
     returnUrl.searchParams.set("stripe", "return");
     returnUrl.searchParams.set("slug", campaign.slug);
-    const refreshUrl = new URL("/sell", SITE_URL);
+    const refreshUrl = new URL("/manage", request.url);
     refreshUrl.searchParams.set("stripe", "refresh");
     refreshUrl.searchParams.set("slug", campaign.slug);
 

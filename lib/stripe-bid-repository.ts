@@ -321,14 +321,14 @@ export async function getBidPaymentBySessionId(checkoutSessionId: string) {
   return data ? mapPayment(data as LaptopBidPaymentRow) : null;
 }
 
-export async function getStripeAccountIdForLaptop(laptopId: string) {
+export async function getStripeAuctionForPayment(laptopId: string) {
   const { data, error } = await getSupabaseAdmin()
     .from(getLaptopTable("laptops"))
-    .select("stripe_account_id")
+    .select("stripe_account_id,slug")
     .eq("id", laptopId)
     .maybeSingle();
   if (error) throw error;
-  return (data?.stripe_account_id as string | null | undefined) ?? null;
+  return data as { stripe_account_id: string | null; slug: string } | null;
 }
 
 export async function markBidPaymentPaid(

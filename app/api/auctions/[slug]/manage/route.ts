@@ -1,8 +1,8 @@
 import {
-  claimAuctionForX,
+  claimAuctionForAccount,
   closeOwnedAuction,
   getOwnedAuction,
-  setAuctionRecoveryForX,
+  setAuctionRecoveryForAccount,
 } from "@/lib/auction-ownership";
 import { isSupabaseConfigured } from "@/lib/supabase-admin";
 import {
@@ -49,18 +49,18 @@ export async function POST(
   }
   try {
     const { slug } = await context.params;
-    const [manager, xOwner] = await Promise.all([
+    const [manager, accountOwner] = await Promise.all([
       Promise.resolve(getManagerCredential(request)),
       getPublishingOwnerCredential(request),
     ]);
-    const auction = await claimAuctionForX(slug, manager, xOwner);
+    const auction = await claimAuctionForAccount(slug, manager, accountOwner);
     if (!auction) return Response.json({ error: "This recovery code does not own the auction." }, { status: 404 });
     return Response.json({ auction });
   } catch (error) {
     const response = authenticationError(error);
     if (response) return response;
     if (error instanceof Error && error.message === "auction_claimed_by_another_user") {
-      return Response.json({ error: "This auction is already claimed by another X account." }, { status: 409 });
+      return Response.json({ error: "This auction is already claimed by another account." }, { status: 409 });
     }
     console.error("Failed to claim auction", error);
     return Response.json({ error: "The auction could not be claimed." }, { status: 500 });
@@ -93,7 +93,7 @@ export async function PATCH(
       const nextManagerHash = body.recoveryAction === "rotate"
         ? getManagerCredentialFromValue(typeof body.recoveryCode === "string" ? body.recoveryCode : "").managerKeyHash
         : null;
-      const auction = await setAuctionRecoveryForX(slug, authOwner, nextManagerHash);
+      const auction = await setAuctionRecoveryForAccount(slug, authOwner, nextManagerHash);
       if (!auction) return Response.json({ error: "This auction was not found." }, { status: 404 });
       return Response.json({ auction });
     }
@@ -101,7 +101,8 @@ export async function PATCH(
   } catch (error) {
     const response = authenticationError(error);
     if (response) return response;
-    console.error("Failed to close auction", error);
+    if (error instanceof SyntaxError) return Response.json({ error: "Invalid JSON." }, { status: 400 });
+    console.error("Failed to update auction management", error);
     return Response.json({ error: "The auction could not be closed." }, { status: 500 });
   }
 }

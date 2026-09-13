@@ -100,11 +100,6 @@ function createFixture(container) {
   }
   sql(container, `
     begin;
-    update public.ba_dev_laptops
-      set stripe_account_id = null,
-          stripe_charges_enabled = false,
-          stripe_payouts_enabled = false
-      where stripe_account_id = ${sqlString(accountId)};
     insert into public.ba_dev_laptops (
       slug, owner_name, owner_email, title, tagline, story, laptop_model,
       goal_cents, small_opening_bid_cents, medium_opening_bid_cents,
@@ -134,15 +129,10 @@ function createFixture(container) {
   return { accountId, accountOwnerSlug, laptopId };
 }
 
-function removeFixture(container, fixture) {
+function removeFixture(container) {
   sql(container, `
     begin;
     delete from public.ba_dev_laptops where slug = ${sqlString(fixtureSlug)};
-    update public.ba_dev_laptops
-      set stripe_account_id = ${sqlString(fixture.accountId)},
-          stripe_charges_enabled = true,
-          stripe_payouts_enabled = true
-      where slug = ${sqlString(fixture.accountOwnerSlug)};
     commit;
   `);
 }

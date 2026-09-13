@@ -1,7 +1,7 @@
 import "server-only";
 
 import {
-  getCampaignAssetTable,
+  getDatabasePrefix,
   getClaimAuctionFunction,
   getLaptopTable,
 } from "@/lib/database-names";
@@ -29,7 +29,7 @@ export type OwnedAuctionSummary = {
   status: "published" | "closed";
   closesAt: string;
   createdAt: string;
-  claimedByX: boolean;
+  claimedByAccount: boolean;
   browserRecoveryEnabled: boolean;
   stripeConnected: boolean;
   paymentsEnabled: boolean;
@@ -60,7 +60,7 @@ function toSummary(row: OwnedCampaignRow): OwnedAuctionSummary {
     status: row.status,
     closesAt: row.auction_closes_at,
     createdAt: row.created_at,
-    claimedByX: Boolean(row.owner_user_id),
+    claimedByAccount: Boolean(row.owner_user_id),
     browserRecoveryEnabled: Boolean(row.manager_key_hash),
     stripeConnected: Boolean(row.stripe_account_id),
     paymentsEnabled: row.stripe_charges_enabled && row.stripe_payouts_enabled,
@@ -78,7 +78,7 @@ export async function getOwnedAuction(slug: string, owner: AuctionOwnerCredentia
   return toSummary(data as OwnedCampaignRow);
 }
 
-export async function listXOwnedAuctions(owner: AuctionOwnerCredential) {
+export async function listAccountOwnedAuctions(owner: AuctionOwnerCredential) {
   if (!owner.ownerUserId) return [];
   const { data, error } = await getSupabaseAdmin()
     .from(getLaptopTable("laptops"))
@@ -89,21 +89,21 @@ export async function listXOwnedAuctions(owner: AuctionOwnerCredential) {
   return (data as OwnedCampaignRow[]).map(toSummary);
 }
 
-export async function claimAuctionForX(
+export async function claimAuctionForAccount(
   slug: string,
   manager: AuctionOwnerCredential,
-  xOwner: AuctionOwnerCredential,
+  accountOwner: AuctionOwnerCredential,
 ) {
-  if (!manager.managerKeyHashCandidates.length || !xOwner.ownerUserId) return null;
+  if (!manager.managerKeyHashCandidates.length || !accountOwner.ownerUserId) return null;
 
   const { data: claimData, error: claimError } = await getSupabaseAdmin().rpc(
     getClaimAuctionFunction(),
     {
       p_slug: slug.toLowerCase(),
       p_manager_key_hashes: manager.managerKeyHashCandidates,
-      p_owner_user_id: xOwner.ownerUserId,
-      p_owner_name: xOwner.ownerName,
-      p_owner_email: xOwner.ownerEmail,
+      p_owner_user_id: accountOwner.ownerUserId,
+      p_owner_name: accountOwner.ownerName,
+      p_owner_email: accountOwner.ownerEmail,
     },
   );
   if (claimError) throw claimError;
@@ -127,22 +127,22 @@ export async function claimAuctionForX(
 }
 
 export async function closeOwnedAuction(slug: string, owner: AuctionOwnerCredential) {
-  const owned = await getOwnedAuction(slug, owner);
-  if (!owned) return null;
-  if (owned.status === "closed") return owned;
-
-  const { data, error } = await getSupabaseAdmin()
-    .from(getLaptopTable("laptops"))
-    .update({ status: "closed", updated_at: new Date().toISOString() })
-    .eq("id", owned.id)
-    .eq("status", "published")
-    .select(OWNER_COLUMNS)
-    .single();
-  if (error) throw error;
-  return toSummary(data as OwnedCampaignRow);
+  return manageOwnedAuction(slug, owner, "close");
 }
 
-export async function setAuctionRecoveryForX(
+async function manageOwnedAuction(slug: string, owner: AuctionOwnerCredential, action: "close" | "model", model: OwnedCampaignModelInput | null = null) {
+  const { data, error } = await getSupabaseAdmin().rpc(`${getDatabasePrefix()}_manage_owned_auction`, {
+    p_slug: slug.toLowerCase(), p_owner_user_id: owner.ownerUserId,
+    p_manager_key_hashes: owner.managerKeyHashCandidates, p_action: action, p_model: model,
+  });
+  if (error) {
+    if (["auction_closed", "auction_model_locked_by_bids"].includes(error.message)) throw new Error(error.message);
+    throw error;
+  }
+  return data ? toSummary(data as OwnedCampaignRow) : null;
+}
+
+export async function setAuctionRecoveryForAccount(
   slug: string,
   owner: AuctionOwnerCredential,
   managerKeyHash: string | null,
@@ -164,27 +164,5 @@ export async function attachOwnedCampaignModel(
   owner: AuctionOwnerCredential,
   input: OwnedCampaignModelInput,
 ) {
-  const owned = await getOwnedAuction(slug, owner);
-  if (!owned) return null;
-
-  const supabase = getSupabaseAdmin();
-  const { count: bidCount, error: bidError } = await supabase
-    .from(getLaptopTable("laptop_bids"))
-    .select("id", { count: "exact", head: true })
-    .eq("laptop_id", owned.id);
-  if (bidError) throw bidError;
-  if ((bidCount ?? 0) > 0) throw new Error("auction_model_locked_by_bids");
-
-  const { error } = await supabase
-    .from(getCampaignAssetTable())
-    .upsert({
-      laptop_id: owned.id,
-      asset_type: "anything",
-      asset_name: input.assetName,
-      model_storage_path: input.modelStoragePath,
-      model_file_name: input.modelFileName,
-      idempotency_key: input.idempotencyKey,
-    }, { onConflict: "laptop_id" });
-  if (error) throw error;
-  return owned;
+  return manageOwnedAuction(slug, owner, "model", input);
 }

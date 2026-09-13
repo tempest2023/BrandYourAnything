@@ -39,7 +39,7 @@ export function getCreateAuctionFunction() {
 // This alias keeps ownership creation on the auction API without duplicating
 // the environment-specific database functions.
 export function getCreateOwnedAuctionFunction() {
-  return `${getDatabasePrefix()}_create_owned_laptop`;
+  return `${getDatabasePrefix()}_create_owned_auction`;
 }
 
 export function getConfigureAuctionSpotsFunction() {

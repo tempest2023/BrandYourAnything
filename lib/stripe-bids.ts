@@ -9,7 +9,7 @@ import {
   attachCheckoutSession,
   createOrGetBidPayment,
   getBidPaymentBySessionId,
-  getStripeAccountIdForLaptop,
+  getStripeAuctionForPayment,
   getStripeBidContext,
   markBidPaymentPaid,
   markBidPaymentStatus,
@@ -254,13 +254,18 @@ export type CheckoutFulfillment = {
 export async function fulfillCheckoutSession(
   sessionId: string,
   eventAccountId?: string,
+  expectedSlug?: string,
 ): Promise<CheckoutFulfillment> {
   const stripe = getStripe();
   const payment = await getBidPaymentBySessionId(sessionId);
   if (!payment) {
     throw new StripeBidError("checkout_unavailable", "This Checkout Session is not a Brand Anything bid.");
   }
-  const stripeAccountId = await getStripeAccountIdForLaptop(payment.laptopId);
+  const auction = await getStripeAuctionForPayment(payment.laptopId);
+  if (!auction || (expectedSlug && auction.slug !== expectedSlug)) {
+    throw new StripeBidError("checkout_unavailable", "This Checkout Session does not belong to this auction.");
+  }
+  const stripeAccountId = auction.stripe_account_id;
   if (!stripeAccountId || (eventAccountId && eventAccountId !== stripeAccountId)) {
     throw new StripeBidError("checkout_unavailable", "This Checkout Session is not attached to the auction seller.");
   }
@@ -279,7 +284,7 @@ export async function fulfillCheckoutSession(
     return {
       status: "accepted",
       reason: payment.failureReason ?? undefined,
-      snapshot: await getLaptopSnapshot(session.metadata?.laptop_slug ?? ""),
+      snapshot: await getLaptopSnapshot(auction.slug),
     };
   }
   if (payment.status === "expired") {
@@ -329,7 +334,7 @@ export async function fulfillCheckoutSession(
   return {
     status: "accepted",
     reason: result.reason,
-    snapshot: await getLaptopSnapshot(session.metadata?.laptop_slug ?? ""),
+    snapshot: await getLaptopSnapshot(auction.slug),
   };
 }
 

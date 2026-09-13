@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 const CHECKOUT_SESSION_PATTERN = /^cs_(?:test_|live_)?[A-Za-z0-9]+$/;
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ sessionId: string }> },
 ) {
   if (!isStripeConfigured()) {
@@ -17,7 +17,8 @@ export async function GET(
     if (!CHECKOUT_SESSION_PATTERN.test(sessionId)) {
       return Response.json({ error: "Invalid Checkout Session." }, { status: 400 });
     }
-    return Response.json(await fulfillCheckoutSession(sessionId), {
+    const expectedSlug = new URL(request.url).searchParams.get("auction") || undefined;
+    return Response.json(await fulfillCheckoutSession(sessionId, undefined, expectedSlug), {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
