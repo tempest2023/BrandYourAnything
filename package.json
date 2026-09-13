@@ -15,6 +15,7 @@
     "test:stripe-e2e": "node --test scripts/test-homepage-stripe-e2e.mjs",
     "test:management-e2e": "node --test scripts/test-auction-management-e2e.mjs",
     "test:payment-core": "node --test scripts/test-payment-core.mjs",
+    "test:publication-core": "node --test scripts/test-publication-core.mjs",
     "test:connect-core": "node --test scripts/test-stripe-connect-core.mjs",
     "test:connect-e2e": "node --test scripts/test-stripe-connect-e2e.mjs"
   },

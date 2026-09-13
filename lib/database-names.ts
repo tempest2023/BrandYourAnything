@@ -20,19 +20,8 @@ export function getCampaignTable(name: "campaigns" | "campaign_spots" | "campaig
   return `${getDatabasePrefix()}_${legacyTable}`;
 }
 
-export function getCreateAuctionFunction() {
-  return `${getDatabasePrefix()}_create_auction`;
-}
-
-// The physical Supabase schema still uses the historical laptop table names.
-// This alias keeps ownership creation on the auction API without duplicating
-// the environment-specific database functions.
-export function getCreateOwnedAuctionFunction() {
-  return `${getDatabasePrefix()}_create_owned_auction`;
-}
-
-export function getConfigureAuctionSpotsFunction() {
-  return `${getDatabasePrefix()}_configure_auction_spots`;
+export function getPublishOwnedAuctionFunction() {
+  return `${getDatabasePrefix()}_publish_owned_auction`;
 }
 
 export function getAuctionMediaBucket() {

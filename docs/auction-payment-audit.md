@@ -119,3 +119,35 @@ Remaining release gates (the resolved payment findings above do not close these)
   presents hCaptcha after the email step (verified screenshot). Added a headed
   interactive mode for a human to finish, followed by automatic return/readiness
   assertions. Do not weaken or skip that release gate to claim completion.
+
+2026-09-13 atomic publication follow-up (local; not yet pushed):
+
+- Replaced separate create/layout/asset writes with one owner-checked publication
+  RPC in both namespaces. A layout/asset constraint failure rolls back all rows.
+- Persisted the immutable publication payload. Exact retries acknowledge the
+  existing result without rewriting live layout/model data or reopening a closed
+  auction. Current ownership is rechecked, including after credential revocation.
+  Profile name/email updates do not change the original request identity.
+- Fixed nullable ownership comparisons in the historical owned-create function;
+  serialized the per-owner creation-rate check for parallel publication attempts.
+- Removed request-error photo deletion. A lost database response is not proof
+  of rollback; both exact and conflicting retries preserve referenced photos.
+  Unreferenced uploads are deliberately retained pending reference-aware cleanup;
+  no production garbage collector has been deployed by this change.
+- Publication fingerprints use stable user IDs rather than expiring access
+  tokens. Authenticated publication never falls back to recovery-code ownership
+  when its session is missing.
+- Deadline bounds now run inside the transaction for new publications only;
+  original committed requests remain retryable after their deadline passes.
+- Applied `20260913150000_atomic_auction_publication.sql` locally only. Complete
+  legacy publications receive request snapshots; incomplete legacy rows require
+  explicit repair and are not silently overwritten by a new publication retry.
+- `npm run test:publication-core`: 17/17 passing with real local SQL and Storage,
+  including 20 concurrent exact retries, parallel rate-limit enforcement, partial
+  failure rollback, credential mismatch/revocation, expired/closed retries and
+  actual photo downloads after lost-response/conflict injection.
+- Management E2E: 15/15 passing with a fresh local build; browser-state tests:
+  4/4 passing. Full lint/typecheck and diff whitespace checks passed.
+- Remaining gates above still apply: logo-cover persistence, maximum-bid CTA,
+  pricing/copy decision, reconciliation operations, model/3D/locale validation,
+  real hosted Connect completion, legacy tests, remote configuration and PR push.

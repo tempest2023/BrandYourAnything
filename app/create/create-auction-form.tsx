@@ -446,6 +446,7 @@ export function CreateAuctionForm() {
   const [title, setTitle] = useState("Your brand, on my Mac.");
   const [slug, setSlug] = useState("");
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [ownerUserId, setOwnerUserId] = useState<string | null>(null);
   const [accountLabel, setAccountLabel] = useState("");
   const [authReady, setAuthReady] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
@@ -654,6 +655,7 @@ export function CreateAuctionForm() {
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!active) return;
       setAccessToken(session?.access_token ?? null);
+      setOwnerUserId(session?.user.id ?? null);
       setAccountLabel(session
         ? session.user.email
           || String(session.user.user_metadata.user_name || session.user.user_metadata.name || "Verified account")
@@ -664,6 +666,7 @@ export function CreateAuctionForm() {
     void supabase.auth.getSession().then(({ data, error }) => {
       if (!active) return;
       setAccessToken(data.session?.access_token ?? null);
+      setOwnerUserId(data.session?.user.id ?? null);
       setAccountLabel(data.session
         ? data.session.user.email
           || String(data.session.user.user_metadata.user_name || data.session.user.user_metadata.name || "Verified account")
@@ -960,6 +963,9 @@ export function CreateAuctionForm() {
     formData.set("largeOpeningBidCents", String(Math.round(payloadPrices.large * 100)));
     formData.set("minIncrementCents", "1000");
     try {
+      if (mode === "auth" && (!accessToken || !ownerUserId)) {
+        throw new Error("Your session expired. Sign in again to publish.");
+      }
       const headers: Record<string, string> = mode === "auth" && accessToken
         ? { Authorization: `Bearer ${accessToken}` }
         : { "X-Auction-Manager-Key": getOrCreateManagerKey() };
@@ -967,7 +973,8 @@ export function CreateAuctionForm() {
         try { publishAttempt.current = JSON.parse(window.sessionStorage.getItem(PUBLISH_ATTEMPT_STORAGE_KEY) || "null"); }
         catch { /* The in-memory attempt also survives ordinary network retries. */ }
       }
-      const attempt = await preparePublishAttempt(formData, JSON.stringify(headers), listingDays, publishAttempt.current);
+      const ownerIdentity = mode === "auth" ? `user:${ownerUserId}` : `manager:${headers["X-Auction-Manager-Key"]}`;
+      const attempt = await preparePublishAttempt(formData, ownerIdentity, listingDays, publishAttempt.current);
       publishAttempt.current = attempt;
       try { window.sessionStorage.setItem(PUBLISH_ATTEMPT_STORAGE_KEY, JSON.stringify(attempt)); }
       catch { /* No credentials or draft contents are stored in the attempt. */ }
@@ -1052,6 +1059,7 @@ export function CreateAuctionForm() {
     window.sessionStorage.setItem(PUBLISH_AFTER_AUTH_KEY, "1");
     setErrorMessage("");
     setAccessToken(session.access_token);
+    setOwnerUserId(session.user.id);
     setAccountLabel(session.user.email
       || String(session.user.user_metadata.user_name || session.user.user_metadata.name || "Verified account"));
   };
@@ -1061,6 +1069,7 @@ export function CreateAuctionForm() {
     await getSupabaseBrowser().auth.signOut({ scope: "local" });
     window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
     setAccessToken(null);
+    setOwnerUserId(null);
     setAccountLabel("");
   };
 

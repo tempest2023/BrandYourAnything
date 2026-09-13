@@ -182,8 +182,6 @@ export function parseAuctionForm(formData: FormData): ParsedAuctionForm {
   const minIncrementCents = cents(formData, "minIncrementCents", 100, 100_000_000);
   const auctionClosesAtInput = requiredText(formData, "auctionClosesAt", 10, 40);
   const auctionClosesAtDate = new Date(auctionClosesAtInput);
-  const minimumClose = Date.now() + 60 * 60 * 1000;
-  const maximumClose = Date.now() + 90 * 24 * 60 * 60 * 1000;
 
   if (!SLUG_PATTERN.test(slug)) {
     throw new AuctionValidationError("URL slug can use lowercase letters, numbers, and single hyphens only.");
@@ -208,10 +206,10 @@ export function parseAuctionForm(formData: FormData): ParsedAuctionForm {
   if (!UUID_PATTERN.test(idempotencyKey)) {
     throw new AuctionValidationError("The creation request is missing a valid idempotency key.");
   }
-  if (!Number.isFinite(auctionClosesAtDate.getTime())
-    || auctionClosesAtDate.getTime() <= minimumClose
-    || auctionClosesAtDate.getTime() > maximumClose) {
-    throw new AuctionValidationError("Auction end must be between one hour and 90 days from now.");
+  // The transaction enforces the 1-hour/90-day window for NEW publications.
+  // An exact retry of a committed request must also work after that window.
+  if (!Number.isFinite(auctionClosesAtDate.getTime())) {
+    throw new AuctionValidationError("Auction end must be a valid date.");
   }
 
   const photoValue = formData.get("photo");

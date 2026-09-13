@@ -6,9 +6,7 @@ import {
   getBrandModelBucket,
   getCampaignAssetTable,
   getCampaignTable,
-  getConfigureAuctionSpotsFunction,
-  getCreateAuctionFunction,
-  getCreateOwnedAuctionFunction,
+  getPublishOwnedAuctionFunction,
   getAuctionMediaBucket,
   getLogoBucket,
 } from "@/lib/database-names";
@@ -20,6 +18,7 @@ import type {
 import { getPresetModelFromStoragePath } from "@/lib/preset-models";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { isStripeConfigured } from "@/lib/stripe";
+import { AuctionValidationError } from "@/lib/auction-validation";
 
 type CampaignRow = {
   id: string;
@@ -78,15 +77,6 @@ type CreateAuctionRow = {
   reason: CreateAuctionResult["reason"];
   auction_id: string | null;
   auction_slug: string;
-};
-
-export type AttachCampaignAssetInput = {
-  auctionId: string;
-  assetType: CampaignAssetType;
-  assetName: string;
-  modelStoragePath: string | null;
-  modelFileName: string | null;
-  idempotencyKey: string;
 };
 
 async function signStoragePath(bucket: string, path: string | null) {
@@ -203,81 +193,19 @@ export async function getAuctionSnapshot(slug: string): Promise<AuctionCampaignS
   };
 }
 
-export async function attachCampaignAsset(input: AttachCampaignAssetInput) {
-  const supabase = getSupabaseAdmin();
-  const row = {
-    laptop_id: input.auctionId,
-    asset_type: input.assetType,
-    asset_name: input.assetName,
-    model_storage_path: input.modelStoragePath,
-    model_file_name: input.modelFileName,
-    idempotency_key: input.idempotencyKey,
-  };
-  const { error: insertError } = await supabase
-    .from(getCampaignAssetTable())
-    .upsert(row, { onConflict: "laptop_id", ignoreDuplicates: true });
-  if (insertError) throw insertError;
-
-  const { data, error } = await supabase
-    .from(getCampaignAssetTable())
-    .select("laptop_id,asset_type,asset_name,model_storage_path,model_file_name,idempotency_key")
-    .eq("laptop_id", input.auctionId)
-    .single();
-  if (error) throw error;
-  const stored = data as CampaignAssetRow;
-  const matches = stored.idempotency_key === input.idempotencyKey
-    && stored.asset_type === input.assetType
-    && stored.asset_name === input.assetName
-    && stored.model_storage_path === input.modelStoragePath
-    && stored.model_file_name === input.modelFileName;
-  if (!matches) throw new Error("The campaign asset conflicts with an existing idempotent request.");
-}
-
 export async function createAuction(input: CreateAuctionInput): Promise<CreateAuctionResult> {
-  const supabase = getSupabaseAdmin();
-  const ownerParams = input.ownerUserId || input.managerKeyHash
-    ? {
-      p_owner_user_id: input.ownerUserId ?? null,
-      p_manager_key_hash: input.managerKeyHash ?? null,
-    }
-    : {};
-  const rpcName = input.ownerUserId || input.managerKeyHash
-    ? getCreateOwnedAuctionFunction()
-    : getCreateAuctionFunction();
-  const { data, error } = await supabase.rpc(rpcName, {
-    p_slug: input.slug,
-    ...ownerParams,
-    p_owner_name: input.ownerName,
-    p_owner_email: input.ownerEmail,
-    p_title: input.title,
-    p_tagline: input.tagline,
-    p_story: input.story,
-    p_object_name: input.objectName,
-    p_goal_cents: input.goalCents,
-    p_auction_closes_at: input.auctionClosesAt,
-    p_photo_storage_path: input.photoStoragePath,
-    p_small_opening_bid_cents: input.smallOpeningBidCents,
-    p_medium_opening_bid_cents: input.mediumOpeningBidCents,
-    p_large_opening_bid_cents: input.largeOpeningBidCents,
-    p_min_increment_cents: input.minIncrementCents,
-    p_idempotency_key: input.idempotencyKey,
+  const { ownerUserId, managerKeyHash, ...parameters } = input;
+  const { data, error } = await getSupabaseAdmin().rpc(getPublishOwnedAuctionFunction(), {
+    p_owner_user_id: ownerUserId ?? null,
+    p_manager_key_hash: managerKeyHash ?? null,
+    p_input: parameters,
   });
-
+  if (error && ["22023", "23514", "23502", "22P02"].includes(error.code)) {
+    throw new AuctionValidationError("The publication details are invalid.");
+  }
   if (error) throw error;
   const row = (Array.isArray(data) ? data[0] : data) as CreateAuctionRow | undefined;
-  if (!row) throw new Error("The database returned no result for auction creation.");
-  if (row.accepted && row.auction_id) {
-    const { error: layoutError } = await supabase.rpc(getConfigureAuctionSpotsFunction(), {
-      p_auction_id: row.auction_id,
-      p_layout: input.spotLayout,
-      p_small_opening_bid_cents: input.smallOpeningBidCents,
-      p_medium_opening_bid_cents: input.mediumOpeningBidCents,
-      p_large_opening_bid_cents: input.largeOpeningBidCents,
-      p_min_increment_cents: input.minIncrementCents,
-      p_idempotency_key: input.idempotencyKey,
-    });
-    if (layoutError) throw layoutError;
-  }
+  if (!row) throw new Error("The database returned no result for auction publication.");
   return {
     accepted: row.accepted,
     reason: row.reason,
