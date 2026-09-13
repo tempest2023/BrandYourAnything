@@ -100,9 +100,9 @@ function surfaceVector(value: unknown): SurfaceVector | undefined {
 function parseSpotLayout(formData: FormData, assetType: CampaignAssetType) {
   const layoutCount = Number(requiredText(formData, "layoutCount", 1, 2));
   const minimum = assetType === "anything" ? MIN_SURFACE_SPOTS : 6;
-  const maximum = assetType === "anything" ? MAX_SURFACE_SPOTS : 10;
+  const maximum = assetType === "anything" ? MAX_SURFACE_SPOTS : 11;
   if (!Number.isInteger(layoutCount) || layoutCount < minimum || layoutCount > maximum
-    || (assetType === "laptop" && layoutCount !== 6 && layoutCount !== 10)) {
+    || (assetType === "laptop" && ![6, 7, 10, 11].includes(layoutCount))) {
     throw new AuctionValidationError("Choose a supported number of brand spots.");
   }
   const raw = requiredText(formData, "spotLayout", 2, 12_000);
@@ -118,6 +118,12 @@ function parseSpotLayout(formData: FormData, assetType: CampaignAssetType) {
   return parsed.map((value, index): SpotLayoutItem => {
     if (!value || typeof value !== "object") throw new AuctionValidationError("A spot layout entry is invalid.");
     const spot = value as Record<string, unknown>;
+    const expectsLogoCover = assetType === "laptop" && [7, 11].includes(layoutCount) && index === layoutCount - 1;
+    if ((spot.logoCover === true) !== expectsLogoCover
+      || (spot.logoCover !== undefined && spot.logoCover !== true)
+      || (expectsLogoCover && (!/^mac\b/i.test(String(formData.get("objectName"))) || spot.size !== "L"))) {
+      throw new AuctionValidationError("The logo-cover spot does not match this laptop layout.");
+    }
     const position = surfaceVector(spot.position);
     const normal = surfaceVector(spot.normal);
     const name = typeof spot.name === "string" ? spot.name.trim() : "";
@@ -141,6 +147,7 @@ function parseSpotLayout(formData: FormData, assetType: CampaignAssetType) {
       size: size as SpotLayoutItem["size"],
       dimensions,
       openingBidCents: Number(openingBidCents),
+      ...(expectsLogoCover ? { logoCover: true as const } : {}),
       ...(position && normal ? { position, normal } : {}),
     };
   });

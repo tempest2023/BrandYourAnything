@@ -25,6 +25,7 @@ export type ModelStageSpot = {
   id: number;
   holder?: string;
   bids?: number;
+  disabled?: boolean;
   position?: SurfaceVector;
   normal?: SurfaceVector;
 };
@@ -528,6 +529,7 @@ export function ModelStage({
               else markerRefs.current.delete(spot.id);
             }}
             type="button"
+            disabled={spot.disabled || !onSelectSpot}
             className={`${styles.marker} ${claimed ? styles.claimed : ""} ${selectedSpotId === spot.id ? styles.selected : ""}`}
             style={spot.position ? undefined : { left: `${fallback[0]}%`, top: `${fallback[1]}%` }}
             onClick={() => onSelectSpot?.(spot.id)}

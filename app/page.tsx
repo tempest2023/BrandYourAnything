@@ -17,10 +17,11 @@ import {
   type AuctionSnapshot,
   type Spot,
 } from "@/lib/auction";
-import { formatRelativeTime, SPOT_NAME_KEYS } from "@/lib/i18n";
+import { formatRelativeTime } from "@/lib/i18n";
+import { laptopBaseSpotCount, laptopSpotNameKey } from "@/lib/laptop-layout";
 import type { Locale } from "@/lib/i18n";
 import type { AuctionCampaign, AuctionCampaignSnapshot } from "@/lib/campaign-auction";
-import { MAX_BID_AMOUNT_USD } from "@/lib/bid-limits";
+import { canPlaceBid, MAX_BID_AMOUNT_USD } from "@/lib/bid-limits";
 import {
   amountFromUsd,
   amountToUsd,
@@ -29,6 +30,7 @@ import {
   currencySymbol,
   formatMoney as formatCurrency,
   minimumDisplayAmount,
+  maximumDisplayAmount,
 } from "@/lib/money";
 import type { Currency } from "@/lib/money";
 import { DEFAULT_AUCTION_SLUG } from "@/lib/site";
@@ -127,19 +129,20 @@ function MacLid({
 
   return (
     <div className="lid-stage" aria-label={t("home.lidAria")}>
-      <div className="mac-lid">
+      <div className={`mac-lid ${laptopBaseSpotCount(spots) === 6 ? "mac-lid--six" : ""}`}>
         <div className="lid-camera" />
-        {showApple && <Image className="apple-mark" src="/apple-logo.svg" alt={t("common.appleLogo")} width={160} height={160} />}
+        {showApple && !spots.some((spot) => spot.logoCover) && <Image className="apple-mark" src="/apple-logo.svg" alt={t("common.appleLogo")} width={160} height={160} />}
         {spots.map((spot) => {
           const hasBid = spot.bids > 0 && Boolean(spot.holder);
-          const spotNameKey = SPOT_NAME_KEYS[spot.id];
+          const spotNameKey = laptopSpotNameKey(spot, spots);
           const spotName = spotNameKey ? t(spotNameKey) : spot.name;
 
           return (
             <button
-              className={`lid-spot lid-spot--${spot.id} ${hasBid ? "" : "lid-spot--available"}`}
+              className={`lid-spot lid-spot--${spot.id} ${spot.logoCover ? "lid-spot--logo-cover" : ""} ${hasBid ? "" : "lid-spot--available"}`}
               key={spot.id}
-              disabled={!canBid}
+              disabled={!canBid || !canPlaceBid(spot)}
+              title={!canPlaceBid(spot) ? t("common.bidLimitReached") : undefined}
               onClick={() => onSelect(spot)}
               aria-label={hasBid
                 ? t("home.heldSpotAria", { id: spot.id, name: spotName, size: spot.size, holder: spot.holder, amount: money(spot.bid) })
@@ -148,7 +151,7 @@ function MacLid({
               {hasBid ? <Logo spot={spot} /> : <span className="lid-spot-number">{spot.id}</span>}
               {(!hasBid || spot.logo) && <span className="lid-holder">{hasBid ? spot.holder : t("common.available")}</span>}
               <span className="lid-price">{hasBid ? compact(spot.bid) : t("common.starts", { amount: compact(spot.minBid) })}</span>
-              <span className="lid-outbid">{closed ? t("laptop.closed") : hasBid ? t("common.outbid") : t("common.placeBid")}</span>
+              <span className="lid-outbid">{closed ? t("laptop.closed") : !canPlaceBid(spot) ? t("common.bidLimitReached") : hasBid ? t("common.outbid") : t("common.placeBid")}</span>
             </button>
           );
         })}
@@ -165,17 +168,20 @@ type BidApiResponse = {
 function BidDialog({
   spot,
   endpoint,
+  spots,
   onClose,
 }: {
   spot: Spot | null;
   endpoint: string;
+  spots: Spot[];
   onClose: () => void;
 }) {
-  const { currency, locale, t } = useI18n();
+  const { currency, locale, t, setCurrency } = useI18n();
   const money = (amountUsd: number) => formatCurrency(amountUsd, currency, locale);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const minimumDisplayBid = spot ? minimumDisplayAmount(spot.minBid, currency) : 0;
-  const maximumDisplayBid = Math.floor(amountFromUsd(MAX_BID_AMOUNT_USD, currency) * 100) / 100;
+  const maximumDisplayBid = maximumDisplayAmount(MAX_BID_AMOUNT_USD, currency);
+  const currencyHasBid = minimumDisplayBid <= maximumDisplayBid;
   const bidContext = `${spot?.id ?? "closed"}-${spot?.minBid ?? 0}-${currency}`;
   const [bidInput, setBidInput] = useState(() => ({ context: bidContext, value: String(minimumDisplayBid) }));
   const bid = bidInput.context === bidContext ? bidInput.value : String(minimumDisplayBid);
@@ -197,7 +203,7 @@ function BidDialog({
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!spot || submitting) return;
+    if (!spot || !canPlaceBid(spot) || !currencyHasBid || submitting) return;
 
     setSubmitting(true);
     setErrorMessage("");
@@ -235,7 +241,7 @@ function BidDialog({
           <form onSubmit={handleSubmit}>
               <div className="bid-heading">
                 <p className="eyebrow">{t("common.spot")} {spot.id}</p>
-                <h3>{SPOT_NAME_KEYS[spot.id] ? t(SPOT_NAME_KEYS[spot.id]!) : spot.name}</h3>
+                <h3>{laptopSpotNameKey(spot, spots) ? t(laptopSpotNameKey(spot, spots)!) : spot.name}</h3>
                 <p>{t("home.spotSticker", {
                   size: spot.size === "L" ? t("common.large") : spot.size === "M" ? t("common.medium") : t("common.small"),
                   dimensions: spot.dimensions,
@@ -256,6 +262,7 @@ function BidDialog({
                 <span>{currencySymbol(currency)}</span>
               </div>
               <p className="field-note">{t("home.minimumBid", { amount: money(spot.minBid) })}</p>
+              {!currencyHasBid && <button type="button" onClick={() => setCurrency("USD")}>{t("common.bidInUsd")}</button>}
 
               <div className="deposit-box">
                 <p><span>{t("home.expectedDeposit", { amount: money(amountUsd) })}</span><span>{money(depositUsd)}</span></p>
@@ -279,7 +286,7 @@ function BidDialog({
               </label>
 
               {errorMessage && <p className="bid-error" role="alert">{errorMessage}</p>}
-              <button className="primary-button bid-submit" type="submit" disabled={submitting}>
+              <button className="primary-button bid-submit" type="submit" disabled={submitting || !canPlaceBid(spot) || !currencyHasBid}>
                 {submitting ? t("home.redirectingCheckout") : t("home.payDeposit")}
               </button>
               <p className="hand-check">{t("home.reviewNote")}</p>
@@ -318,7 +325,7 @@ export function AuctionLandingPage({ campaign: initialCampaign, initialSnapshot 
   const [loadedFinalAssets, setLoadedFinalAssets] = useState<Set<string>>(() => new Set());
   const [failedFinalAssets, setFailedFinalAssets] = useState<Set<string>>(() => new Set());
   const countdown = useCountdown(campaign?.closesAt);
-  const selectedSpot = canBid ? spots.find((spot) => spot.id === selectedSpotId) ?? null : null;
+  const selectedSpot = canBid ? spots.find((spot) => spot.id === selectedSpotId && canPlaceBid(spot)) ?? null : null;
   const totalRaised = useMemo(() => spots.reduce((sum, spot) => sum + (spot.bids > 0 ? spot.bid : 0), 0), [spots]);
   const filledSpotCount = useMemo(() => spots.filter((spot) => spot.bids > 0).length, [spots]);
   const availableSpotCount = spots.length - filledSpotCount;
@@ -432,7 +439,7 @@ export function AuctionLandingPage({ campaign: initialCampaign, initialSnapshot 
               <MacLid spots={spots} showApple={isMac} canBid={canBid} closed={closed} onSelect={(spot) => setSelectedSpotId(spot.id)} />
             </div>
             <div className={`lid-layer lid-layer--final ${lidView === "final" && finalLookReady ? "is-active" : ""}`} aria-hidden={lidView !== "final" || !finalLookReady}>
-              <div className="final-mac">
+              <div className={`final-mac ${laptopBaseSpotCount(spots) === 6 ? "final-mac--six" : ""}`}>
                 {campaign?.photoUrl && machineAssetKey ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -457,7 +464,7 @@ export function AuctionLandingPage({ campaign: initialCampaign, initialSnapshot 
                   <div className="final-pc-shell" role="img" aria-label={`${campaign?.title ?? "Auction"} — ${campaign?.objectName ?? "Object"}`} />
                 )}
                 {spots.map((spot) => (
-                  <span className={`final-sticker final-sticker--${spot.id}`} key={spot.id} aria-hidden="true">
+                  <span className={`final-sticker final-sticker--${spot.id} ${spot.logoCover ? "final-sticker--logo-cover" : ""}`} key={spot.id} aria-hidden="true">
                     {spot.logo && (
                       <Image
                         src={spot.logo}
@@ -537,11 +544,11 @@ export function AuctionLandingPage({ campaign: initialCampaign, initialSnapshot 
                   <tbody>
                     {spots.map((spot) => (
                       <tr key={spot.id}>
-                        <td data-label={t("common.spot")}><span className="spot-number">{spot.id}</span><strong>{SPOT_NAME_KEYS[spot.id] ? t(SPOT_NAME_KEYS[spot.id]!) : spot.name}</strong></td>
+                        <td data-label={t("common.spot")}><span className="spot-number">{spot.id}</span><strong>{laptopSpotNameKey(spot, spots) ? t(laptopSpotNameKey(spot, spots)!) : spot.name}</strong></td>
                         <td data-label={t("common.size")}><span className={`size-tag size-tag--${spot.size.toLowerCase()}`}>{spot.size}</span>{spot.dimensions}</td>
                         <td data-label={t("common.brand")}>{spot.bids === 0 ? <span className="availability-pill">{t("common.available")}</span> : spot.website ? <a href={spot.website} target="_blank" rel="noreferrer"><Logo spot={spot} compact /></a> : <Logo spot={spot} compact />}</td>
                         <td data-label={spot.bids === 0 ? t("home.startingBid") : t("common.currentBid")}><strong>{compactMoney(spot.bids === 0 ? spot.minBid : spot.bid, currency, locale)}</strong><small>{spot.bids === 0 ? t("common.noBids") : `${spot.bids} ${spot.bids === 1 ? t("common.bid").toLowerCase() : t("common.bids")}`}</small></td>
-                        <td data-label={t("common.action")}><button disabled={!canBid} className={`outbid-button ${spot.bids > 0 ? "outbid-button--outbid" : ""}`.trim()} onClick={() => setSelectedSpotId(spot.id)}>{closed ? t("laptop.closed") : spot.bids === 0 ? t("common.placeBid") : t("common.outbid")}</button></td>
+                        <td data-label={t("common.action")}><button disabled={!canBid || !canPlaceBid(spot)} className={`outbid-button ${spot.bids > 0 ? "outbid-button--outbid" : ""}`.trim()} onClick={() => setSelectedSpotId(spot.id)}>{closed ? t("laptop.closed") : !canPlaceBid(spot) ? t("common.bidLimitReached") : spot.bids === 0 ? t("common.placeBid") : t("common.outbid")}</button></td>
                       </tr>
                     ))}
                   </tbody>
@@ -731,6 +738,7 @@ export function AuctionLandingPage({ campaign: initialCampaign, initialSnapshot 
 
       <a className="floating-cta" href={CREATE_URL}>{t("common.listLaptopArrow")}</a>
       <BidDialog
+        spots={spots}
         key={selectedSpot?.id ?? "closed"}
         spot={selectedSpot}
         endpoint={bidEndpoint}

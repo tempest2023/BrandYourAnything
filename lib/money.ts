@@ -32,11 +32,32 @@ export function amountToUsd(amount: number, currency: Currency) {
 }
 
 export function amountToUsdCents(amount: number, currency: Currency) {
-  return Math.round(amountToUsd(amount, currency) * 100);
+  // Inputs use two decimal display units. Convert integer cents using the
+  // reference-rate ratio so binary floating-point cannot flip a half-cent tie.
+  const displayCents = Math.round(amount * 100);
+  if (currency === "EUR") return Math.round(displayCents * Math.round(EUR_TO_USD * 100) / 100);
+  if (currency === "CNY") return Math.round(displayCents * 100 / Math.round(USD_TO_CNY * 100));
+  return displayCents;
 }
 
 export function minimumDisplayAmount(amountUsd: number, currency: Currency) {
-  return Math.ceil(amountFromUsd(amountUsd, currency));
+  if (!Number.isFinite(amountUsd) || amountUsd < 0) return NaN;
+  const requiredCents = Math.round(amountUsd * 100);
+  let displayCents = Math.ceil(amountFromUsd(amountUsd, currency) * 100);
+  if (!Number.isSafeInteger(requiredCents) || !Number.isSafeInteger(displayCents)) return NaN;
+  while (displayCents > 0 && amountToUsdCents((displayCents - 1) / 100, currency) >= requiredCents) displayCents--;
+  while (amountToUsdCents(displayCents / 100, currency) < requiredCents) displayCents++;
+  return displayCents / 100;
+}
+
+export function maximumDisplayAmount(amountUsd: number, currency: Currency) {
+  if (!Number.isFinite(amountUsd) || amountUsd < 0) return NaN;
+  const allowedCents = Math.round(amountUsd * 100);
+  let displayCents = Math.floor(amountFromUsd(amountUsd, currency) * 100);
+  if (!Number.isSafeInteger(allowedCents) || !Number.isSafeInteger(displayCents)) return NaN;
+  while (amountToUsdCents((displayCents + 1) / 100, currency) <= allowedCents) displayCents++;
+  while (amountToUsdCents(displayCents / 100, currency) > allowedCents) displayCents--;
+  return displayCents / 100;
 }
 
 export function currencySymbol(currency: Currency) {

@@ -19,6 +19,7 @@ import { getPresetModelFromStoragePath } from "@/lib/preset-models";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { isStripeConfigured } from "@/lib/stripe";
 import { AuctionValidationError } from "@/lib/auction-validation";
+import type { SpotLayoutItem } from "@/lib/surface-spots";
 
 type CampaignRow = {
   id: string;
@@ -36,6 +37,7 @@ type CampaignRow = {
   auction_closes_at: string;
   photo_storage_path: string | null;
   created_at: string;
+  spot_layout: SpotLayoutItem[] | null;
 };
 
 type CampaignSpotRow = {
@@ -94,7 +96,7 @@ export async function getAuctionSnapshot(slug: string): Promise<AuctionCampaignS
   const supabase = getSupabaseAdmin();
   const { data: campaignData, error: campaignError } = await supabase
     .from(getCampaignTable("campaigns"))
-    .select("id,slug,status,stripe_account_id,stripe_charges_enabled,stripe_payouts_enabled,owner_name,title,tagline,story,laptop_model,goal_cents,auction_closes_at,photo_storage_path,created_at")
+    .select("id,slug,status,stripe_account_id,stripe_charges_enabled,stripe_payouts_enabled,owner_name,title,tagline,story,laptop_model,goal_cents,auction_closes_at,photo_storage_path,created_at,spot_layout")
     .eq("slug", slug.toLowerCase())
     .in("status", ["published", "closed"])
     .maybeSingle();
@@ -152,6 +154,8 @@ export async function getAuctionSnapshot(slug: string): Promise<AuctionCampaignS
         ? spot.current_bid_cents! + spot.min_increment_cents
         : spot.opening_bid_cents) / 100,
       bids: spot.bid_count,
+      ...(assetType === "laptop" && campaign.spot_layout?.find((entry) => entry.id === spot.position)?.logoCover
+        ? { logoCover: true as const } : {}),
       ...(logoUrls[index] ? { logo: logoUrls[index] } : {}),
       ...(hasBid && spot.current_website ? { website: spot.current_website } : {}),
       ...(spot.surface_position ? { surfacePosition: spot.surface_position } : {}),

@@ -605,6 +605,15 @@ p {
 .lid-spot--9 { bottom: 4%; left: 34.7%; width: 30.6%; height: 29%; }
 .lid-spot--10 { bottom: 4%; right: 3%; width: 30.5%; height: 29%; }
 
+.mac-lid--six .lid-spot--1 { top: 4%; left: 3%; width: 46%; height: 29%; }
+.mac-lid--six .lid-spot--2 { top: 4%; right: 3%; left: auto; width: 46%; height: 29%; }
+.mac-lid--six .lid-spot--3 { top: 35%; left: 3%; right: auto; width: 22%; height: 27%; }
+.mac-lid--six .lid-spot--4 { top: 35%; right: 3%; left: auto; width: 22%; height: 27%; }
+.mac-lid--six .lid-spot--5 { top: auto; bottom: 4%; left: 3%; width: 46%; height: 29%; }
+.mac-lid--six .lid-spot--6 { top: auto; bottom: 4%; right: 3%; width: 46%; height: 29%; }
+.mac-lid .lid-spot--logo-cover { top: 35%; left: 34.7%; right: auto; bottom: auto; width: 30.6%; height: 27%; }
+.mac-lid--six .lid-spot--logo-cover { left: 27%; width: 46%; }
+
 .final-mac {
   position: relative;
   width: 112%;
@@ -662,6 +671,13 @@ p {
 .final-sticker--8 { top: 62%; left: 40%; width: 17%; height: 9%; }
 .final-sticker--9 { top: 57%; left: 60%; width: 12%; height: 13%; }
 .final-sticker--10 { top: 53%; left: 78%; width: 8%; height: 13%; }
+
+.final-mac--six .final-sticker--2 { top: 12%; left: 76%; width: 8%; height: 11%; }
+.final-mac--six .final-sticker--3 { top: 40%; left: 42%; width: 8%; height: 10%; }
+.final-mac--six .final-sticker--4 { top: 32%; left: 82%; width: 8%; height: 11%; }
+.final-mac--six .final-sticker--5 { top: 62%; left: 40%; width: 17%; height: 9%; }
+.final-mac--six .final-sticker--6 { top: 53%; left: 78%; width: 8%; height: 13%; }
+.final-mac .final-sticker--logo-cover { top: 36%; left: 60.5%; width: 10.5%; height: 20%; }
 
 .final-loading {
   z-index: 2;

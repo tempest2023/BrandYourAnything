@@ -15,6 +15,7 @@ import {
 import { MAX_BID_AMOUNT_USD } from "@/lib/bid-limits";
 import { rememberManagedAuction as saveManagedAuction } from "@/lib/managed-auctions";
 import { preparePublishAttempt, type PublishAttempt } from "@/lib/publish-attempt";
+import { appendLogoCoverSpot } from "@/lib/laptop-layout";
 import type { BrandModelPreview, UploadedBrandModel } from "@/lib/brand-model";
 import { LOCALES, type Locale, type TranslationKey } from "@/lib/i18n";
 import {
@@ -290,19 +291,10 @@ type CreateResponse = {
   result?: { reason: string; slug: string };
 };
 
-const moneyFormatter = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
+const moneyFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 
 function formatMoney(amount: number) {
-  const rounded = Math.round(amount);
-  if (rounded >= 1_000_000) {
-    const millions = rounded / 1_000_000;
-    return `${Number.isInteger(millions) ? millions : millions.toFixed(1).replace(/\.0$/, "")}M €`;
-  }
-  if (rounded >= 10_000) {
-    const thousands = rounded / 1_000;
-    return `${Number.isInteger(thousands) ? thousands : thousands.toFixed(1).replace(/\.0$/, "")}K €`;
-  }
-  return `${moneyFormatter.format(rounded)} €`;
+  return moneyFormatter.format(amount);
 }
 
 function slugify(value: string) {
@@ -718,7 +710,7 @@ export function CreateAuctionForm() {
     ...spot,
     amount: Math.round((spot.openingPrice === undefined
       ? prices[spot.price]
-      : validSurfacePrice(spot.openingPrice) ? Number(spot.openingPrice) : 0) * (spot.premium ?? 1)),
+      : validSurfacePrice(spot.openingPrice) ? Number(spot.openingPrice) : 0) * (spot.premium ?? 1) * 100) / 100,
   }));
   const spotCountBySize = {
     large: previewSpots.filter((spot) => spot.price === "large").length,
@@ -728,7 +720,7 @@ export function CreateAuctionForm() {
   const specialAmount = clampPrice(specialPrice, 1500);
   const hasSpecialSpot = machine === "mac" && specialSpot;
   const totalFloor = previewSpots.reduce((sum, spot) => sum + spot.amount, 0) + (hasSpecialSpot ? specialAmount : 0);
-  const minimumPrice = Math.min(...previewSpots.map((spot) => spot.amount));
+  const minimumPrice = Math.min(...previewSpots.map((spot) => spot.amount), ...(hasSpecialSpot ? [specialAmount] : []));
   const payloadPrices = isAnything
     ? (Object.keys(prices) as PriceKey[]).reduce<Record<PriceKey, number>>((result, key) => {
       const matchingPrices = previewSpots.filter((spot) => spot.price === key).map((spot) => spot.amount);
@@ -743,9 +735,9 @@ export function CreateAuctionForm() {
   const objectIsValid = !isAnything || (assetName.trim().length >= 2 && (usingPresetModel || brandModel !== null));
   const layoutIsValid = !isAnything || (surfaceSpots.length === layoutCount
     && surfaceSpots.every((spot) => spot.position.length === 3 && spot.normal.length === 3));
-  const surfacePricingIsValid = !isAnything || resolvedSurfaceSpotPricing.every((spot) => (
-    validSurfacePrice(spot.price)
-  ));
+  const surfacePricingIsValid = (isAnything ? resolvedSurfaceSpotPricing.every((spot) => validSurfacePrice(spot.price))
+    : [smallPrice, mediumPrice, largePrice, ...(hasSpecialSpot ? [specialPrice] : [])].every(validSurfacePrice))
+    && previewSpots.every((spot) => spot.amount >= 1 && spot.amount <= MAX_BID_AMOUNT_USD);
   const showcaseGroups = SHOWCASE_GROUPS_BY_MACHINE[machine];
   const normalizedCustomShowcase = normalizeCustomShowcase(customShowcase);
   const customShowcaseIsValid = !customShowcaseEnabled || normalizedCustomShowcase.length >= 2;
@@ -947,8 +939,9 @@ export function CreateAuctionForm() {
       openingBidCents: Math.round(spot.amount * 100),
       ...(spot.position && spot.normal ? { position: spot.position, normal: spot.normal } : {}),
     }));
-    formData.set("layoutCount", String(layoutCount));
-    formData.set("spotLayout", JSON.stringify(spotLayout));
+    const publishedLayout = hasSpecialSpot ? appendLogoCoverSpot(spotLayout, specialAmount) : spotLayout;
+    formData.set("layoutCount", String(publishedLayout.length));
+    formData.set("spotLayout", JSON.stringify(publishedLayout));
     if (brandModel && isAnything) {
       formData.set("modelStoragePath", brandModel.storagePath);
       formData.set("modelUploadClaim", brandModel.uploadClaim);
@@ -1306,7 +1299,7 @@ export function CreateAuctionForm() {
                     <strong>I&apos;m funding it</strong><span>What the spots sell for pays for the machine, and the page carries a progress bar towards its price. If the goal is not reached, you still owe every sold sticker — topping the machine up yourself, or refunding the buyers you cannot deliver.</span>
                   </button>
                 </div>
-                {ownership === "fund" && <label className={styles.inputLabel}>What does the machine cost?<span className={styles.moneyField}><input type="number" min="1" value={machineCost} onChange={(event) => setMachineCost(event.target.value)} /><b>€</b></span><small>The maker&apos;s own price for the exact machine, so the bar means something.</small></label>}
+                {ownership === "fund" && <label className={styles.inputLabel}>What does the machine cost?<span className={styles.moneyField}><input type="number" min="1" value={machineCost} onChange={(event) => setMachineCost(event.target.value)} /><b>USD</b></span><small>The maker&apos;s own price for the exact machine, so the bar means something.</small></label>}
                 {!machineIsValid && <p className={styles.validation} role="alert">Give what the machine costs.</p>}
               </fieldset>
             )}
@@ -1449,14 +1442,14 @@ export function CreateAuctionForm() {
                   <label className={specialSpot ? styles.checkedSpecial : styles.specialSpot}>
                     <input type="checkbox" checked={specialSpot} onChange={(event) => setSpecialSpot(event.target.checked)} />
                     <span><strong>Add a special spot over the logo</strong><small>6 × 6 cm, covering the Apple mark in the middle of the lid. Name your own price — it is the one placement size says nothing about.</small></span>
-                    {specialSpot && <span className={styles.specialPrice}><small>Starts at</small><span><input type="number" min="1" max={MAX_BID_AMOUNT_USD} step="0.01" value={specialPrice} onChange={(event) => setSpecialPrice(event.target.value)} /><b>€</b></span></span>}
+                    {specialSpot && <span className={styles.specialPrice}><small>Starts at</small><span><input type="number" min="1" max={MAX_BID_AMOUNT_USD} step="0.01" value={specialPrice} onChange={(event) => setSpecialPrice(event.target.value)} /><b>USD</b></span></span>}
                   </label>
                 )}
                 <p className={styles.totalCopy}>{surfacePricingIsValid
                   ? <>Every spot sold at its floor: <strong>{formatMoney(totalFloor)}</strong>, before the platform&apos;s 10% and Stripe&apos;s fees.{ownership === "fund" && machineIsValid ? ` Your funding goal is ${formatMoney(fundingCost)}; each spot's price remains yours to set.` : ""}</>
                   : "Complete every spot to see the full floor total."}</p>
-                {isAnything && !surfacePricingIsValid && (
-                  <p className={styles.validation} role="alert">Every spot needs a starting price of at least 1 €.</p>
+                {!surfacePricingIsValid && (
+                  <p className={styles.validation} role="alert">Every spot, including placement premiums, must start between $1 and $999,999.99 USD.</p>
                 )}
               </fieldset>
             )}
@@ -1585,7 +1578,7 @@ export function CreateAuctionForm() {
                 {hasSpecialSpot && <button type="button" className={`${styles.previewSpot} ${styles.specialPreview}`} aria-label={`Spot over the logo, Large. ${formatMoney(specialAmount)}.`}><strong>Large</strong><span>{formatMoney(specialAmount)}</span></button>}
               </div>
             )}
-            <p>{layoutCount} {layoutCount === 1 ? "spot" : "spots"} · {surfacePricingIsValid ? `from ${formatMoney(minimumPrice)}` : "finish pricing to continue"}</p>
+            <p>{layoutCount + (hasSpecialSpot ? 1 : 0)} {layoutCount === 1 && !hasSpecialSpot ? "spot" : "spots"} · {surfacePricingIsValid ? `from ${formatMoney(minimumPrice)}` : "finish pricing to continue"}</p>
           </aside>
         </form>
       </main>
@@ -1599,7 +1592,7 @@ function PriceField({ label, dimensions, value, onChange }: { label: string; dim
   return (
     <label className={styles.priceField}>
       <span><strong>{label}</strong><small>{dimensions}</small></span>
-      <span className={styles.priceInput}><input type="number" min="1" max={MAX_BID_AMOUNT_USD} step="0.01" value={value} onChange={(event) => onChange(event.target.value)} /><b>€</b></span>
+      <span className={styles.priceInput}><input type="number" min="1" max={MAX_BID_AMOUNT_USD} step="0.01" value={value} onChange={(event) => onChange(event.target.value)} /><b>USD</b></span>
     </label>
   );
 }
@@ -1699,7 +1692,7 @@ function SurfacePriceEditor({
               aria-describedby="surface-price-hint"
               onChange={(event) => onChangeSpot(selectedSpot.id, { price: event.target.value })}
             />
-            <b>€</b>
+            <b>USD</b>
           </span>
           <small id="surface-price-hint">This price and coverage are shown to buyers for this spot only.</small>
         </label>

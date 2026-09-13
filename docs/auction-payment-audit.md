@@ -151,3 +151,36 @@ Remaining release gates (the resolved payment findings above do not close these)
 - Remaining gates above still apply: logo-cover persistence, maximum-bid CTA,
   pricing/copy decision, reconciliation operations, model/3D/locale validation,
   real hosted Connect completion, legacy tests, remote configuration and PR push.
+
+2026-09-13 layout and bid-boundary follow-up (local; not yet pushed):
+
+- The optional Apple logo-cover placement is now part of the published layout,
+  with an explicit marker, its own 6 × 6 cm dimensions and its exact price.
+  Six/ten base layouts keep their IDs and append placement 7/11 respectively.
+  Public snapshots preserve the marker; live/final views place it centrally.
+  No historical auction receives an invented placement: omitted old data cannot
+  prove whether its owner originally enabled the option.
+- Corrected six-position public geometry and translated position-name mapping.
+  Creation previews preserve fractional prices, including premiums, and validate
+  the actual per-placement maximum instead of publishing an over-limit premium.
+- Creation prices were labelled EUR although stored as USD. Inputs and totals now
+  say USD; existing stored monetary amounts are unchanged.
+- Centralized per-spot upper-bound eligibility across lid buttons, table actions,
+  3D markers, selectors and bid forms. Reaching the cap does not close other spots.
+  Closed 3D auctions disable selection and remove the payment form.
+- Display currency bounds use cents rather than whole units and round back within
+  USD constraints. An unrepresentable narrow range offers a switch to USD instead
+  of an invalid form. Fixed binary floating-point half-cent conversion ties.
+- `node --test scripts/test-auction-layout-rules.mjs`: 3/3 passing.
+- `npm run test:layout-e2e`: 4/4 passing. Real local auth and browser publication of
+  both layouts, persisted exact prices, non-overlap at desktop/390px, three-locale
+  overflow/limit-copy checks, maximum-price form validity and actual rendered
+  Cybertruck model with exhausted/closed controls. UI readiness is a fixture;
+  this suite deliberately makes no Stripe payment-network calls.
+- `npm run test:stripe-e2e`: passed again with real test-mode payments/refund,
+  return-page settlement, winner/history, logo rendering and Bid/Outbid colors.
+- Publication core 17/17 and payment core 19/19 passed again. Lint, typecheck and
+  production builds passed; inspected six/ten lid and real 3D screenshots.
+- Still open: low-price/deposit business rule (asked again), truthful remaining
+  financial copy, reconciliation fairness/runtime/operations, model-repair races,
+  hosted Connect human completion, legacy test replacement and remote release.
