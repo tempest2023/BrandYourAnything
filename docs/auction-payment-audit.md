@@ -267,3 +267,32 @@ Remaining release gates (the resolved payment findings above do not close these)
   hosted Connect human completion, legacy test migration, operational recovery
   configuration and remote migration/deployment/PR release. These tests do not
   establish a current-winner withdrawal policy or complete the overall audit.
+
+2026-09-13 legacy test migration follow-up (local; not yet pushed):
+
+- Removed obsolete scripts that called unpaid RPCs, modified fixed auction spots
+  and allowed remote mutation. Preserved npm entrypoints as aliases to the
+  current publication/payment suites, with automatic local-stack discovery.
+- Migrated equal-bid races, duplicate requests, cross-position/cross-auction
+  key conflicts and independent-tenant assertions to paid Checkout reservations
+  and settlement. Both namespaces verify one charge identity/ledger row for
+  twenty concurrent retries, a refunded equal-bid loser, exact $999999.99 limits
+  and rejection of over-limit requests before Stripe creation.
+- Restored explicit ten-position premium-price, slug-collision and private-table
+  permission coverage. Real anonymous and authenticated clients cannot read
+  private owner/bid/payment fields; unpaid RPCs are hidden even from service role.
+- HTTP tests now build and run with local server/browser credentials against
+  both namespaces, clean their own fixtures, and reject remote/external-server
+  overrides. They verify publication/read/retry, active and removed RPC/routes,
+  namespace isolation and no unpaid fallback when Stripe is unavailable.
+- Payment core/concurrency: 45/45; publication core: 21/21; combined platform
+  command: 58/58; API E2E: 19/19 passing. The combined command overlaps core
+  coverage; these are not counts of distinct additional scenarios. Typecheck,
+  full lint, fresh production build and whitespace checks passed.
+- These tests use real local SQL/Auth/Storage and Stripe doubles; real card
+  processing remains covered separately by the previously passing Stripe E2E.
+  No remote configuration or migrations changed in this follow-up.
+- Remaining gates: minimum-price and manual-current-winner-refund decisions,
+  accurate financial copy, both public views' payment-notice coverage, hosted
+  Connect human completion, deployed recovery scheduling/alerting, and remote
+  migration/configuration, PR description, push and deployment verification.

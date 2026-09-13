@@ -16,7 +16,13 @@ test("atomic publication against real local SQL and Storage", { timeout: 90_000 
   overrides["@/lib/auction-validation"] = loadTypeScript("lib/auction-validation.ts", overrides);
   const repository = loadTypeScript("lib/campaign-auction-repository.ts", overrides);
   const auth = loadTypeScript("lib/publishing-auth.ts", overrides);
+  let readerId;
   try {
+    const email = `publication-reader-${randomUUID()}@example.test`; const password = randomUUID() + "-Test!";
+    const reader = await admin.auth.admin.createUser({ email, password, email_confirm: true });
+    assert.ifError(reader.error); readerId = reader.data.user.id;
+    const authenticated = createClient(local.apiUrl, local.publishableKey, { auth: { persistSession: false } });
+    assert.ifError((await authenticated.auth.signInWithPassword({ email, password })).error);
     for (const prefix of ["ba_dev", "ba_prod"]) await t.test(prefix, async (t) => {
       process.env.SUPABASE_DATABASE_PREFIX = prefix;
       const keys = []; const photos = [];
@@ -58,6 +64,44 @@ test("atomic publication against real local SQL and Storage", { timeout: 90_000 
           assert.ok(results.every((r) => r.accepted));
           assert.equal(new Set(results.map((r) => r.auctionId)).size, 1);
           assert.equal((await row(f)).spot_layout.length, 6);
+        });
+        await t.test("exact ten-spot premiums persist atomically; duplicate slugs cannot overwrite another owner", async () => {
+          const f = fixture();
+          f.spotLayout = Array.from({ length: 10 }, (_, i) => ({ id: i + 1, name: `Position ${i + 1}`, size: "L",
+            dimensions: "9.5 × 5.5 cm", openingBidCents: i === 1 ? 50001 : 40001 }));
+          const first = await publish(f); assert.equal(first.reason, "created");
+          const spots = await admin.from(prefix + "_laptop_spots").select("position,opening_bid_cents").eq("laptop_id", first.auctionId).order("position");
+          assert.ifError(spots.error); assert.deepEqual(spots.data, f.spotLayout.map((spot) => ({ position: spot.id, opening_bid_cents: spot.openingBidCents })));
+          const before = await row(f); const other = fixture();
+          const collision = await publish({ ...other, slug: f.slug });
+          assert.equal(collision.reason, "slug_taken"); assert.equal(collision.accepted, false);
+          assert.deepEqual(await row(f), before);
+          const second = await publish(other); assert.equal(second.reason, "created"); assert.notEqual(first.auctionId, second.auctionId);
+          const crossKey = await publish({ ...other, idempotencyKey: f.idempotencyKey });
+          assert.equal(crossKey.reason, "idempotency_conflict"); assert.equal(crossKey.auctionId, null);
+          assert.deepEqual(await row(f), before);
+        });
+        await t.test("anonymous and authenticated browsers cannot read private tables or invoke service RPCs", async () => {
+          const f = fixture(); const published = await publish(f);
+          for (const client of [anon, authenticated]) {
+            for (const [table, columns, field] of [["laptops", "owner_email,manager_key_hash", "id"],
+              ["laptop_bids", "bidder_email", "laptop_id"], ["laptop_bid_payments", "bidder_email,stripe_payment_intent_id", "laptop_id"]]) {
+              const result = await client.from(prefix + "_" + table).select(columns).eq(field, published.auctionId);
+              assert.equal(result.error?.code, "42501", `${table} must deny direct browser reads, not merely return an empty fixture`);
+            }
+          }
+          for (const [role, client] of [["service", admin], ["anonymous", anon], ["authenticated", authenticated]]) {
+            const session = await client.auth.getSession();
+            const key = role === "service" ? local.secretKey : local.publishableKey;
+            const response = await fetch(`${local.apiUrl}/rest/v1/`, { headers: {
+              apikey: key, Authorization: `Bearer ${session.data.session?.access_token || key}`, Accept: "application/openapi+json",
+            } });
+            assert.equal(response.status, 200); const schema = await response.json();
+            for (const name of ["place_bid", "place_auction_bid", "place_laptop_bid"])
+              assert.equal(schema.paths?.[`/rpc/${prefix}_${name}`], undefined, `${role} must not have an unpaid bid entrypoint`);
+            const publishPath = schema.paths?.[`/rpc/${prefix}_publish_owned_auction`];
+            if (role === "service") assert.ok(publishPath); else assert.equal(publishPath, undefined);
+          }
         });
         await t.test("parallel distinct publications cannot bypass the owner rate limit", async () => {
           const owner = fixture();
@@ -134,6 +178,7 @@ test("atomic publication against real local SQL and Storage", { timeout: 90_000 
       }
     });
   } finally {
+    if (readerId) assert.ifError((await admin.auth.admin.deleteUser(readerId)).error);
     for (const name of Object.keys(process.env)) if (!(name in original)) delete process.env[name];
     Object.assign(process.env, original);
   }
