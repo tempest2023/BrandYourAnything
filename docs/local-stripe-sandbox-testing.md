@@ -75,6 +75,20 @@ clean up a failed test.
 
 Run browser suites serially: they share the `.next` build directory.
 
+`test:concurrency` aliases `test:payment-core`; `test:laptop-platform` combines
+publication and payment core suites. Their old unpaid-bid scripts were removed,
+not kept as a second write path. The replacement tests cover both local
+namespaces, including equal paid bids, twenty identical Checkout creates,
+cross-position/cross-auction key conflicts, exact upper bounds, ten-position
+premiums and actual anonymous/authenticated table permissions. They discover
+local credentials automatically and have no remote-target override.
+
+`test:api-e2e` similarly discovers the local stack, builds with matching local
+browser/server credentials and runs HTTP publication, retry, removed-route,
+namespace isolation and missing-Stripe checks against both namespaces. It
+cleans only its own auctions. Neither this HTTP suite nor payment doubles
+replace the separate real Stripe E2E requirement.
+
 ## Creator Connect setup
 
 From `/manage`, choose **Connect Stripe** once. The dashboard posts the business

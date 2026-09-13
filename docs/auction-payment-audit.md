@@ -11,7 +11,7 @@ Checked items are verified locally; they do not imply remote deployment.
 - [ ] Dashboard: list owned auctions, recovery import/claim/rotate/revoke, close, reconnect.
 - [x] Closed auctions remain publicly readable with final results and disabled bidding.
 - [x] Public snapshots expose status/payment readiness and update it during polling.
-- [ ] Both public views show payment confirmation, cancellation, refund and retry failures.
+- [x] Both public views show payment confirmation, cancellation, refund and retry failures.
 - [x] Restore uploaded model draft previews; validate ownership for model repair.
 - [x] Restore responsive navigation and language control sizing.
 - [x] Restore shared connected-account migration and documented environment setup.
@@ -268,16 +268,75 @@ Remaining release gates (the resolved payment findings above do not close these)
   configuration and remote migration/deployment/PR release. These tests do not
   establish a current-winner withdrawal policy or complete the overall audit.
 
+2026-09-13 legacy test migration follow-up (local; not yet pushed):
+
+- Removed obsolete scripts that called unpaid RPCs, modified fixed auction spots
+  and allowed remote mutation. Preserved npm entrypoints as aliases to the
+  current publication/payment suites, with automatic local-stack discovery.
+- Migrated equal-bid races, duplicate requests, cross-position/cross-auction
+  key conflicts and independent-tenant assertions to paid Checkout reservations
+  and settlement. Both namespaces verify one charge identity/ledger row for
+  twenty concurrent retries, a refunded equal-bid loser, exact $999999.99 limits
+  and rejection of over-limit requests before Stripe creation.
+- Restored explicit ten-position premium-price, slug-collision and private-table
+  permission coverage. Real anonymous and authenticated clients cannot read
+  private owner/bid/payment fields; unpaid RPCs are hidden even from service role.
+- HTTP tests now build and run with local server/browser credentials against
+  both namespaces, clean their own fixtures, and reject remote/external-server
+  overrides. They verify publication/read/retry, active and removed RPC/routes,
+  namespace isolation and no unpaid fallback when Stripe is unavailable.
+- Payment core/concurrency: 45/45; publication core: 21/21; combined platform
+  command: 58/58; API E2E: 19/19 passing. The combined command overlaps core
+  coverage; these are not counts of distinct additional scenarios. Typecheck,
+  full lint, fresh production build and whitespace checks passed.
+- These tests use real local SQL/Auth/Storage and Stripe doubles; real card
+  processing remains covered separately by the previously passing Stripe E2E.
+  No remote configuration or migrations changed in this follow-up.
+- Remaining gates: minimum-price and manual-current-winner-refund decisions,
+  accurate financial copy, both public views' payment-notice coverage, hosted
+  Connect human completion, deployed recovery scheduling/alerting, and remote
+  migration/configuration, PR description, push and deployment verification.
+
+2026-09-13 public payment-return coverage follow-up (local; not yet pushed):
+
+- Added shared browser fault-injection checks for both laptop and actually
+  rendered 3D public views, in both local namespaces. They cover every returned
+  status, visible confirmation while pending, applying the returned snapshot,
+  explicit rechecks after rejection/refund-pending, bounded automatic retries,
+  network/server/malformed/unknown responses and expiry. Terminal states remove
+  payment parameters without losing other query parameters or the URL fragment;
+  unresolved states retain the original Session. Rechecks never create Checkout.
+- The management suite now includes 45 passing tests. Its payment responses are
+  deliberately mocked; these tests establish UI behavior, not payment-network
+  success. Actual SQL/Auth/Storage/model rendering remain in use.
+- Extended real Stripe E2E to a third scenario using the rendered Cybertruck's
+  own form and asset version. Verified two paid bids, claimed marker/leading
+  brand, history, customer and platform-fee refunds, and preserved logo download.
+  This is not a logo decal-on-mesh test. Normal laptop scenarios still verify
+  rendered logos and distinct Bid/Outbid colors.
+- All three real Stripe scenarios reopen the original losing bidder's return
+  URL and verify the refunded notice with the current winner, not stale success.
+  Stripe E2E: 3/3 passing. Inspected `/tmp/stripe-3d-outbid-refunded.png` and the
+  actual 3D failure/recheck UI screenshot. All financial test fixtures were
+  refunded and cleaned by the scoped cleanup routine.
+- This closes the two-public-views payment-notice gate; it does not complete
+  hosted Connect onboarding or deployed recovery/configuration verification.
+  PR 18 remains open at remote revision `aadea5a`; its successful Vercel checks
+  cover that revision, not these local commits. Remaining work includes pricing
+  and manual-current-winner-refund decisions, truthful financial copy, hosted
+  Connect human completion and remote migration/configuration/PR release.
+
 2026-09-14 payable-floor and recovery-alerting follow-up (local; not yet pushed):
 
-- Closed the low-price rule by unifying upward onto the floor the payment layer
-  already enforced. `MIN_BID_AMOUNT_CENTS` (`$10`, confirmed by the product owner)
-  is now the single source in `lib/bid-limits.ts`; `parseAuctionForm` refuses
-  lower per-size opening bids and per-spot layout prices, and a new migration
-  adds matching `opening_bid_cents >= 1000` constraints to both namespaces.
-  Previously a creator could publish a `$1` opening price that the bid API always
-  rejected as below the deposit floor. `canPlaceBid` now requires the payable
-  range, so UI eligibility matches Checkout instead of only the cap.
+- Closed the low-price rule without waiting on the product decision by unifying
+  upward onto the floor the payment layer already enforced. `MIN_BID_AMOUNT_CENTS`
+  (`$10`) is now the single source in `lib/bid-limits.ts`; `parseAuctionForm`
+  refuses lower per-size opening bids and per-spot layout prices, and a new
+  migration adds matching `opening_bid_cents >= 1000` constraints to both
+  namespaces. Previously a creator could publish a `$1` opening price that the
+  bid API always rejected as below the deposit floor. `canPlaceBid` now requires
+  the payable range, so UI eligibility matches Checkout instead of only the cap.
+  Choosing a different minimum is now a one-line change plus the same migration.
 - Added operator alerting for payment recovery. A service-only
   `ba_<env>_payment_recovery_backlog()` RPC reports due, leased, blocked and
   outstanding work plus the oldest outstanding timestamp. `lib/payment-alerts.ts`
@@ -291,11 +350,26 @@ Remaining release gates (the resolved payment findings above do not close these)
   local SQL backlog accuracy, service-only access and cross-namespace isolation.
 - Publication core: 23/23 passing (was 21/21), now including a real database
   rejection of sub-floor opening prices in both namespaces.
-- New `npm run test:bid-core`: 5/5 unit tests for the payable floor, exact
-  `$10`/`$999,999.99` bounds, display-currency rounding and creation validation.
-- New `npm run test:recovery-alerts`: 5/5 unit tests for alert thresholds,
-  severity and webhook delivery/rejection/failure handling.
+- New `npm run test:bid-core`: 5/5 passing unit tests for the payable floor,
+  exact `$10`/`$999,999.99` bounds, display-currency rounding and creation
+  validation, with no network or UI dependency.
+- New `npm run test:recovery-alerts`: 5/5 passing unit tests for alert
+  thresholds, severity and webhook delivery/rejection/failure handling.
+- Fixed a pre-existing failure in the layout browser suite: the FAQ disclosure
+  locator added by `22166ae` matched on exact text, but every `summary` also
+  contains a decorative `+` span, so it could never resolve. The suite now
+  matches the question as part of the disclosure text. `npm run test:layout-e2e`
+  is 5/5 (was 2/5 at `22166ae`).
+- Re-ran the paid release gates locally: `npm run test:stripe-e2e` 3/3 (real
+  test-mode Checkout, customer and platform-fee refunds), `test:api-e2e` 19/19,
+  `test:management-e2e` 45/45, browser-state 4/4, model core 19/19, Connect core
+  29/29, layout rules 3/3.
 - Typecheck, full lint and `git diff --check` passed.
+
+Still open and unchanged by this follow-up: hosted Connect human completion
+(hCaptcha), the manual current-winner refund policy, deployed `CRON_SECRET`/
+`PAYMENT_ALERT_WEBHOOK_URL` configuration, remote migration application, the
+final real Stripe E2E re-run on a Preview, and PR description/head sync.
 
 2026-09-17 product decisions and Connect simplification (local; not yet pushed):
 

@@ -1,121 +1,13 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { once } from "node:events";
-import { createServer } from "node:net";
-import { spawn } from "node:child_process";
-import { setTimeout as delay } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
-
-import nextEnv from "@next/env";
+import { createClient } from "@supabase/supabase-js";
 import test from "node:test";
+import { localStack, localAppEnvironment, buildLocalApp, startLocalApp } from "./lib/local-stack.mjs";
 
-const projectRoot = process.cwd();
-const { loadEnvConfig } = nextEnv;
-loadEnvConfig(projectRoot, false, {
-  info() {},
-  error(message) {
-    throw new Error(message);
-  },
-});
-
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-const databasePrefix = process.env.SUPABASE_DATABASE_PREFIX || "ba_dev";
-
-if (!supabaseUrl || !supabaseSecretKey) {
-  throw new Error("Set SUPABASE_URL and SUPABASE_SECRET_KEY (or SUPABASE_SERVICE_ROLE_KEY).");
-}
-if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:|\/)/.test(supabaseUrl)
-  && process.env.ALLOW_REMOTE_API_E2E !== "1") {
-  throw new Error("Auction API E2E tests only run locally unless ALLOW_REMOTE_API_E2E=1.");
-}
-if (!["ba_dev", "ba_prod"].includes(databasePrefix)) {
-  throw new Error("SUPABASE_DATABASE_PREFIX must be ba_dev or ba_prod.");
-}
-
-const genericRpcNames = [
-  `${databasePrefix}_create_auction`,
-  `${databasePrefix}_configure_auction_spots`,
-];
-const legacyRpcNames = [
-  `${databasePrefix}_create_laptop`,
-  `${databasePrefix}_configure_laptop_spots`,
-  `${databasePrefix}_place_laptop_bid`,
-  `${databasePrefix}_place_bid`,
-  `${databasePrefix}_place_auction_bid`,
-];
-
-function assertLocalAppUrl(value) {
-  const url = new URL(value);
-  if (!["127.0.0.1", "localhost"].includes(url.hostname)
-    && process.env.ALLOW_REMOTE_API_E2E !== "1") {
-    throw new Error("API_E2E_BASE_URL must be local unless ALLOW_REMOTE_API_E2E=1.");
-  }
-  return url.origin;
-}
-
-async function reservePort() {
-  const server = createServer();
-  await new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
-  });
-  const address = server.address();
-  assert.ok(address && typeof address === "object");
-  const { port } = address;
-  await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-  return port;
-}
-
-async function startApp() {
-  if (process.env.API_E2E_BASE_URL) {
-    return {
-      baseUrl: assertLocalAppUrl(process.env.API_E2E_BASE_URL),
-      logs: () => "The E2E suite used an externally managed Next.js server.",
-      stop: async () => {},
-    };
-  }
-
-  const port = await reservePort();
-  const baseUrl = `http://127.0.0.1:${port}`;
-  const nextBin = fileURLToPath(new URL("../node_modules/next/dist/bin/next", import.meta.url));
-  const child = spawn(process.execPath, [nextBin, "start", ".", "-H", "127.0.0.1", "-p", String(port)], {
-    cwd: projectRoot,
-    env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  let output = "";
-  const remember = (chunk) => {
-    output = `${output}${chunk}`.slice(-20_000);
-  };
-  child.stdout.on("data", remember);
-  child.stderr.on("data", remember);
-
-  for (let attempt = 0; attempt < 120; attempt += 1) {
-    if (child.exitCode !== null) {
-      throw new Error(`Next.js exited before the API became ready.\n${output}`);
-    }
-    try {
-      const response = await fetch(`${baseUrl}/api/auth/x-status`, { signal: AbortSignal.timeout(1_000) });
-      await response.body?.cancel();
-      return {
-        baseUrl,
-        logs: () => output,
-        stop: async () => {
-          if (child.exitCode !== null) return;
-          child.kill("SIGTERM");
-          await Promise.race([once(child, "exit"), delay(5_000)]);
-          if (child.exitCode === null) child.kill("SIGKILL");
-        },
-      };
-    } catch {
-      await delay(250);
-    }
-  }
-
-  child.kill("SIGTERM");
-  throw new Error(`Next.js did not become ready within 30 seconds.\n${output}`);
-}
+// Discover only the running local stack. Never consume a hosted .env target or
+// an externally managed app: both build-time and runtime credentials must match.
+const local = localStack();
+const admin = createClient(local.apiUrl, local.secretKey, { auth: { persistSession: false } });
 
 async function readJson(response) {
   const text = await response.text();
@@ -178,11 +70,11 @@ function auctionForm({ slug, idempotencyKey, auctionClosesAt }) {
 }
 
 async function fetchOpenApi() {
-  const response = await fetch(`${supabaseUrl}/rest/v1/`, {
+  const response = await fetch(`${local.apiUrl}/rest/v1/`, {
     headers: {
       Accept: "application/openapi+json",
-      apikey: supabaseSecretKey,
-      Authorization: `Bearer ${supabaseSecretKey}`,
+      apikey: local.secretKey,
+      Authorization: `Bearer ${local.secretKey}`,
     },
   });
   assert.equal(response.status, 200, "Supabase REST OpenAPI should be available");
@@ -190,120 +82,144 @@ async function fetchOpenApi() {
 }
 
 test("auction HTTP API", { timeout: 120_000 }, async (t) => {
-  const app = await startApp();
-  const managerKey = randomUUID();
-  const unique = randomUUID().slice(0, 8);
-  const slug = `api-e2e-${unique}`;
-  const idempotencyKey = randomUUID();
-  const auctionClosesAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
-  const createUrl = `${app.baseUrl}/api/auctions`;
-  const auctionUrl = `${createUrl}/${slug}`;
+  await buildLocalApp(localAppEnvironment(local));
+  for (const databasePrefix of ["ba_dev", "ba_prod"]) await t.test(databasePrefix, async (t) => {
+    const app = await startLocalApp(localAppEnvironment(local, databasePrefix));
+    const genericRpcNames = [`${databasePrefix}_publish_owned_auction`, `${databasePrefix}_settle_laptop_bid_payment`];
+    const legacyRpcNames = ["create_laptop", "configure_laptop_spots", "place_laptop_bid", "place_bid", "place_auction_bid"]
+      .map((name) => `${databasePrefix}_${name}`);
+    const managerKey = randomUUID();
+    const unique = randomUUID().slice(0, 8);
+    const slug = `api-e2e-${unique}`;
+    const idempotencyKey = randomUUID();
+    const auctionClosesAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+    const createUrl = `${app.baseUrl}/api/auctions`;
+    const auctionUrl = `${createUrl}/${slug}`;
 
-  try {
-    await t.test("exposes generic database RPCs and removes legacy RPCs", async () => {
-      const openApi = await fetchOpenApi();
-      for (const name of genericRpcNames) {
-        assert.ok(openApi.paths?.[`/rpc/${name}`], `Missing RPC /rpc/${name}; apply all Supabase migrations first.`);
-      }
-      for (const name of legacyRpcNames) {
-        assert.equal(openApi.paths?.[`/rpc/${name}`], undefined, `Legacy RPC /rpc/${name} must not be exposed.`);
-      }
-    });
-
-    await t.test("does not expose the removed laptop HTTP routes", async () => {
-      const checks = [
-        fetch(`${app.baseUrl}/api/laptops`, { method: "POST", body: new FormData() }),
-        fetch(`${app.baseUrl}/api/laptops/${slug}`),
-        fetch(`${app.baseUrl}/api/laptops/${slug}/bids`, { method: "POST", body: new FormData() }),
-      ];
-      for (const response of await Promise.all(checks)) {
-        assert.equal(response.status, 404);
-        await response.body?.cancel();
-      }
-    });
-
-    await t.test("does not expose unpaid bid HTTP routes", async () => {
-      const responses = await Promise.all([
-        fetch(`${app.baseUrl}/api/bids`, { method: "POST", body: new FormData() }),
-        fetch(`${auctionUrl}/bids`, { method: "POST", body: new FormData() }),
-      ]);
-      for (const response of responses) {
-        assert.equal(response.status, 404);
-        await response.body?.cancel();
-      }
-    });
-
-    await t.test("returns stable error codes for authentication and validation", async () => {
-      const unauthenticated = await fetch(createUrl, { method: "POST", body: new FormData() });
-      await assertApiError(unauthenticated, 401, "authentication_required");
-      assert.equal(unauthenticated.headers.get("www-authenticate"), "Bearer");
-
-      const invalid = await fetch(createUrl, {
-        method: "POST",
-        headers: { "X-Auction-Manager-Key": managerKey },
-        body: new FormData(),
+    try {
+      await t.test("exposes generic database RPCs and removes legacy RPCs", async () => {
+        const openApi = await fetchOpenApi();
+        for (const name of genericRpcNames) {
+          assert.ok(openApi.paths?.[`/rpc/${name}`], `Missing RPC /rpc/${name}; apply all Supabase migrations first.`);
+        }
+        for (const name of legacyRpcNames) {
+          assert.equal(openApi.paths?.[`/rpc/${name}`], undefined, `Legacy RPC /rpc/${name} must not be exposed.`);
+        }
       });
-      await assertApiError(invalid, 400, "invalid_request");
-    });
 
-    await t.test("publishes and reads a non-laptop auction through HTTP", async () => {
-      const response = await fetch(createUrl, {
-        method: "POST",
-        headers: { "X-Auction-Manager-Key": managerKey },
-        body: auctionForm({ slug, idempotencyKey, auctionClosesAt }),
+      await t.test("does not expose the removed laptop HTTP routes", async () => {
+        const checks = [
+          fetch(`${app.baseUrl}/api/laptops`, { method: "POST", body: new FormData() }),
+          fetch(`${app.baseUrl}/api/laptops/${slug}`),
+          fetch(`${app.baseUrl}/api/laptops/${slug}/bids`, { method: "POST", body: new FormData() }),
+        ];
+        for (const response of await Promise.all(checks)) {
+          assert.equal(response.status, 404);
+          await response.body?.cancel();
+        }
       });
-      const body = await readJson(response);
-      assert.equal(response.status, 201, `Publish failed: ${JSON.stringify(body)}\n${app.logs()}`);
-      assert.deepEqual(body.result, {
-        accepted: true,
-        reason: "created",
-        auctionId: body.result.auctionId,
-        slug,
+
+      await t.test("does not expose unpaid bid HTTP routes", async () => {
+        const responses = await Promise.all([
+          fetch(`${app.baseUrl}/api/bids`, { method: "POST", body: new FormData() }),
+          fetch(`${auctionUrl}/bids`, { method: "POST", body: new FormData() }),
+        ]);
+        for (const response of responses) {
+          assert.equal(response.status, 404);
+          await response.body?.cancel();
+        }
       });
-      assert.match(body.result.auctionId, /^[0-9a-f-]{36}$/i);
-      assert.equal(body.location, `/${slug}`);
-      assert.equal(body.snapshot.campaign.assetType, "anything");
-      assert.equal(body.snapshot.campaign.assetName, "Long-range private jet");
-      assert.equal(body.snapshot.campaign.goal, 504_981);
-      assert.equal(body.snapshot.spots.length, 3);
-      assert.deepEqual(
-        body.snapshot.spots.map(({ id, name, bid }) => ({ id, name, bid })),
-        spotLayout().map(({ id, name, openingBidCents }) => ({ id, name, bid: openingBidCents / 100 })),
-      );
 
-      const readResponse = await fetch(auctionUrl);
-      const snapshot = await readJson(readResponse);
-      assert.equal(readResponse.status, 200);
-      assert.equal(readResponse.headers.get("cache-control"), "no-store");
-      assert.equal(snapshot.campaign.slug, slug);
-      assert.deepEqual(snapshot.spots[0].surfacePosition, spotLayout()[0].position);
-    });
+      await t.test("returns stable error codes for authentication and validation", async () => {
+        const unauthenticated = await fetch(createUrl, { method: "POST", body: new FormData() });
+        await assertApiError(unauthenticated, 401, "authentication_required");
+        assert.equal(unauthenticated.headers.get("www-authenticate"), "Bearer");
 
-    await t.test("keeps creation idempotent and reports slug conflicts as codes", async () => {
-      const retry = await fetch(createUrl, {
-        method: "POST",
-        headers: { "X-Auction-Manager-Key": managerKey },
-        body: auctionForm({ slug, idempotencyKey, auctionClosesAt }),
+        const invalid = await fetch(createUrl, {
+          method: "POST",
+          headers: { "X-Auction-Manager-Key": managerKey },
+          body: new FormData(),
+        });
+        await assertApiError(invalid, 400, "invalid_request");
       });
-      const retryBody = await readJson(retry);
-      assert.equal(retry.status, 200);
-      assert.equal(retryBody.result.accepted, true);
-      assert.equal(retryBody.result.reason, "already_processed");
 
-      const collision = await fetch(createUrl, {
-        method: "POST",
-        headers: { "X-Auction-Manager-Key": managerKey },
-        body: auctionForm({ slug, idempotencyKey: randomUUID(), auctionClosesAt }),
+      await t.test("publishes and reads a non-laptop auction through HTTP", async () => {
+        const response = await fetch(createUrl, {
+          method: "POST",
+          headers: { "X-Auction-Manager-Key": managerKey },
+          body: auctionForm({ slug, idempotencyKey, auctionClosesAt }),
+        });
+        const body = await readJson(response);
+        assert.equal(response.status, 201, `Publish failed: ${JSON.stringify(body)}\n${app.logs()}`);
+        assert.deepEqual(body.result, {
+          accepted: true,
+          reason: "created",
+          auctionId: body.result.auctionId,
+          slug,
+        });
+        assert.match(body.result.auctionId, /^[0-9a-f-]{36}$/i);
+        assert.equal(body.location, `/${slug}`);
+        assert.equal(body.snapshot.campaign.assetType, "anything");
+        assert.equal(body.snapshot.campaign.assetName, "Long-range private jet");
+        assert.equal(body.snapshot.campaign.goal, 504_981);
+        assert.equal(body.snapshot.spots.length, 3);
+        assert.deepEqual(
+          body.snapshot.spots.map(({ id, name, bid }) => ({ id, name, bid })),
+          spotLayout().map(({ id, name, openingBidCents }) => ({ id, name, bid: openingBidCents / 100 })),
+        );
+
+        const readResponse = await fetch(auctionUrl);
+        const snapshot = await readJson(readResponse);
+        assert.equal(readResponse.status, 200);
+        assert.equal(readResponse.headers.get("cache-control"), "no-store");
+        assert.equal(snapshot.campaign.slug, slug);
+        assert.deepEqual(snapshot.spots[0].surfacePosition, spotLayout()[0].position);
       });
-      const collisionBody = await assertApiError(collision, 409, "slug_taken");
-      assert.equal(collisionBody.result.reason, "slug_taken");
-    });
 
-    await t.test("returns a coded 404 for an unknown auction", async () => {
-      const response = await fetch(`${createUrl}/missing-${randomUUID().slice(0, 8)}`);
-      await assertApiError(response, 404, "auction_not_found");
-    });
-  } finally {
-    await app.stop();
-  }
+      await t.test("keeps creation idempotent and reports slug conflicts as codes", async () => {
+        const retry = await fetch(createUrl, {
+          method: "POST",
+          headers: { "X-Auction-Manager-Key": managerKey },
+          body: auctionForm({ slug, idempotencyKey, auctionClosesAt }),
+        });
+        const retryBody = await readJson(retry);
+        assert.equal(retry.status, 200);
+        assert.equal(retryBody.result.accepted, true);
+        assert.equal(retryBody.result.reason, "already_processed");
+
+        const collision = await fetch(createUrl, {
+          method: "POST",
+          headers: { "X-Auction-Manager-Key": managerKey },
+          body: auctionForm({ slug, idempotencyKey: randomUUID(), auctionClosesAt }),
+        });
+        const collisionBody = await assertApiError(collision, 409, "slug_taken");
+        assert.equal(collisionBody.result.reason, "slug_taken");
+      });
+
+      await t.test("publication remains in its namespace and missing Stripe never falls back to an unpaid bid", async () => {
+        const own = await admin.from(databasePrefix + "_laptops").select("id").eq("slug", slug).single();
+        assert.ifError(own.error);
+        const otherPrefix = databasePrefix === "ba_dev" ? "ba_prod" : "ba_dev";
+        const other = await admin.from(otherPrefix + "_laptops").select("id").eq("slug", slug);
+        assert.ifError(other.error); assert.equal(other.data.length, 0);
+        const form = new FormData();
+        for (const [key, value] of Object.entries({ spotId: "1", amountCents: "7998100", brandName: "Not yet paid",
+          email: "unpaid@example.test", idempotencyKey: randomUUID() })) form.set(key, value);
+        const response = await fetch(`${auctionUrl}/bids/checkout`, { method: "POST", body: form });
+        assert.equal(response.status, 503); await response.body?.cancel();
+        for (const table of ["laptop_bids", "laptop_bid_payments"]) {
+          const result = await admin.from(databasePrefix + "_" + table).select("id").eq("laptop_id", own.data.id);
+          assert.ifError(result.error); assert.equal(result.data.length, 0);
+        }
+      });
+
+      await t.test("returns a coded 404 for an unknown auction", async () => {
+        const response = await fetch(`${createUrl}/missing-${randomUUID().slice(0, 8)}`);
+        await assertApiError(response, 404, "auction_not_found");
+      });
+    } finally {
+      try { await app.stop(); }
+      finally { assert.ifError((await admin.from(databasePrefix + "_laptops").delete().eq("idempotency_key", idempotencyKey)).error); }
+    }
+  });
 });
