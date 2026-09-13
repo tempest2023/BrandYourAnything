@@ -11,7 +11,7 @@ Checked items are verified locally; they do not imply remote deployment.
 - [ ] Dashboard: list owned auctions, recovery import/claim/rotate/revoke, close, reconnect.
 - [x] Closed auctions remain publicly readable with final results and disabled bidding.
 - [x] Public snapshots expose status/payment readiness and update it during polling.
-- [ ] Both public views show payment confirmation, cancellation, refund and retry failures.
+- [x] Both public views show payment confirmation, cancellation, refund and retry failures.
 - [x] Restore uploaded model draft previews; validate ownership for model repair.
 - [x] Restore responsive navigation and language control sizing.
 - [x] Restore shared connected-account migration and documented environment setup.
@@ -296,3 +296,32 @@ Remaining release gates (the resolved payment findings above do not close these)
   accurate financial copy, both public views' payment-notice coverage, hosted
   Connect human completion, deployed recovery scheduling/alerting, and remote
   migration/configuration, PR description, push and deployment verification.
+
+2026-09-13 public payment-return coverage follow-up (local; not yet pushed):
+
+- Added shared browser fault-injection checks for both laptop and actually
+  rendered 3D public views, in both local namespaces. They cover every returned
+  status, visible confirmation while pending, applying the returned snapshot,
+  explicit rechecks after rejection/refund-pending, bounded automatic retries,
+  network/server/malformed/unknown responses and expiry. Terminal states remove
+  payment parameters without losing other query parameters or the URL fragment;
+  unresolved states retain the original Session. Rechecks never create Checkout.
+- The management suite now includes 45 passing tests. Its payment responses are
+  deliberately mocked; these tests establish UI behavior, not payment-network
+  success. Actual SQL/Auth/Storage/model rendering remain in use.
+- Extended real Stripe E2E to a third scenario using the rendered Cybertruck's
+  own form and asset version. Verified two paid bids, claimed marker/leading
+  brand, history, customer and platform-fee refunds, and preserved logo download.
+  This is not a logo decal-on-mesh test. Normal laptop scenarios still verify
+  rendered logos and distinct Bid/Outbid colors.
+- All three real Stripe scenarios reopen the original losing bidder's return
+  URL and verify the refunded notice with the current winner, not stale success.
+  Stripe E2E: 3/3 passing. Inspected `/tmp/stripe-3d-outbid-refunded.png` and the
+  actual 3D failure/recheck UI screenshot. All financial test fixtures were
+  refunded and cleaned by the scoped cleanup routine.
+- This closes the two-public-views payment-notice gate; it does not complete
+  hosted Connect onboarding or deployed recovery/configuration verification.
+  PR 18 remains open at remote revision `aadea5a`; its successful Vercel checks
+  cover that revision, not these local commits. Remaining work includes pricing
+  and manual-current-winner-refund decisions, truthful financial copy, hosted
+  Connect human completion and remote migration/configuration/PR release.
