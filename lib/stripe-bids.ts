@@ -5,7 +5,6 @@ import Stripe from "stripe";
 import type { ParsedBidForm } from "@/lib/bid-validation";
 import { getLaptopBidPaymentTable, getLogoBucket } from "@/lib/database-names";
 import { getLaptopSnapshot } from "@/lib/laptop-repository";
-import { SITE_URL } from "@/lib/site";
 import {
   attachCheckoutSession,
   createOrGetBidPayment,
@@ -72,6 +71,7 @@ export async function createLaptopBidCheckout(
   slug: string,
   input: ParsedBidForm,
   logoStoragePath: string | null,
+  returnOrigin: string,
 ) {
   let context;
   try {
@@ -138,8 +138,11 @@ export async function createLaptopBidCheckout(
     );
   }
 
-  const successUrl = `${SITE_URL}/${context.slug}?payment=success&session_id={CHECKOUT_SESSION_ID}`;
-  const cancelUrl = new URL(`/${encodeURIComponent(context.slug)}`, SITE_URL);
+  const returnUrl = new URL(`/${encodeURIComponent(context.slug)}`, returnOrigin);
+  const successUrl = new URL(returnUrl);
+  successUrl.searchParams.set("payment", "success");
+  successUrl.searchParams.set("session_id", "{CHECKOUT_SESSION_ID}");
+  const cancelUrl = new URL(returnUrl);
   cancelUrl.searchParams.set("payment", "cancelled");
 
   const session = await stripe.checkout.sessions.create({
@@ -147,7 +150,10 @@ export async function createLaptopBidCheckout(
     customer_email: input.email,
     payment_method_types: ["card"],
     expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
-    success_url: successUrl,
+    success_url: successUrl.toString().replace(
+      "%7BCHECKOUT_SESSION_ID%7D",
+      "{CHECKOUT_SESSION_ID}",
+    ),
     cancel_url: cancelUrl.toString(),
     line_items: [{
       quantity: 1,

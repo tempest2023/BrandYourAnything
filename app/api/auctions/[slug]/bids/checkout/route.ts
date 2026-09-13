@@ -37,6 +37,19 @@ async function removeLogo(path: string | null) {
   if (error) console.error("Failed to clean up rejected auction bid logo", { path, message: error.message });
 }
 
+function checkoutReturnOrigin(request: Request) {
+  const origin = request.headers.get("origin");
+  if (origin) {
+    try {
+      const parsed = new URL(origin);
+      if (["http:", "https:"].includes(parsed.protocol)) return parsed.origin;
+    } catch {
+      // Non-browser clients may send a malformed Origin; use the request URL below.
+    }
+  }
+  return new URL(request.url).origin;
+}
+
 export async function POST(request: Request, context: { params: Promise<{ slug: string }> }) {
   if (!isSupabaseConfigured() || !isStripeConfigured()) {
     return Response.json({ error: "Stripe Checkout is not configured for this deployment." }, { status: 503 });
@@ -47,7 +60,8 @@ export async function POST(request: Request, context: { params: Promise<{ slug: 
     const { slug } = await context.params;
     const input = parseBidForm(await request.formData(), MAX_SURFACE_SPOTS);
     if (input.logo) logoStoragePath = await uploadLogo(input.logo, slug, input.spotId, input.idempotencyKey);
-    return Response.json(await createLaptopBidCheckout(slug, input, logoStoragePath), { status: 201 });
+    const returnOrigin = checkoutReturnOrigin(request);
+    return Response.json(await createLaptopBidCheckout(slug, input, logoStoragePath, returnOrigin), { status: 201 });
   } catch (error) {
     if (error instanceof BidValidationError) {
       await removeLogo(logoStoragePath);

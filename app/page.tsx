@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AccountNav } from "@/app/auth/account-nav";
 import { useI18n } from "@/app/i18n-provider";
 import { PreferenceControls } from "@/app/preference-controls";
+import { useCheckoutReturn } from "@/app/use-checkout-return";
 import {
   STARTER_HISTORY,
   STARTER_SPOTS,
@@ -352,6 +353,7 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
     setHistory(snapshot.history);
     setBackendStatus("live");
   }, []);
+  useCheckoutReturn(applySnapshot);
 
   const refreshAuction = useCallback(async () => {
     try {

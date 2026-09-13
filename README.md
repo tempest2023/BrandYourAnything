@@ -240,11 +240,14 @@ Run the real concurrency test against local Postgres:
 npm run test:concurrency
 npm run test:laptop-platform
 npm run test:api-e2e
+npm run test:stripe-e2e
 ```
 
 The platform test verifies atomic campaign creation, ten-spot isolation, RLS, equal concurrent bids, simultaneous retries, and cross-tenant idempotency-key reuse. Run it once with `SUPABASE_DATABASE_PREFIX=ba_dev` and once with `ba_prod` when validating both namespaces.
 
 The API E2E test builds and starts the production Next.js server on a free local port. It verifies the generic auction RPC surface, removed laptop routes, coded error responses, and the complete publish/read/bid flow for a non-laptop object. It creates uniquely named test auctions, so run `supabase db reset` first and use a local Supabase project unless you deliberately set `ALLOW_REMOTE_API_E2E=1`.
+
+The Stripe E2E test requires the local Supabase stack, the Stripe CLI, Google Chrome, and a test-mode `STRIPE_SECRET_KEY` whose platform owns the connected account seeded into `ba_dev`. It runs two real test-mode Checkout payments against spot 2, verifies the winner, public bid history, Outbid state, and first-deposit refund, then removes its isolated auction fixture and restores the homepage account. Set `PLAYWRIGHT_CHROME_PATH` when Chrome is installed somewhere other than the standard macOS location.
 
 ## Follow and support
 

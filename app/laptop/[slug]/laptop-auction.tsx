@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useI18n } from "@/app/i18n-provider";
 import { ModelStage } from "@/app/model-stage";
 import { PreferenceControls } from "@/app/preference-controls";
+import { useCheckoutReturn } from "@/app/use-checkout-return";
 import type { Spot } from "@/lib/auction";
 import { MAX_BID_AMOUNT_USD } from "@/lib/bid-limits";
 import { getBrandModelFormat } from "@/lib/brand-model";
@@ -195,25 +196,30 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: AuctionCam
   const progress = Math.min(100, Math.round((totalRaised / snapshot.campaign.goal) * 100));
   const isAnything = snapshot.campaign.assetType === "anything";
 
+  const applySnapshot = useCallback((nextSnapshot: AuctionCampaignSnapshot) => {
+    setSnapshot((current) => ({
+      ...nextSnapshot,
+      campaign: {
+        ...nextSnapshot.campaign,
+        ...(current.campaign.modelFileName === nextSnapshot.campaign.modelFileName && current.campaign.modelUrl
+          ? { modelUrl: current.campaign.modelUrl }
+          : {}),
+      },
+    }));
+    setBackendStatus("live");
+  }, []);
+  useCheckoutReturn(applySnapshot);
+
   const refresh = useCallback(async () => {
     try {
       const response = await fetch(`/api/auctions/${encodeURIComponent(snapshot.campaign.slug)}`, { cache: "no-store" });
       if (!response.ok) throw new Error();
       const nextSnapshot = await response.json() as AuctionCampaignSnapshot;
-      setSnapshot((current) => ({
-        ...nextSnapshot,
-        campaign: {
-          ...nextSnapshot.campaign,
-          ...(current.campaign.modelFileName === nextSnapshot.campaign.modelFileName && current.campaign.modelUrl
-            ? { modelUrl: current.campaign.modelUrl }
-            : {}),
-        },
-      }));
-      setBackendStatus("live");
+      applySnapshot(nextSnapshot);
     } catch {
       setBackendStatus("offline");
     }
-  }, [snapshot.campaign.slug]);
+  }, [applySnapshot, snapshot.campaign.slug]);
 
   useEffect(() => {
     const timer = window.setInterval(() => void refresh(), 5_000);

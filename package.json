@@ -11,7 +11,8 @@
     "auth:confirm-email": "bun scripts/confirm-supabase-email.ts",
     "test:concurrency": "node scripts/test-concurrent-bids.mjs",
     "test:laptop-platform": "node scripts/test-laptop-platform.mjs",
-    "test:api-e2e": "npm run build && node --test scripts/test-auction-api-e2e.mjs"
+    "test:api-e2e": "npm run build && node --test scripts/test-auction-api-e2e.mjs",
+    "test:stripe-e2e": "npm run build && node --test scripts/test-homepage-stripe-e2e.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",
@@ -28,6 +29,7 @@
     "@types/three": "^0.185.4",
     "eslint": "^9.34.0",
     "eslint-config-next": "16.3.3",
+    "playwright-core": "^1.63.0",
     "typescript": "^5.9.2"
   }
 }
