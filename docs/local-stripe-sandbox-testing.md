@@ -153,6 +153,25 @@ monitoring even when the response is 200: connected-account balance shortages
 can leave refunds pending.
 [Stripe direct-charge refunds](https://docs.stripe.com/connect/direct-charges#issue-refunds).
 
+Recovery workers atomically lease one due payment at a time, alternate payment
+and refund queues, and process at most 30 records per run. A run has a 45-second
+network budget inside the route's 60-second limit; individual Stripe/database
+requests are capped at five seconds, including response-body consumption. SDK
+retries are disabled within recovery so they cannot sleep past that budget.
+Unfinished leases become claimable after two minutes. Failures defer the next
+attempt by 1, 2, 4, ... minutes up to one hour; pending Stripe refunds are checked
+again after one minute. A newly required refund becomes immediately due even if
+its payment was previously leased or deferred. Signed refund events may request
+an immediate retry of their own payment, but cannot bypass an active lease.
+
+`budgetExhausted` produces a 503. `batchLimitReached` means the worker stopped at
+its batch cap, not that the queue is empty: schedule another protected run.
+Successful responses can also leave deferred or actively leased work, so monitor
+the age/count of pending obligations, not only HTTP status. Lease-finalization
+errors are reported as failures; a crash or lost response retains the obligation
+for another worker. The scheduler/alerts and deployed secret still require
+deployment verification; the code does not establish a continuous refund SLA.
+
 `vercel.json` schedules a daily production reconciliation run. Configure a
 strong `CRON_SECRET` for that deployment. Vercel cron does **not** run on Preview;
 use the protected endpoint manually for local/Preview recovery. Daily cron is

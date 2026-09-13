@@ -4,6 +4,7 @@ import Stripe from "stripe";
 
 import { SITE_URL } from "@/lib/site";
 import { resolveStripeMode } from "@/lib/environment-policy";
+import { paymentWorkFetch } from "@/lib/payment-work-budget";
 
 let stripeClient: Stripe | null = null;
 let stripeClientKey: string | undefined;
@@ -21,6 +22,7 @@ export function getStripe() {
     throw new Error("STRIPE_SECRET_KEY is not configured.");
   }
   if (!stripeClient || stripeClientKey !== secretKey) stripeClient = new Stripe(secretKey, {
+    httpClient: Stripe.createFetchHttpClient(paymentWorkFetch),
     timeout: 15_000,
     maxNetworkRetries: 2,
     appInfo: {

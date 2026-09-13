@@ -184,3 +184,31 @@ Remaining release gates (the resolved payment findings above do not close these)
 - Still open: low-price/deposit business rule (asked again), truthful remaining
   financial copy, reconciliation fairness/runtime/operations, model-repair races,
   hosted Connect human completion, legacy test replacement and remote release.
+
+2026-09-13 recovery queue follow-up (local; not yet pushed):
+
+- Added service-only, environment-specific claim RPCs with row locks, two-minute
+  leases and compare-and-set release tokens. New refund obligations invalidate
+  stale payment leases and become immediately due. Failed work backs off instead
+  of continually occupying the front of the queue.
+- Reconciliation alternates queues, claims at most 30 records, and shares a
+  45-second network budget. Return confirmation uses 30 seconds, direct refund
+  processing 20 seconds, with nested calls inheriting the enclosing budget.
+- Added five-second per-request limits for Stripe and database HTTP, including
+  stalled response bodies. Recovery disables SDK retries; ordinary requests keep
+  their prior retry policy. Fixed lazy database thenables escaping the request
+  context and Retry-After delays escaping the total deadline.
+- Signed refund events target their own payment. Lease-release errors, failed
+  work and exhausted budgets remain visible to the caller. Batch limits and
+  deferred work are explicitly not reported as an empty queue.
+- Applied `20260913160000_lease_payment_recovery_work.sql` locally only.
+- Real local SQL tests cover concurrent claims, expired leases, stale workers,
+  dev/prod isolation, unauthorized RPC calls, backoff, refund transitions and a
+  one-sided queue with more than 30 records. Actual local HTTP tests exercise the
+  Stripe/Supabase SDKs against stalled bodies and long Retry-After responses.
+- `npm run test:payment-core`: 30/30 passing; full typecheck and lint passed.
+- Real Stripe Bid → Outbid E2E passed again with local Supabase. Hosted Connect
+  onboarding remains a separate, unpassed human-verification gate.
+- Still open: deployed recovery scheduling/alerting, application-fee verification
+  when adopting an externally issued refund, minimum-price and financial-copy
+  decisions, model-repair races, legacy test replacement and remote release.

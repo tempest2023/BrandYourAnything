@@ -388,17 +388,23 @@ export async function compensateLatePayment(paymentId: string, intentId: string)
   if (error) throw error;
 }
 
-export async function listPaymentsToReconcile(limit = 10) {
-  const { data, error } = await getSupabaseAdmin().from(getLaptopBidPaymentTable()).select(PAYMENT_COLUMNS)
-    .in("status", ["pending", "paid"]).lte("reconcile_after", new Date().toISOString())
-    .order("reconcile_after", { ascending: true }).limit(limit);
+export type PaymentRecoveryWork = LaptopBidPayment & { leaseToken: string; attempts: number };
+
+export async function claimPaymentWork(kind: "payment" | "refund", scope: { laptopId?: string; paymentId?: string } = {}): Promise<PaymentRecoveryWork | null> {
+  const { data, error } = await getSupabaseAdmin().rpc(`${getDatabasePrefix()}_claim_payment_work`, {
+    p_kind: kind, p_laptop_id: scope.laptopId ?? null, p_payment_id: scope.paymentId ?? null,
+  });
   if (error) throw error;
-  return (data as LaptopBidPaymentRow[]).map(mapPayment);
+  if (!data) return null;
+  return { ...mapPayment(data), leaseToken: data.reconcile_token, attempts: data.reconcile_attempts };
 }
 
-export async function deferPaymentReconciliation(paymentId: string) {
-  const { error } = await getSupabaseAdmin().from(getLaptopBidPaymentTable())
-    .update({ reconcile_after: new Date(Date.now() + 15 * 60 * 1000).toISOString() }).eq("id", paymentId);
+export async function finishPaymentWork(work: PaymentRecoveryWork, errorCode: string | null, retrySeconds = 60) {
+  const delay = errorCode ? Math.min(3600, 60 * 2 ** Math.min(work.attempts - 1, 6)) : retrySeconds;
+  const { error } = await getSupabaseAdmin().from(getLaptopBidPaymentTable()).update({
+    reconcile_after: new Date(Date.now() + delay * 1000).toISOString(), reconcile_last_error: errorCode,
+    reconcile_token: null, reconcile_lease_until: null,
+  }).eq("id", work.id).eq("reconcile_token", work.leaseToken);
   if (error) throw error;
 }
 

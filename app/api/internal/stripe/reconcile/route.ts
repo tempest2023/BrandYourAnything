@@ -13,7 +13,7 @@ export async function GET(request: Request) {
   if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) return Response.json({ error: "Unauthorized." }, { status: 401 });
   try {
     const result = await reconcileStripePayments();
-    return Response.json(result, { status: result.failed.length ? 503 : 200, headers: { "Cache-Control": "no-store" } });
+    return Response.json(result, { status: result.failed.length || result.budgetExhausted ? 503 : 200, headers: { "Cache-Control": "no-store" } });
   } catch {
     return Response.json({ error: "Payment reconciliation could not finish. Retry is safe." }, { status: 503 });
   }

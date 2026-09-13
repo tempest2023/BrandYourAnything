@@ -79,8 +79,8 @@ export async function POST(request: Request) {
         if (!paymentId || !/^[0-9a-f-]{36}$/i.test(paymentId)) break;
         const payment = await getBidPaymentById(paymentId);
         if (!payment || !event.account || payment.stripeAccountId !== event.account) break;
-        const result = await reconcilePendingRefunds(payment.laptopId);
-        if (result.failed.length) throw new Error("A queued refund needs retry.");
+        const result = await reconcilePendingRefunds(payment.laptopId, payment.id);
+        if (result.failed.length || result.budgetExhausted) throw new Error("A queued refund needs retry.");
         break;
       }
       default:

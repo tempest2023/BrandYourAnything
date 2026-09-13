@@ -7,12 +7,13 @@ import {
   assertPaymentMatches, attachCheckoutSession, createOrGetBidPayment, expirePendingPayment,
   getBidPaymentById, getBidPaymentByIdempotencyKey, getBidPaymentBySessionId,
   getStripeAuctionBySlug, getStripeAuctionForPayment, getStripeBidContext,
-  listRefundPendingPayments, markBidPaymentPaid, recordRefund, saveCheckoutParameters,
+  markBidPaymentPaid, recordRefund, saveCheckoutParameters,
   settleLaptopBidPayment, stripeEnvironment, type LaptopBidPayment, type StripeBidContext,
-  compensateLatePayment, deferPaymentReconciliation, listPaymentsToReconcile,
+  compensateLatePayment, claimPaymentWork, finishPaymentWork, type PaymentRecoveryWork,
 } from "@/lib/stripe-bid-repository";
 import { getStripe, stripeIsLive } from "@/lib/stripe";
 import { validateCheckoutIdentity, validatePaidCheckout } from "@/lib/stripe-payment-contract";
+import { paymentStripeOptions, paymentWorkRemaining, withPaymentWorkBudget } from "@/lib/payment-work-budget";
 
 export type StripeBidErrorCode = "campaign_not_found" | "spot_not_found" | "auction_closed"
   | "payments_not_ready" | "bid_too_low" | "idempotency_conflict" | "checkout_unavailable";
@@ -63,7 +64,7 @@ export async function createLaptopBidCheckout(slug: string, input: ParsedBidForm
       website: input.website, xHandle: input.xHandle, logoStoragePath, idempotencyKey: input.idempotencyKey }); }
     catch (error) { contextError(error); }
     if (payment.checkoutSessionId && payment.stripeAccountId) {
-      const session = await getStripe().checkout.sessions.retrieve(payment.checkoutSessionId, {}, { stripeAccount: payment.stripeAccountId });
+      const session = await getStripe().checkout.sessions.retrieve(payment.checkoutSessionId, {}, { ...paymentStripeOptions(), stripeAccount: payment.stripeAccountId });
       if (session.status === "complete") {
         // A lost HTTP response after payment is a confirmation retry, not a new charge.
         const url = new URL("/" + encodeURIComponent(auction.slug), returnOrigin);
@@ -89,7 +90,7 @@ export async function createLaptopBidCheckout(slug: string, input: ParsedBidForm
   // No upload happens until the durable reservation and request identity match.
   await ensureLogo?.();
   if (payment.checkoutSessionId) {
-    const session = await getStripe().checkout.sessions.retrieve(payment.checkoutSessionId, {}, { stripeAccount: payment.stripeAccountId });
+    const session = await getStripe().checkout.sessions.retrieve(payment.checkoutSessionId, {}, { ...paymentStripeOptions(), stripeAccount: payment.stripeAccountId });
     if (!session.url || session.status !== "open") throw new StripeBidError("checkout_unavailable", "This checkout is no longer available.");
     return { checkoutUrl: session.url, sessionId: session.id, depositAmount: payment.depositAmountCents / 100 };
   }
@@ -107,7 +108,7 @@ export async function createLaptopBidCheckout(slug: string, input: ParsedBidForm
 async function reconcileRefund(payment: LaptopBidPayment) {
   if (!payment.stripeAccountId || !payment.paymentIntentId) throw new Error("Refund work is missing its original payment identity.");
   const stripe = getStripe();
-  const options = { stripeAccount: payment.stripeAccountId };
+  const options = { ...paymentStripeOptions(), stripeAccount: payment.stripeAccountId };
   let refund: Stripe.Refund | undefined;
   if (payment.refundId) refund = await stripe.refunds.retrieve(payment.refundId, {}, options);
   else {
@@ -127,18 +128,38 @@ async function reconcileRefund(payment: LaptopBidPayment) {
   return refund.status === "succeeded";
 }
 
-export async function reconcilePendingRefunds(laptopId?: string) {
-  const payments = await listRefundPendingPayments(laptopId);
-  let pending = 0;
-  const failed: string[] = [];
-  for (const payment of payments) {
-    try { if (!await reconcileRefund(payment)) pending++; }
-    catch (error) {
-      failed.push(payment.id);
-      console.error("Pending bid refund reconciliation failed", { paymentId: payment.id, error });
-    }
+function recoveryErrorCode(error: unknown) {
+  const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
+  return /^[a-z0-9_]{1,60}$/i.test(code) ? code : "reconciliation_failed";
+}
+
+async function finishRecovery(work: PaymentRecoveryWork, errorCode: string | null, retrySeconds?: number) {
+  try { await finishPaymentWork(work, errorCode, retrySeconds); return true; }
+  catch {
+    console.error("Recovery lease will expire for retry", { paymentId: work.id });
+    return false;
   }
-  return { processed: payments.length, pending, failed };
+}
+
+export async function reconcilePendingRefunds(laptopId?: string, paymentId?: string) {
+  return withPaymentWorkBudget(async () => {
+    let processed = 0; let pending = 0;
+    const failed: string[] = [];
+    while (processed < (paymentId ? 1 : 3) && paymentWorkRemaining() >= 5_000) {
+      const payment = await claimPaymentWork("refund", { laptopId, paymentId });
+      if (!payment) break;
+      processed++;
+      try {
+        if (!await reconcileRefund(payment)) pending++;
+        if (!await finishRecovery(payment, null)) failed.push(payment.id);
+      } catch (error) {
+        failed.push(payment.id);
+        await finishRecovery(payment, recoveryErrorCode(error));
+        console.error("Pending bid refund reconciliation failed", { paymentId: payment.id, code: recoveryErrorCode(error) });
+      }
+    }
+    return { processed, pending, failed, budgetExhausted: paymentWorkRemaining() < 5_000 };
+  }, 20_000);
 }
 
 export type CheckoutFulfillment = {
@@ -146,13 +167,19 @@ export type CheckoutFulfillment = {
   reason?: string; snapshot?: Awaited<ReturnType<typeof getLaptopSnapshot>>;
 };
 
-export async function fulfillCheckoutSession(sessionId: string, eventAccountId?: string, expectedSlug?: string, paymentIdHint?: string): Promise<CheckoutFulfillment> {
+type FulfillmentOptions = { skipRefunds?: boolean; skipSnapshot?: boolean };
+
+export async function fulfillCheckoutSession(sessionId: string, eventAccountId?: string, expectedSlug?: string, paymentIdHint?: string, options: FulfillmentOptions = {}): Promise<CheckoutFulfillment> {
+  return withPaymentWorkBudget(() => fulfillVerifiedCheckout(sessionId, eventAccountId, expectedSlug, paymentIdHint, options), 30_000);
+}
+
+async function fulfillVerifiedCheckout(sessionId: string, eventAccountId: string | undefined, expectedSlug: string | undefined, paymentIdHint: string | undefined, options: FulfillmentOptions): Promise<CheckoutFulfillment> {
   let payment = await getBidPaymentBySessionId(sessionId);
   if (!payment && paymentIdHint) payment = await getBidPaymentById(paymentIdHint);
   if (!payment && expectedSlug) {
     const candidate = await getStripeAuctionBySlug(expectedSlug);
     if (candidate?.stripe_account_id) {
-      const candidateSession = await getStripe().checkout.sessions.retrieve(sessionId, { expand: ["payment_intent"] }, { stripeAccount: candidate.stripe_account_id });
+      const candidateSession = await getStripe().checkout.sessions.retrieve(sessionId, { expand: ["payment_intent"] }, { ...paymentStripeOptions(), stripeAccount: candidate.stripe_account_id });
       const id = candidateSession.metadata?.bid_payment_id;
       if (id && /^[0-9a-f-]{36}$/i.test(id)) payment = await getBidPaymentById(id);
     }
@@ -162,7 +189,7 @@ export async function fulfillCheckoutSession(sessionId: string, eventAccountId?:
   if (!auction || (expectedSlug && auction.slug !== expectedSlug) || !payment.stripeAccountId
     || (eventAccountId && eventAccountId !== payment.stripeAccountId)) throw new StripeBidError("checkout_unavailable", "This Checkout Session does not belong to this auction account.");
   // Always retrieve through the reserved account, never the seller's current one.
-  const session = await getStripe().checkout.sessions.retrieve(sessionId, { expand: ["payment_intent"] }, { stripeAccount: payment.stripeAccountId });
+  const session = await getStripe().checkout.sessions.retrieve(sessionId, { expand: ["payment_intent"] }, { ...paymentStripeOptions(), stripeAccount: payment.stripeAccountId });
   validateCheckoutIdentity(session, payment, auction.slug, stripeEnvironment(), stripeIsLive());
   const verifiedIntent = session.payment_status === "paid"
     ? validatePaidCheckout(session, { ...payment, checkoutSessionId: session.id }, auction.slug, stripeEnvironment(), stripeIsLive())
@@ -176,15 +203,15 @@ export async function fulfillCheckoutSession(sessionId: string, eventAccountId?:
     } else if (payment.status === "expired" || payment.status === "failed") await compensateLatePayment(payment.id, verifiedIntent);
   } else if (session.status === "expired") await expirePendingPayment(payment.id);
 
-  const refunds = await reconcilePendingRefunds(payment.laptopId);
+  const refunds = options.skipRefunds ? null : await reconcilePendingRefunds(payment.laptopId);
   // Webhooks retain Stripe retries on refund failures. Return-page confirmation
   // can still display a committed winning bid while durable work is outstanding.
-  if (eventAccountId && refunds.failed.length) throw new Error("A queued refund needs retry.");
+  if (eventAccountId && refunds && (refunds.failed.length || refunds.budgetExhausted)) throw new Error("A queued refund needs retry.");
   const current = await getBidPaymentById(payment.id);
   if (!current) throw new Error("Payment disappeared during confirmation.");
   const status = current.status === "paid" ? "pending" : current.status;
   return { status, reason: current.failureReason ?? undefined,
-    ...(["accepted", "refund_pending", "refunded"].includes(status) ? { snapshot: await getLaptopSnapshot(auction.slug) } : {}) };
+    ...(!options.skipSnapshot && ["accepted", "refund_pending", "refunded"].includes(status) ? { snapshot: await getLaptopSnapshot(auction.slug) } : {}) };
 }
 
 export async function expireCheckoutSession(sessionId: string, eventAccountId?: string, paymentIdHint?: string) {
@@ -192,30 +219,50 @@ export async function expireCheckoutSession(sessionId: string, eventAccountId?: 
   return fulfillCheckoutSession(sessionId, eventAccountId, undefined, paymentIdHint);
 }
 
-export async function reconcileStripePayments() {
-  const failed: string[] = [];
-  const payments = await listPaymentsToReconcile();
-  for (const payment of payments) {
-    await deferPaymentReconciliation(payment.id);
-    try {
-      let sessionId = payment.checkoutSessionId;
-      if (!sessionId && payment.stripeAccountId) {
-        // Session creation may have succeeded before its response/attachment was
-        // persisted. Search its account and creation window; never create again.
-        let inspected = 0;
-        for await (const session of getStripe().checkout.sessions.list({
-          created: { gte: Math.floor(Date.parse(payment.createdAt) / 1000) - 300 }, limit: 100,
-        }, { stripeAccount: payment.stripeAccountId })) {
-          if (session.metadata?.bid_payment_id === payment.id) { sessionId = session.id; break; }
-          if (++inspected >= 500) break;
-        }
-      }
-      if (sessionId) await fulfillCheckoutSession(sessionId, payment.stripeAccountId ?? undefined, undefined, payment.id);
-      else if (Date.now() - Date.parse(payment.createdAt) > 23 * 60 * 60 * 1000) {
-        throw new Error("An old unbound Checkout attempt needs operator reconciliation.");
-      }
-    } catch (error) { failed.push(payment.id); console.error("Payment reconciliation failed", { paymentId: payment.id, error }); }
+async function recoverPayment(payment: LaptopBidPayment) {
+  let sessionId = payment.checkoutSessionId;
+  if (!payment.stripeAccountId) throw new Error("Missing original Stripe account.");
+  if (!sessionId) {
+    let inspected = 0;
+    // Account + bounded creation window; never create another Checkout here.
+    for await (const session of getStripe().checkout.sessions.list({
+      created: { gte: Math.floor(Date.parse(payment.createdAt) / 1000) - 300,
+        lte: Math.floor(Date.parse(payment.createdAt) / 1000) + 24 * 60 * 60 }, limit: 100,
+    }, { ...paymentStripeOptions(), stripeAccount: payment.stripeAccountId })) {
+      if (session.metadata?.bid_payment_id === payment.id) { sessionId = session.id; break; }
+      if (++inspected >= 500) throw new Error("Checkout inventory limit reached; operator reconciliation required.");
+      if (paymentWorkRemaining() < 5_000) throw new Error("Payment recovery deadline approaching.");
+    }
   }
-  const refunds = await reconcilePendingRefunds();
-  return { paymentsChecked: payments.length, refundsChecked: refunds.processed, refundsPending: refunds.pending, failed: [...new Set([...failed, ...refunds.failed])] };
+  if (sessionId) await fulfillCheckoutSession(sessionId, payment.stripeAccountId, undefined, payment.id, { skipRefunds: true, skipSnapshot: true });
+  else if (Date.now() - Date.parse(payment.createdAt) > 23 * 60 * 60 * 1000) {
+    throw new Error("Old unbound Checkout requires operator reconciliation.");
+  }
+}
+
+export async function reconcileStripePayments() {
+  return withPaymentWorkBudget(async () => {
+    const failed: string[] = [];
+    let paymentsChecked = 0; let refundsChecked = 0; let refundsPending = 0; let empty = 0;
+    // Alternate queues so a payment backlog cannot starve refunds (or vice versa).
+    for (let index = 0; paymentsChecked + refundsChecked < 30 && empty < 2 && paymentWorkRemaining() >= 5_000; index++) {
+      const kind = index % 2 === 0 ? "refund" : "payment";
+      const payment = await claimPaymentWork(kind);
+      if (!payment) { empty++; continue; }
+      empty = 0;
+      if (kind === "refund") refundsChecked++; else paymentsChecked++;
+      try {
+        if (kind === "refund") { if (!await reconcileRefund(payment)) refundsPending++; }
+        else await recoverPayment(payment);
+        if (!await finishRecovery(payment, null, kind === "payment" ? 900 : 60)) failed.push(payment.id);
+      } catch (error) {
+        failed.push(payment.id);
+        await finishRecovery(payment, recoveryErrorCode(error));
+        console.error("Payment recovery failed", { paymentId: payment.id, kind, code: recoveryErrorCode(error) });
+      }
+    }
+    return { paymentsChecked, refundsChecked, refundsPending, failed,
+      budgetExhausted: paymentWorkRemaining() < 5_000,
+      batchLimitReached: paymentsChecked + refundsChecked >= 30 };
+  }, 45_000);
 }

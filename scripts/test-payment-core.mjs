@@ -132,6 +132,10 @@ test("payment service and real local PostgreSQL preserve payment invariants", { 
   const input = (amount = 40000) => ({ spotId: 2, amountCents: amount, brandName: "Bidder", email: "bidder@example.test", website: null, xHandle: null, logo: null, idempotencyKey: randomUUID() });
   const checkout = (f, bid) => service.createLaptopBidCheckout(f.slug, bid, null, "http://localhost:3000");
   const bids = async (f) => { const { data, error } = await admin.from(f.namespace + "_laptop_bids").select("*").eq("laptop_id", f.id); assert.ifError(error); return data; };
+  const makeRefundsDue = async (f) => {
+    assert.ifError((await admin.from(f.namespace + "_laptop_bid_payments").update({ reconcile_after: new Date(0).toISOString() })
+      .eq("laptop_id", f.id).eq("status", "refund_pending")).error);
+  };
   const deliver = (event) => {
     const payload = JSON.stringify(event);
     const signature = fake.api.webhooks.generateTestHeaderString({ payload, secret: "whsec_local" });
@@ -269,7 +273,10 @@ test("payment service and real local PostgreSQL preserve payment invariants", { 
       }
       assert.equal((await repository.listRefundPendingPayments(f.id)).length, 2);
       fake.state.refundFailure = false; fake.state.lostRefundResponse = true;
+      assert.equal((await service.reconcilePendingRefunds(f.id)).processed, 0, "Failed jobs must respect backoff");
+      await makeRefundsDue(f);
       await service.reconcilePendingRefunds(f.id);
+      await makeRefundsDue(f);
       await Promise.all(Array.from({ length: 5 }, () => service.reconcilePendingRefunds(f.id)));
       assert.equal((await repository.listRefundPendingPayments(f.id)).length, 0);
       assert.equal(fake.state.refundCreates, count + 2);
@@ -283,7 +290,7 @@ test("payment service and real local PostgreSQL preserve payment invariants", { 
       assert.equal((await service.fulfillCheckoutSession(first.sessionId)).status, "refund_pending");
       const payment = await repository.getBidPaymentBySessionId(first.sessionId);
       const refund = fake.state.refunds.get(payment.refundId); refund.status = "succeeded";
-      await service.reconcilePendingRefunds(f.id);
+      await service.reconcilePendingRefunds(f.id, payment.id);
       await repository.recordRefund(payment.id, { ...refund, status: "pending" });
       assert.equal((await repository.getBidPaymentById(payment.id)).status, "refunded");
       fake.state.refundPending = false;
@@ -304,8 +311,7 @@ test("payment service and real local PostgreSQL preserve payment invariants", { 
       fake.pay(entry.session.id);
       // Confine the worker test to its fixture; never reconcile unrelated local records with test doubles.
       const reconciler = loadTypeScript("lib/stripe-bids.ts", { ...overrides, "@/lib/stripe-bid-repository": {
-        ...repository, listPaymentsToReconcile: async () => [payment],
-        listRefundPendingPayments: () => repository.listRefundPendingPayments(f.id),
+        ...repository, claimPaymentWork: (kind, scope = {}) => repository.claimPaymentWork(kind, { ...scope, laptopId: f.id }),
       } });
       const count = fake.state.creates;
       assert.deepEqual((await reconciler.reconcileStripePayments()).failed, []);
@@ -332,6 +338,77 @@ test("payment service and real local PostgreSQL preserve payment invariants", { 
         await assert.rejects(checkout(f, bid), /reconciliation/);
       } finally { Date.now = now; }
       assert.equal(fake.state.creates, count);
+    });
+
+    await t.test("recovery leases serialize claims, reject stale releases and reclaim expired work in both namespaces", async () => {
+      for (const namespace of ["ba_dev", "ba_prod"]) {
+        const f = await fixture(namespace);
+        process.env.SUPABASE_DATABASE_PREFIX = namespace;
+        process.env.ALLOW_LOCAL_PRODUCTION_NAMESPACE = "1";
+        try {
+          const session = await checkout(f, input());
+          const payment = await repository.getBidPaymentBySessionId(session.sessionId);
+          const scope = { laptopId: f.id, paymentId: payment.id };
+          const claims = await Promise.all(Array.from({ length: 20 }, () => repository.claimPaymentWork("payment", scope)));
+          const claimed = claims.filter(Boolean);
+          assert.equal(claimed.length, 1);
+          assert.equal(claimed[0].attempts, 1);
+          const table = admin.from(namespace + "_laptop_bid_payments");
+          assert.ifError((await table.update({ reconcile_lease_until: new Date(0).toISOString() }).eq("id", payment.id)).error);
+          const next = await repository.claimPaymentWork("payment", scope);
+          assert.notEqual(next.leaseToken, claimed[0].leaseToken);
+          assert.equal(next.attempts, 2);
+          await repository.finishPaymentWork(claimed[0], null);
+          assert.equal(await repository.claimPaymentWork("payment", scope), null, "Old worker cannot release a new lease");
+          await repository.finishPaymentWork(next, "test_outage");
+          const { data, error } = await table.select("reconcile_after,reconcile_token,reconcile_last_error").eq("id", payment.id).single();
+          assert.ifError(error);
+          assert.equal(data.reconcile_token, null);
+          assert.equal(data.reconcile_last_error, "test_outage");
+          assert.ok(Date.parse(data.reconcile_after) - Date.now() > 115_000, "Second failure backs off two minutes");
+          assert.equal(await repository.claimPaymentWork("payment", { laptopId: f.id }), null);
+          const other = namespace === "ba_dev" ? "ba_prod" : "ba_dev";
+          const cross = await admin.rpc(other + "_claim_payment_work", { p_kind: "payment", p_payment_id: payment.id });
+          assert.ifError(cross.error); assert.equal(cross.data, null);
+          const anonymous = createClient(local.apiUrl, local.publishableKey, { auth: { persistSession: false } });
+          assert.ok((await anonymous.rpc(namespace + "_claim_payment_work", { p_kind: "payment", p_payment_id: payment.id })).error);
+        } finally { process.env.SUPABASE_DATABASE_PREFIX = prefix; }
+      }
+    });
+
+    await t.test("a new refund invalidates the old payment lease and becomes immediately due", async () => {
+      const f = await fixture(); const session = await checkout(f, input()); fake.pay(session.sessionId);
+      const payment = await repository.getBidPaymentBySessionId(session.sessionId);
+      const work = await repository.claimPaymentWork("payment", { paymentId: payment.id });
+      assert.ifError((await admin.from(prefix + "_laptops").update({ status: "closed" }).eq("id", f.id)).error);
+      assert.equal((await service.fulfillCheckoutSession(session.sessionId, undefined, undefined, undefined, { skipRefunds: true })).status, "refund_pending");
+      await repository.finishPaymentWork(work, "stale_failure");
+      const refund = await repository.claimPaymentWork("refund", { laptopId: f.id });
+      assert.equal(refund.id, payment.id);
+      assert.equal(refund.attempts, 1);
+      await repository.finishPaymentWork(refund, null, 0);
+      assert.equal((await service.reconcilePendingRefunds(f.id)).processed, 1);
+      assert.equal((await repository.getBidPaymentById(payment.id)).status, "refunded");
+    });
+
+    await t.test("failed jobs do not starve other due work and a one-sided queue fills the 30-job batch", async () => {
+      const f = await fixture();
+      // These unpaid Checkouts are real DB reservations with a local Stripe double.
+      await Promise.all(Array.from({ length: 32 }, () => checkout(f, input())));
+      assert.ifError((await admin.from(prefix + "_laptop_bid_payments").update({ reconcile_after: new Date(0).toISOString() }).eq("laptop_id", f.id)).error);
+      const { data: oldest, error } = await admin.from(prefix + "_laptop_bid_payments").select("id,stripe_checkout_session_id")
+        .eq("laptop_id", f.id).order("id").limit(1).single();
+      assert.ifError(error);
+      fake.state.sessions.get(oldest.stripe_checkout_session_id).session.amount_total++;
+      const worker = loadTypeScript("lib/stripe-bids.ts", { ...overrides, "@/lib/stripe-bid-repository": {
+        ...repository, claimPaymentWork: (kind, scope = {}) => repository.claimPaymentWork(kind, { ...scope, laptopId: f.id }),
+      } });
+      const result = await worker.reconcileStripePayments();
+      assert.equal(result.paymentsChecked, 30); assert.equal(result.refundsChecked, 0);
+      assert.equal(result.batchLimitReached, true); assert.deepEqual(result.failed, [oldest.id]);
+      const remaining = await worker.reconcileStripePayments();
+      assert.equal(remaining.paymentsChecked, 2); assert.equal(remaining.batchLimitReached, false);
+      assert.deepEqual(remaining.failed, [], "The failed oldest payment must back off instead of blocking the next batch");
     });
 
     await t.test("reconciliation endpoint requires its secret and reports retryable failures", async () => {

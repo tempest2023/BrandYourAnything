@@ -14,7 +14,7 @@
     "test:api-e2e": "npm run build && node --test scripts/test-auction-api-e2e.mjs",
     "test:stripe-e2e": "node --test scripts/test-homepage-stripe-e2e.mjs",
     "test:management-e2e": "node --test scripts/test-auction-management-e2e.mjs",
-    "test:payment-core": "node --test scripts/test-payment-core.mjs",
+    "test:payment-core": "node --test scripts/test-payment-core.mjs scripts/test-payment-work-budget.mjs",
     "test:publication-core": "node --test scripts/test-publication-core.mjs",
     "test:layout-e2e": "node --test scripts/test-auction-layout-e2e.mjs",
     "test:connect-core": "node --test scripts/test-stripe-connect-core.mjs",
