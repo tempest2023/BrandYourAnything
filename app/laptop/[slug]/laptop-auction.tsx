@@ -110,10 +110,12 @@ function LaptopLid({ spots, onSelect, canBid }: { spots: Spot[]; onSelect: (spot
 
 function BidPanel({
   slug,
+  assetVersion,
   spot,
   isAnything,
 }: {
   slug: string;
+  assetVersion?: string;
   spot: Spot;
   isAnything: boolean;
 }) {
@@ -136,6 +138,7 @@ function BidPanel({
     formData.set("spotId", String(spot.id));
     formData.set("amountCents", String(amountToUsdCents(Number(amount), currency)));
     formData.set("idempotencyKey", idempotencyKey);
+    if (assetVersion) formData.set("assetVersion", assetVersion);
 
     try {
       const response = await fetch(`/api/auctions/${encodeURIComponent(slug)}/bids/checkout`, {
@@ -205,15 +208,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: AuctionCam
   const isAnything = snapshot.campaign.assetType === "anything";
 
   const applySnapshot = useCallback((nextSnapshot: AuctionCampaignSnapshot) => {
-    setSnapshot((current) => ({
-      ...nextSnapshot,
-      campaign: {
-        ...nextSnapshot.campaign,
-        ...(current.campaign.modelFileName === nextSnapshot.campaign.modelFileName && current.campaign.modelUrl
-          ? { modelUrl: current.campaign.modelUrl }
-          : {}),
-      },
-    }));
+    setSnapshot(nextSnapshot);
     setBackendStatus("live");
   }, []);
   const paymentState = useCheckoutReturn(applySnapshot, snapshot.campaign.slug);
@@ -262,6 +257,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: AuctionCam
           {isAnything && snapshot.campaign.modelUrl ? (
             <ModelStage
               sourceUrl={snapshot.campaign.modelUrl}
+              sourceKey={`${snapshot.campaign.assetVersion ?? ""}:${snapshot.campaign.modelUrl.split("?", 1)[0]}`}
               format={snapshot.campaign.modelFileName ? getBrandModelFormat(snapshot.campaign.modelFileName) || undefined : undefined}
               label={t("laptop.modelAria", { object: snapshot.campaign.assetName })}
               spots={snapshot.spots.map((spot) => ({
@@ -274,6 +270,8 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: AuctionCam
               onSelectSpot={setSelectedSpotId}
               className={styles.modelHeroStage}
             />
+          ) : isAnything ? (
+            <p role="status">{t("laptop.modelUnavailable")}</p>
           ) : (
             <LaptopLid spots={snapshot.spots} canBid={canBid} onSelect={(spot) => setSelectedSpotId(spot.id)} />
           )}
@@ -310,8 +308,9 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: AuctionCam
             {selectedSpot && canBid && !canPlaceBid(selectedSpot) && <p role="status">{t("common.bidLimitReached")}</p>}
             {selectedSpot && canBid && canPlaceBid(selectedSpot) && (
               <BidPanel
-                key={`${selectedSpot.id}-${selectedSpot.minBid}-${currency}`}
+                key={`${selectedSpot.id}-${selectedSpot.minBid}-${currency}-${snapshot.campaign.assetVersion ?? ""}`}
                 slug={snapshot.campaign.slug}
+                assetVersion={snapshot.campaign.assetVersion}
                 spot={selectedSpot}
                 isAnything={isAnything}
               />

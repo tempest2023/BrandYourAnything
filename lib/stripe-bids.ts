@@ -16,14 +16,19 @@ import { validateCheckoutIdentity, validatePaidCheckout } from "@/lib/stripe-pay
 import { paymentStripeOptions, paymentWorkRemaining, withPaymentWorkBudget } from "@/lib/payment-work-budget";
 
 export type StripeBidErrorCode = "campaign_not_found" | "spot_not_found" | "auction_closed"
-  | "payments_not_ready" | "bid_too_low" | "idempotency_conflict" | "checkout_unavailable";
+  | "payments_not_ready" | "bid_too_low" | "idempotency_conflict" | "checkout_unavailable" | "auction_asset_changed";
 
 export class StripeBidError extends Error {
   constructor(public code: StripeBidErrorCode, message: string) { super(message); this.name = "StripeBidError"; }
 }
 
 function contextError(error: unknown): never {
-  if (error instanceof Error && error.message === "auction_closed") throw new StripeBidError("auction_closed", "This auction has already closed.");
+  if (error && typeof error === "object" && "message" in error && error.message === "auction_asset_changed") {
+    throw new StripeBidError("auction_asset_changed", "The advertised object changed. Refresh the auction and review it before bidding.");
+  }
+  if (error && typeof error === "object" && "message" in error && error.message === "auction_closed") {
+    throw new StripeBidError("auction_closed", "This auction has already closed.");
+  }
   if (error instanceof Error && error.message === "payments_not_ready") throw new StripeBidError("payments_not_ready", "The seller has not finished setting up Stripe payouts for this auction.");
   if (error instanceof Error && error.message === "idempotency_conflict") throw new StripeBidError("idempotency_conflict", "This bid request was already used with different details.");
   throw error;
@@ -59,7 +64,7 @@ export async function createLaptopBidCheckout(slug: string, input: ParsedBidForm
   if (payment) {
     const auction = await getStripeAuctionForPayment(payment.laptopId);
     if (!auction || auction.slug !== slug.toLowerCase()) throw new StripeBidError("idempotency_conflict", "This request belongs to another auction.");
-    try { assertPaymentMatches(payment, { laptopId: payment.laptopId, spotPosition: input.spotId,
+    try { assertPaymentMatches(payment, { laptopId: payment.laptopId, spotPosition: input.spotId, assetVersion: input.assetVersion,
       bidAmountCents: input.amountCents, depositAmountCents, bidderName: input.brandName, bidderEmail: input.email,
       website: input.website, xHandle: input.xHandle, logoStoragePath, idempotencyKey: input.idempotencyKey }); }
     catch (error) { contextError(error); }
@@ -79,7 +84,7 @@ export async function createLaptopBidCheckout(slug: string, input: ParsedBidForm
   if (!context) throw new StripeBidError("campaign_not_found", "This auction or sticker spot does not exist.");
   if (input.amountCents < context.minimumBidCents) throw new StripeBidError("bid_too_low", "The new minimum bid is $" + (context.minimumBidCents / 100).toFixed(2) + ".");
   if (!payment) {
-    try { payment = await createOrGetBidPayment({ laptopId: context.laptopId, spotPosition: input.spotId,
+    try { payment = await createOrGetBidPayment({ laptopId: context.laptopId, spotPosition: input.spotId, assetVersion: input.assetVersion,
       bidAmountCents: input.amountCents, depositAmountCents, bidderName: input.brandName, bidderEmail: input.email,
       website: input.website, xHandle: input.xHandle, logoStoragePath, idempotencyKey: input.idempotencyKey,
       stripeAccountId: context.stripeAccountId }); }

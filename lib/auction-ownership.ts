@@ -36,6 +36,7 @@ export type OwnedAuctionSummary = {
 };
 
 export type OwnedCampaignModelInput = {
+  expectedAssetVersion: string | null;
   assetName: string;
   modelStoragePath: string;
   modelFileName: string;
@@ -136,7 +137,7 @@ async function manageOwnedAuction(slug: string, owner: AuctionOwnerCredential, a
     p_manager_key_hashes: owner.managerKeyHashCandidates, p_action: action, p_model: model,
   });
   if (error) {
-    if (["auction_closed", "auction_model_locked_by_bids"].includes(error.message)) throw new Error(error.message);
+    if (["auction_closed", "auction_model_locked_by_bids", "auction_model_locked_by_payments", "auction_asset_changed"].includes(error.message)) throw new Error(error.message);
     throw error;
   }
   return data ? toSummary(data as OwnedCampaignRow) : null;

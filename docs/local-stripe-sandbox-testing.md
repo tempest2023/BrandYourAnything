@@ -183,3 +183,29 @@ limits, queue throughput and operator alerting.
 Apply reviewed database migrations to each target before deploying code that
 requires the new columns/RPCs. Never use a linked database reset in production.
 Verify the target project and migration dry-run before `supabase db push`.
+
+## Model repairs and in-flight bids
+
+Public snapshots include `campaign.assetVersion` when an asset exists. Both bid
+forms submit that version to Checkout. The database locks the auction while
+reserving a payment and rejects a missing/stale version before Stripe is called.
+Already-reserved historical payments are not rewritten by this migration.
+
+The owner-only `PUT /api/auctions/[slug]/model` API requires
+`expectedAssetVersion` (the snapshot version, or explicit `null` for an auction
+without an asset), plus `assetName`, `path`, `fileName`, `size` and `uploadClaim`
+from a verified upload. A competing repair returns 409 instead of overwriting a
+newer model. Repeating an exactly committed repair acknowledges the result;
+replaying an older repair after a newer replacement cannot undo it.
+
+Repair is forbidden while payments are pending/paid or a bid is in the ledger.
+Do not manually expire a pending payment just to unlock repair: first reconcile
+its authoritative Stripe state. An ambiguous creation may already have charged.
+A genuinely expired unpaid Checkout can release the lock; any later verified
+payment on an expired attempt is refunded rather than accepted.
+
+`npm run test:model-core` covers real local SQL/Storage and authenticated owners
+in both namespaces. The management browser suite also verifies real model
+downloads/rendering, same-name replacement, stable rendering across signed-URL
+renewal and recovery from a failed download. These model tests do not claim to
+exercise Stripe's payment network; `test:stripe-e2e` remains the separate gate.

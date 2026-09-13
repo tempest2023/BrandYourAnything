@@ -191,6 +191,7 @@ export async function getAuctionSnapshot(slug: string): Promise<AuctionCampaignS
       ...(photoUrl ? { photoUrl } : {}),
       ...(modelUrl ? { modelUrl } : {}),
       ...(asset?.model_file_name ? { modelFileName: asset.model_file_name } : {}),
+      ...(asset?.idempotency_key ? { assetVersion: asset.idempotency_key } : {}),
     },
     spots,
     history,

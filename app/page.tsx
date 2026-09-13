@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -51,6 +52,7 @@ function compactMoney(amountUsd: number, currency: Currency, locale: Locale) {
 }
 
 type LidView = "live" | "final";
+const ModelAuction = dynamic(() => import("@/app/laptop/[slug]/laptop-auction").then((module) => module.LaptopAuction));
 type TableView = "spots" | "history";
 type AuctionLandingProps = {
   campaign?: AuctionCampaign;
@@ -167,11 +169,13 @@ type BidApiResponse = {
 
 function BidDialog({
   spot,
+  assetVersion,
   endpoint,
   spots,
   onClose,
 }: {
   spot: Spot | null;
+  assetVersion?: string;
   endpoint: string;
   spots: Spot[];
   onClose: () => void;
@@ -214,6 +218,7 @@ function BidDialog({
     formData.set("spotId", String(spot.id));
     formData.set("amountCents", String(amountCents));
     formData.set("idempotencyKey", idempotencyKey);
+    if (assetVersion) formData.set("assetVersion", assetVersion);
 
     try {
       const response = await fetch(endpoint, { method: "POST", body: formData });
@@ -384,13 +389,16 @@ export function AuctionLandingPage({ campaign: initialCampaign, initialSnapshot 
   }, [applySnapshot, auctionEndpoint]);
 
   useEffect(() => {
+    if (campaign?.assetType === "anything") return;
     const initialTimer = window.setTimeout(() => void refreshAuction(), 0);
     const timer = window.setInterval(() => void refreshAuction(), 5_000);
     return () => {
       window.clearTimeout(initialTimer);
       window.clearInterval(timer);
     };
-  }, [refreshAuction]);
+  }, [refreshAuction, campaign?.assetType]);
+
+  if (campaign?.assetType === "anything") return <ModelAuction initialSnapshot={{ campaign, spots, history }} />;
 
   return (
     <>
@@ -738,8 +746,9 @@ export function AuctionLandingPage({ campaign: initialCampaign, initialSnapshot 
 
       <a className="floating-cta" href={CREATE_URL}>{t("common.listLaptopArrow")}</a>
       <BidDialog
+        assetVersion={campaign?.assetVersion}
         spots={spots}
-        key={selectedSpot?.id ?? "closed"}
+        key={`${selectedSpot?.id ?? "closed"}-${campaign?.assetVersion ?? ""}`}
         spot={selectedSpot}
         endpoint={bidEndpoint}
         onClose={() => setSelectedSpotId(null)}

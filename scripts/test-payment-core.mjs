@@ -157,6 +157,20 @@ test("payment service and real local PostgreSQL preserve payment invariants", { 
       await assert.rejects(checkout(first, input()), /not finished/);
       currentAccountState = { closed: false, chargesEnabled: true, payoutsEnabled: true };
     });
+    await t.test("stale advertised-object versions cannot create Checkout or mutate a reserved bid", async () => {
+      const f = await fixture(); const assetVersion = randomUUID(); const count = fake.state.creates;
+      assert.ifError((await admin.from(prefix + "_campaign_assets").insert({ laptop_id: f.id, asset_type: "laptop",
+        asset_name: "MacBook Pro", model_storage_path: null, model_file_name: null, idempotency_key: assetVersion })).error);
+      const bid = input();
+      await assert.rejects(checkout(f, bid), (error) => error.code === "auction_asset_changed");
+      await assert.rejects(checkout(f, { ...bid, assetVersion: randomUUID() }), (error) => error.code === "auction_asset_changed");
+      assert.equal(fake.state.creates, count, "No Stripe Checkout may precede revision validation");
+      const result = await checkout(f, { ...bid, assetVersion });
+      assert.equal((await repository.getBidPaymentBySessionId(result.sessionId)).assetVersion, assetVersion);
+      await assert.rejects(checkout(f, { ...bid, assetVersion: randomUUID() }), (error) => error.code === "idempotency_conflict");
+      assert.equal(fake.state.creates, count + 1);
+    });
+
     await t.test("lost Checkout response reuses exact parameters and never deletes/resubmits a conflicting logo", async () => {
       const f = await fixture(); const bid = input(); const count = fake.state.creates;
       fake.state.lostCheckoutResponse = true;

@@ -14,6 +14,7 @@ export class BidValidationError extends Error {
 }
 
 export type ParsedBidForm = {
+  assetVersion?: string | null;
   spotId: number;
   amountCents: number;
   brandName: string;
@@ -70,6 +71,8 @@ export function parseBidForm(
   const website = normalizedWebsite(optionalText(formData, "website", 2048));
   const xHandle = optionalText(formData, "xHandle", 50);
   const idempotencyKey = requiredText(formData, "idempotencyKey", 36).toLowerCase();
+  const assetVersion = optionalText(formData, "assetVersion", 36)?.toLowerCase() ?? null;
+  if (assetVersion && !UUID_PATTERN.test(assetVersion)) throw new BidValidationError("assetVersion must be a UUID.");
 
   if (!Number.isInteger(spotId) || spotId < 1 || spotId > maximumSpotId) {
     throw new BidValidationError("spotId must identify a valid sticker spot.");
@@ -97,5 +100,5 @@ export function parseBidForm(
     throw new BidValidationError("Logo files must be PNG, JPG, WEBP, or SVG.");
   }
 
-  return { spotId, amountCents, brandName, email, website, xHandle, idempotencyKey, logo };
+  return { spotId, amountCents, brandName, email, website, xHandle, idempotencyKey, logo, assetVersion };
 }

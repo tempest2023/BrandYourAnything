@@ -45,6 +45,7 @@ export type StripeBidContext = {
 
 
 export type LaptopBidPayment = {
+  assetVersion: string | null;
   id: string;
   laptopId: string;
   spotPosition: number;
@@ -70,6 +71,7 @@ export type LaptopBidPayment = {
 };
 
 type LaptopBidPaymentRow = {
+  asset_version: string | null;
   id: string;
   laptop_id: string;
   spot_position: number;
@@ -105,10 +107,11 @@ type SettlePaymentRow = {
   bid_id: string | null;
 };
 
-const PAYMENT_COLUMNS = "id,laptop_id,spot_position,bid_amount_cents,deposit_amount_cents,bidder_name,bidder_email,website,x_handle,logo_storage_path,idempotency_key,stripe_checkout_session_id,stripe_payment_intent_id,previous_payment_intent_id,status,failure_reason,stripe_account_id,checkout_parameters,created_at,stripe_refund_id,refund_status,checkout_request_version";
+const PAYMENT_COLUMNS = "asset_version,id,laptop_id,spot_position,bid_amount_cents,deposit_amount_cents,bidder_name,bidder_email,website,x_handle,logo_storage_path,idempotency_key,stripe_checkout_session_id,stripe_payment_intent_id,previous_payment_intent_id,status,failure_reason,stripe_account_id,checkout_parameters,created_at,stripe_refund_id,refund_status,checkout_request_version";
 
 function mapPayment(row: LaptopBidPaymentRow): LaptopBidPayment {
   return {
+    assetVersion: row.asset_version,
     id: row.id,
     laptopId: row.laptop_id,
     spotPosition: row.spot_position,
@@ -203,6 +206,7 @@ export async function getStripeBidContext(
 }
 
 export type CreateBidPaymentInput = {
+  assetVersion?: string | null;
   laptopId: string;
   spotPosition: number;
   bidAmountCents: number;
@@ -230,6 +234,7 @@ export async function createOrGetBidPayment(input: CreateBidPaymentInput) {
     const { data, error } = await supabase
       .from(getLaptopBidPaymentTable())
       .insert({
+        asset_version: input.assetVersion ?? null,
         laptop_id: input.laptopId,
         spot_position: input.spotPosition,
         bid_amount_cents: input.bidAmountCents,
@@ -261,6 +266,7 @@ export async function createOrGetBidPayment(input: CreateBidPaymentInput) {
 
 export function assertPaymentMatches(payment: LaptopBidPayment, input: Omit<CreateBidPaymentInput, "stripeAccountId">) {
   const matches = payment.laptopId === input.laptopId
+    && payment.assetVersion === (input.assetVersion ?? null)
     && payment.spotPosition === input.spotPosition
     && payment.bidAmountCents === input.bidAmountCents
     && payment.depositAmountCents === input.depositAmountCents

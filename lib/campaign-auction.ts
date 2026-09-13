@@ -19,6 +19,7 @@ export type AuctionCampaign = {
   photoUrl?: string;
   modelUrl?: string;
   modelFileName?: string;
+  assetVersion?: string;
 };
 
 export type AuctionCampaignSnapshot = AuctionSnapshot & {

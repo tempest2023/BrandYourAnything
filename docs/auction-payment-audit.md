@@ -5,19 +5,21 @@ then verify auction/payment correctness, retries, ownership and environment isol
 
 ## Completion requirements
 
+Checked items are verified locally; they do not imply remote deployment.
+
 - [ ] Publish → Stripe Connect → return/status refresh, through the current account auth.
 - [ ] Dashboard: list owned auctions, recovery import/claim/rotate/revoke, close, reconnect.
-- [ ] Closed auctions remain publicly readable with final results and disabled bidding.
-- [ ] Public snapshots expose status/payment readiness and update it during polling.
+- [x] Closed auctions remain publicly readable with final results and disabled bidding.
+- [x] Public snapshots expose status/payment readiness and update it during polling.
 - [ ] Both public views show payment confirmation, cancellation, refund and retry failures.
-- [ ] Restore uploaded model draft previews; validate ownership for model repair.
-- [ ] Restore responsive navigation and language control sizing.
-- [ ] Restore shared connected-account migration and documented environment setup.
-- [ ] Validate Stripe amount/currency/account/environment before settlement.
-- [ ] Stable Checkout idempotency; logo retention on retries and ambiguous failures.
-- [ ] Concurrent settlement/refund/expiry/close cannot corrupt accepted bids or double-refund.
-- [ ] Ownership operations are atomic and protected from competing credentials.
-- [ ] Test-mode/production namespace guards and unrelated webhook handling.
+- [x] Restore uploaded model draft previews; validate ownership for model repair.
+- [x] Restore responsive navigation and language control sizing.
+- [x] Restore shared connected-account migration and documented environment setup.
+- [x] Validate Stripe amount/currency/account/environment before settlement.
+- [x] Stable Checkout idempotency; logo retention on retries and ambiguous failures.
+- [x] Concurrent settlement/refund/expiry/close cannot corrupt accepted bids or double-refund.
+- [x] Ownership operations are atomic and protected from competing credentials.
+- [x] Test-mode/production namespace guards and unrelated webhook handling.
 - [ ] Meaningful local database, API and browser tests cover the above failure paths.
 - [ ] Update PR 18 description, commit/push, and verify deployment/checks.
 
@@ -212,3 +214,32 @@ Remaining release gates (the resolved payment findings above do not close these)
 - Still open: deployed recovery scheduling/alerting, application-fee verification
   when adopting an externally issued refund, minimum-price and financial-copy
   decisions, model-repair races, legacy test replacement and remote release.
+
+2026-09-13 model-repair follow-up (local; not yet pushed):
+
+- Fixed two verified correctness defects: same-file-name replacements retained
+  the old signed URL, and model repair ignored in-flight Checkout reservations.
+- Added advertised asset revisions to snapshots and both bid forms. New payment
+  reservations check the displayed revision while locking the auction, before
+  any Stripe create call. The reserved revision is immutable. Old/stale clients
+  receive an explicit refresh/review error, not a charge against a changed model.
+- Model repair checks expected revision/current ownership under the same lock,
+  rejects competing writes and pending/paid bids, and preserves exact retries
+  after bids or closure without rewriting the asset. Old retries cannot restore
+  an overwritten model. Expired payments are never assumed unpaid from age alone.
+- Model rendering now separates stable resource identity from renewable download
+  URLs. Same-name replacements reload; routine signature renewal does not reset
+  the scene. Failed downloads can retry using the latest URL. Missing generic
+  models no longer show an unrelated MacBook lid, and an already-open laptop page
+  switches to its repaired generic model without a manual reload.
+- Applied `20260913170000_serialize_model_repair_and_checkout.sql` locally only.
+- Model core: 19/19 passing with real SQL/Storage/auth in both namespaces,
+  including revoke-during-I/O and repair/reservation races. Payment core: 31/31
+  passing, including rejecting stale revisions before any Stripe call.
+- Management E2E: 17/17 passing with actual same-name model downloads/rendering,
+  signature renewal, failed-download retry, ownership and closure. Inspected
+  `/tmp/model-repair-ba_dev.png`. Layout E2E: 4/4, publication core: 17/17; real
+  Stripe Bid → Outbid E2E passed again. Typecheck, lint and fresh builds passed.
+- Still open: externally issued refund/application-fee verification, deployed
+  recovery scheduling/alerts, minimum-price/payment-copy decision, complete
+  hosted Connect onboarding, legacy test migration and remote release/PR update.
