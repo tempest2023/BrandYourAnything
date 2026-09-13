@@ -55,17 +55,23 @@ and a ready test connected account already associated with a local `ba_dev`
 auction. Never attach a live account to a local fixture. The test shares that
 account with an isolated temporary auction; it does not change the original
 auction's account association. It builds with local browser/server credentials,
-pays twice using Stripe's `4242` test card and checks:
+runs two isolated scenarios, each paying twice using Stripe's `4242` test card,
+and checks:
 
 - First payment: return-page settlement without a webhook listener.
 - Second payment: local Stripe listener plus return-page confirmation.
 - Winning placement, both history entries, loaded logo and distinct Bid/Outbid colors.
 - First deposit refunded in Stripe and Supabase, historical logo retained.
+- Platform fee fully refunded and its completion recorded separately. One scenario
+  uses normal automatic Outbid refunds; the other first manually refunds the
+  customer without the fee, then verifies Outbid adopts that refund and returns
+  the fee without refunding the customer twice.
 
-Finally it expires open fixture Sessions, refunds remaining fixture deposits,
-removes fixture logos, then deletes only the fixture auction. If cleanup cannot
-finish, it preserves database records for reconciliation. Do not reset the
-whole local database to clean up a failed test.
+Finally it expires open fixture Sessions and verifies successful full refunds
+of remaining fixture deposits and platform fees before removing fixture logos
+and deleting only that fixture auction. If cleanup cannot finish, it preserves
+database records for reconciliation. Do not reset the whole local database to
+clean up a failed test.
 
 Run browser suites serially: they share the `.next` build directory.
 
@@ -144,6 +150,23 @@ earlier unfinished refund. `refund_pending` is not `refunded`: only a Stripe
 refund with `status=succeeded` completes it. Failed/canceled/partial refunds
 need operator review. Do not clear a recorded refund ID or create another
 refund without checking the original PaymentIntent and all Stripe refunds.
+
+Customer refunds and platform-fee refunds are separate states. A payment with
+`status=refunded` but `application_fee_refunded=false` stays in the recovery
+queue: the customer has been refunded, but the platform fee is not yet verified
+as fully returned. Recovery binds the fee to the original charge/account/mode
+before refunding its remaining balance. Fee creation can be asynchronous, and
+currency conversion can change its amount; do not recompute the refundable fee
+from the USD bid. Restricted keys need charge read access on connected accounts
+and Application Fees read/write access on the platform. Application Fee API
+requests must not carry the connected-account header.
+[Direct-charge fees and refunds](https://docs.stripe.com/connect/direct-charges#issue-refunds),
+[fee refund API](https://docs.stripe.com/api/fee_refunds/create).
+
+This recovery handles already-owed refunds (for example, Outbid or rejected
+settlement). It does not define withdrawal of a still-current winning bid after
+a seller manually refunds it in Stripe. That business rule remains a release
+gate; do not treat a successful fee-recovery test as coverage of that workflow.
 
 The authenticated GET/POST `/api/internal/stripe/reconcile` endpoint checks
 pending payments and refunds. Send `Authorization: Bearer <CRON_SECRET>` from

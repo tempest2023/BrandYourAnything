@@ -45,6 +45,8 @@ export type StripeBidContext = {
 
 
 export type LaptopBidPayment = {
+  applicationFeeId: string | null;
+  applicationFeeRefunded: boolean;
   assetVersion: string | null;
   id: string;
   laptopId: string;
@@ -71,6 +73,8 @@ export type LaptopBidPayment = {
 };
 
 type LaptopBidPaymentRow = {
+  application_fee_id: string | null;
+  application_fee_refunded: boolean;
   asset_version: string | null;
   id: string;
   laptop_id: string;
@@ -107,10 +111,12 @@ type SettlePaymentRow = {
   bid_id: string | null;
 };
 
-const PAYMENT_COLUMNS = "asset_version,id,laptop_id,spot_position,bid_amount_cents,deposit_amount_cents,bidder_name,bidder_email,website,x_handle,logo_storage_path,idempotency_key,stripe_checkout_session_id,stripe_payment_intent_id,previous_payment_intent_id,status,failure_reason,stripe_account_id,checkout_parameters,created_at,stripe_refund_id,refund_status,checkout_request_version";
+const PAYMENT_COLUMNS = "application_fee_id,application_fee_refunded,asset_version,id,laptop_id,spot_position,bid_amount_cents,deposit_amount_cents,bidder_name,bidder_email,website,x_handle,logo_storage_path,idempotency_key,stripe_checkout_session_id,stripe_payment_intent_id,previous_payment_intent_id,status,failure_reason,stripe_account_id,checkout_parameters,created_at,stripe_refund_id,refund_status,checkout_request_version";
 
 function mapPayment(row: LaptopBidPaymentRow): LaptopBidPayment {
   return {
+    applicationFeeId: row.application_fee_id,
+    applicationFeeRefunded: row.application_fee_refunded,
     assetVersion: row.asset_version,
     id: row.id,
     laptopId: row.laptop_id,
@@ -385,6 +391,15 @@ export async function recordRefund(paymentId: string, refund: Stripe.Refund) {
       status: succeeded ? "refunded" : "refund_pending", updated_at: new Date().toISOString() })
     .eq("id", paymentId).eq("status", "refund_pending");
   if (error) throw error;
+}
+
+export async function recordApplicationFee(paymentId: string, feeId: string, refunded: boolean) {
+  const { data, error } = await getSupabaseAdmin().from(getLaptopBidPaymentTable()).update({
+    application_fee_id: feeId,
+    ...(refunded ? { application_fee_refunded: true, application_fee_refunded_at: new Date().toISOString() } : {}),
+  }).eq("id", paymentId).eq("status", "refunded").select("id").maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("Application fee recovery requires a confirmed customer refund.");
 }
 
 export async function compensateLatePayment(paymentId: string, intentId: string) {

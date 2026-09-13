@@ -14,6 +14,7 @@ import {
 import { getStripe, stripeIsLive } from "@/lib/stripe";
 import { validateCheckoutIdentity, validatePaidCheckout } from "@/lib/stripe-payment-contract";
 import { paymentStripeOptions, paymentWorkRemaining, withPaymentWorkBudget } from "@/lib/payment-work-budget";
+import { reconcileApplicationFee } from "@/lib/stripe-fee-refunds";
 
 export type StripeBidErrorCode = "campaign_not_found" | "spot_not_found" | "auction_closed"
   | "payments_not_ready" | "bid_too_low" | "idempotency_conflict" | "checkout_unavailable" | "auction_asset_changed";
@@ -130,7 +131,7 @@ async function reconcileRefund(payment: LaptopBidPayment) {
   if (intentId !== payment.paymentIntentId || refund.currency !== "usd" || refund.amount !== payment.depositAmountCents) throw new Error("Refund does not match the reserved deposit.");
   await recordRefund(payment.id, refund);
   if (refund.status === "failed" || refund.status === "canceled") throw new Error("Stripe refund failed; operator action is required.");
-  return refund.status === "succeeded";
+  return refund.status === "succeeded" && await reconcileApplicationFee(payment, refund);
 }
 
 function recoveryErrorCode(error: unknown) {

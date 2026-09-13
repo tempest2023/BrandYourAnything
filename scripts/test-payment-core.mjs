@@ -49,7 +49,18 @@ function stripeDouble() {
   const keys = new Map();
   const refunds = new Map();
   const refundKeys = new Map();
-  const state = { sessions, refunds, lostCheckoutResponse: false, refundFailure: false, lostRefundResponse: false, refundPending: false, creates: 0, refundCreates: 0, reads: 0 };
+  const charges = new Map(); const fees = new Map(); const feeKeys = new Map();
+  const state = { sessions, refunds, charges, fees, lostCheckoutResponse: false, refundFailure: false, lostRefundResponse: false, refundPending: false,
+    feeFailure: false, lostFeeResponse: false, feeUnavailable: false, autoFeeRefund: true, creates: 0, refundCreates: 0, feeRefundCreates: 0, reads: 0 };
+  function settledRefund(refund) {
+    if (refund.status === "succeeded") {
+      const charge = charges.get(refund.charge); charge.amount_refunded = refund.amount;
+      if (refund.requestedFeeRefund && state.autoFeeRefund) {
+        const fee = fees.get(charge.application_fee); fee.amount_refunded = fee.amount; fee.refunded = true;
+      }
+    }
+    return structuredClone(refund);
+  }
   const api = {
     webhooks: new Stripe("sk_test_local").webhooks,
     checkout: { sessions: {
@@ -75,16 +86,37 @@ function stripeDouble() {
       },
     } },
     refunds: {
-      async list(params, options) { return { data: [...refunds.values()].filter((r) => r.payment_intent === params.payment_intent && r.account === options.stripeAccount).map((r) => structuredClone(r)) }; },
-      async retrieve(id, _params, options) { const refund = refunds.get(id); assert.equal(refund.account, options.stripeAccount); return structuredClone(refund); },
+      async list(params, options) { return { data: [...refunds.values()].filter((r) => r.payment_intent === params.payment_intent && r.account === options.stripeAccount).map(settledRefund) }; },
+      async retrieve(id, _params, options) { const refund = refunds.get(id); assert.equal(refund.account, options.stripeAccount); return settledRefund(refund); },
       async create(params, options) {
         assert.equal(params.refund_application_fee, true);
         if (state.refundFailure) throw new Error("Simulated Stripe outage");
         if (refundKeys.has(options.idempotencyKey)) return structuredClone(refundKeys.get(options.idempotencyKey));
         const refund = { id: "re_" + randomUUID().replaceAll("-", ""), payment_intent: params.payment_intent,
+          charge: [...charges.values()].find((charge) => charge.payment_intent === params.payment_intent).id, requestedFeeRefund: true,
           amount: params.amount, currency: "usd", status: state.refundPending ? "pending" : "succeeded", metadata: params.metadata, account: options.stripeAccount };
         refunds.set(refund.id, refund); refundKeys.set(options.idempotencyKey, refund); state.refundCreates++;
+        settledRefund(refund);
         if (state.lostRefundResponse) { state.lostRefundResponse = false; throw new Error("Simulated lost refund response"); }
+        return structuredClone(refund);
+      },
+    },
+    charges: { async retrieve(id, _params, options) {
+      const charge = charges.get(id); assert.equal(charge.account, options.stripeAccount);
+      return structuredClone({ ...charge, ...(state.feeUnavailable ? { application_fee: null } : {}) });
+    } },
+    applicationFees: {
+      async retrieve(id, _params, options) { assert.equal(options.stripeAccount, undefined); assert.ok(fees.has(id)); return structuredClone(fees.get(id)); },
+      async list(params, options) { assert.equal(options.stripeAccount, undefined); return { data: state.feeUnavailable ? [] : [...fees.values()].filter((fee) => fee.charge === params.charge).map((fee) => structuredClone(fee)), has_more: false }; },
+      async createRefund(id, params, options) {
+        assert.equal(options.stripeAccount, undefined); assert.equal(params.amount, undefined);
+        if (state.feeFailure) throw new Error("Simulated fee refund outage");
+        if (feeKeys.has(options.idempotencyKey)) return structuredClone(feeKeys.get(options.idempotencyKey));
+        const fee = fees.get(id); assert.equal(fee.refunded, false);
+        const refund = { id: "fr_" + randomUUID(), amount: fee.amount - fee.amount_refunded, currency: fee.currency, fee: id };
+        fee.amount_refunded = fee.amount; fee.refunded = true; state.feeRefundCreates++;
+        feeKeys.set(options.idempotencyKey, refund);
+        if (state.lostFeeResponse) { state.lostFeeResponse = false; throw new Error("Simulated lost fee refund response"); }
         return structuredClone(refund);
       },
     },
@@ -96,9 +128,21 @@ function stripeDouble() {
     session.payment_intent = { id: "pi_" + randomUUID().replaceAll("-", ""), status: "succeeded", currency: "usd", livemode: false,
       amount: session.amount_total, amount_received: session.amount_total, metadata: entry.params.payment_intent_data.metadata,
       application_fee_amount: entry.params.payment_intent_data.application_fee_amount };
+    const chargeId = "ch_" + randomUUID(); const feeId = "fee_" + randomUUID();
+    charges.set(chargeId, { id: chargeId, account: entry.account, payment_intent: session.payment_intent.id, paid: true, livemode: false,
+      currency: "usd", amount: session.amount_total, amount_captured: session.amount_total, amount_refunded: 0,
+      application_fee: feeId, application_fee_amount: session.payment_intent.application_fee_amount });
+    fees.set(feeId, { id: feeId, account: entry.account, charge: chargeId, amount: session.payment_intent.application_fee_amount,
+      amount_refunded: 0, currency: "usd", livemode: false, refunded: false });
     return session;
   }
-  return { state, api, pay };
+  function manualRefund(sessionId) {
+    const entry = sessions.get(sessionId); const charge = [...charges.values()].find((charge) => charge.payment_intent === entry.session.payment_intent.id);
+    const refund = { id: "re_manual_" + randomUUID(), payment_intent: charge.payment_intent, charge: charge.id, requestedFeeRefund: false,
+      amount: charge.amount, currency: "usd", status: "succeeded", metadata: {}, account: entry.account };
+    refunds.set(refund.id, refund); state.refundCreates++; settledRefund(refund); return refund;
+  }
+  return { state, api, pay, manualRefund };
 }
 
 test("payment service and real local PostgreSQL preserve payment invariants", { timeout: 90_000 }, async (t) => {
@@ -295,6 +339,77 @@ test("payment service and real local PostgreSQL preserve payment invariants", { 
       assert.equal((await repository.listRefundPendingPayments(f.id)).length, 0);
       assert.equal(fake.state.refundCreates, count + 2);
       assert.equal((await bids(f)).length, 3);
+    });
+
+    await t.test("a manually refunded outbid deposit remains refunded while its platform fee retries independently", async () => {
+      const f = await fixture(); const first = await checkout(f, input()); fake.pay(first.sessionId); await service.fulfillCheckoutSession(first.sessionId);
+      const manual = fake.manualRefund(first.sessionId);
+      const refundCount = fake.state.refundCreates; const feeCount = fake.state.feeRefundCreates;
+      try {
+        fake.state.feeFailure = true;
+        const second = await checkout(f, input(41000)); fake.pay(second.sessionId); await service.fulfillCheckoutSession(second.sessionId);
+        let payment = await repository.getBidPaymentBySessionId(first.sessionId);
+        assert.equal(payment.status, "refunded", "Customer refund must not be hidden behind fee recovery");
+        assert.equal(payment.refundId, manual.id); assert.ok(payment.applicationFeeId);
+        assert.equal(payment.applicationFeeRefunded, false);
+        assert.equal(fake.state.refundCreates, refundCount, "Do not refund the customer a second time");
+        fake.state.feeFailure = false; fake.state.lostFeeResponse = true;
+        const result = await service.reconcilePendingRefunds(f.id, payment.id);
+        assert.deepEqual(result.failed, []);
+        payment = await repository.getBidPaymentById(payment.id);
+        assert.equal(payment.status, "refunded"); assert.equal(payment.applicationFeeRefunded, true);
+        await Promise.all(Array.from({ length: 6 }, () => service.reconcilePendingRefunds(f.id, payment.id)));
+        assert.equal(fake.state.feeRefundCreates, feeCount + 1);
+        assert.equal(fake.state.refundCreates, refundCount);
+        assert.equal(await repository.claimPaymentWork("refund", { paymentId: payment.id }), null);
+        await assert.rejects(repository.recordApplicationFee(payment.id, "fee_wrong", true));
+        const regression = await admin.from(prefix + "_laptop_bid_payments").update({ application_fee_refunded: false }).eq("id", payment.id);
+        assert.ok(regression.error);
+      } finally { fake.state.feeFailure = false; fake.state.lostFeeResponse = false; }
+    });
+
+    await t.test("delayed application fee creation stays queued after customer refund in both environments", async () => {
+      for (const namespace of ["ba_dev", "ba_prod"]) {
+        const f = await fixture(namespace);
+        process.env.SUPABASE_DATABASE_PREFIX = namespace; process.env.ALLOW_LOCAL_PRODUCTION_NAMESPACE = "1";
+        try {
+          const first = await checkout(f, input()); fake.pay(first.sessionId); await service.fulfillCheckoutSession(first.sessionId);
+          fake.state.feeUnavailable = true;
+          const second = await checkout(f, input(41000)); fake.pay(second.sessionId); await service.fulfillCheckoutSession(second.sessionId);
+          const payment = await repository.getBidPaymentBySessionId(first.sessionId);
+          assert.equal(payment.status, "refunded"); assert.equal(payment.applicationFeeRefunded, false);
+          assert.equal((await service.reconcilePendingRefunds(f.id, payment.id)).pending, 1);
+          fake.state.feeUnavailable = false;
+          assert.equal((await service.reconcilePendingRefunds(f.id, payment.id)).processed, 1);
+          assert.equal((await repository.getBidPaymentById(payment.id)).applicationFeeRefunded, true);
+        } finally { fake.state.feeUnavailable = false; process.env.SUPABASE_DATABASE_PREFIX = prefix; }
+      }
+    });
+
+    await t.test("fee account, mode, charge and amount mismatches cannot trigger a platform refund", async () => {
+      for (const mutate of [(fee) => { fee.account = "acct_wrong"; }, (fee) => { fee.livemode = true; },
+        (fee) => { fee.charge = "ch_wrong"; }, (fee) => { fee.amount = 0; }, (_fee, charge) => { charge.payment_intent = "pi_wrong"; },
+        (_fee, charge) => { charge.application_fee_amount++; }]) {
+        const f = await fixture(); const first = await checkout(f, input()); fake.pay(first.sessionId); await service.fulfillCheckoutSession(first.sessionId);
+        const manual = fake.manualRefund(first.sessionId); const charge = fake.state.charges.get(manual.charge); const fee = fake.state.fees.get(charge.application_fee);
+        mutate(fee, charge); const count = fake.state.feeRefundCreates;
+        const second = await checkout(f, input(41000)); fake.pay(second.sessionId); await service.fulfillCheckoutSession(second.sessionId);
+        const payment = await repository.getBidPaymentBySessionId(first.sessionId);
+        assert.equal(payment.status, "refunded"); assert.equal(payment.applicationFeeRefunded, false);
+        assert.equal(fake.state.feeRefundCreates, count);
+      }
+    });
+
+    await t.test("partial platform-fee refunds are completed in their actual currency, not recalculated as USD", async () => {
+      for (const currency of ["eur", "usd"]) {
+      const f = await fixture(); const first = await checkout(f, input()); fake.pay(first.sessionId); await service.fulfillCheckoutSession(first.sessionId);
+      const manual = fake.manualRefund(first.sessionId); const charge = fake.state.charges.get(manual.charge); const fee = fake.state.fees.get(charge.application_fee);
+      fee.currency = currency; fee.amount = 3800; fee.amount_refunded = 1000;
+      const count = fake.state.feeRefundCreates;
+      const second = await checkout(f, input(41000)); fake.pay(second.sessionId); await service.fulfillCheckoutSession(second.sessionId);
+      assert.equal((await repository.getBidPaymentBySessionId(first.sessionId)).applicationFeeRefunded, true);
+      assert.equal(fee.amount_refunded, 3800); assert.equal(fake.state.feeRefundCreates, count + 1);
+      }
     });
 
     await t.test("pending refunds are not reported complete and cannot regress after success", async () => {

@@ -243,3 +243,27 @@ Remaining release gates (the resolved payment findings above do not close these)
 - Still open: externally issued refund/application-fee verification, deployed
   recovery scheduling/alerts, minimum-price/payment-copy decision, complete
   hosted Connect onboarding, legacy test migration and remote release/PR update.
+
+2026-09-13 application-fee recovery follow-up (local; not yet pushed):
+
+- Fixed an owed-refund gap: a successful customer refund previously ended recovery
+  even when a manually issued refund had retained the platform fee. Customer
+  status now stays truthfully refunded while independent fee recovery continues.
+- Persisted immutable fee identity and monotonic completion; recovery verifies
+  the original charge, account, environment and full customer-deposit refund
+  before touching the platform fee. It tolerates asynchronous fee creation,
+  partial fee refunds, currency conversion, concurrent completion and lost
+  responses without another customer refund.
+- Applied `20260913180000_track_application_fee_refunds.sql` locally only.
+  Existing refunded rows become due for fee verification, not assumed complete.
+- Payment core: 35/35 passing, including fee outages, asynchronous visibility,
+  account/mode/charge mismatches, partial fee balances and immutable DB state.
+- Real Stripe E2E: 2/2 passing with local Supabase. Both normal Outbid and adoption
+  of a manual customer-only refund verify full customer and application-fee
+  refunds in Stripe and the database. Cleanup verifies both before deleting its
+  own fixture. Typecheck, full lint and diff whitespace checks passed.
+- Still open: the user decision for manual refund of a still-current winning bid
+  (withdraw/reopen versus pause), minimum-price policy and truthful payment copy,
+  hosted Connect human completion, legacy test migration, operational recovery
+  configuration and remote migration/deployment/PR release. These tests do not
+  establish a current-winner withdrawal policy or complete the overall audit.

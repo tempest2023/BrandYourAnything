@@ -30,7 +30,6 @@ if (!stripeKey || !/^[sr]k_test_/.test(stripeKey)) {
 
 const chromePath = process.env.PLAYWRIGHT_CHROME_PATH
   || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const fixtureSlug = `stripe-e2e-${randomUUID().slice(0, 8)}`;
 const stripe = new Stripe(stripeKey);
 
 function run(command, args, options = {}) {
@@ -77,7 +76,7 @@ function sqlString(value) {
   return `'${value.replaceAll("'", "''")}'`;
 }
 
-function createFixture(container) {
+function createFixture(container, fixtureSlug) {
   const accountRow = sql(
     container,
     "select stripe_account_id || '|' || slug from public.ba_dev_laptops where stripe_account_id is not null limit 1;",
@@ -115,10 +114,10 @@ function createFixture(container) {
     `select id from public.ba_dev_laptops where slug = ${sqlString(fixtureSlug)};`,
     true,
   );
-  return { accountId, accountOwnerSlug, laptopId };
+  return { accountId, accountOwnerSlug, laptopId, slug: fixtureSlug };
 }
 
-function removeFixture(container) {
+function removeFixture(container, fixtureSlug) {
   sql(container, `
     begin;
     delete from public.ba_dev_laptops where slug = ${sqlString(fixtureSlug)};
@@ -183,7 +182,7 @@ async function waitForListener(listener) {
   throw new Error(`Stripe listener did not become ready:\n${listener.logs()}`);
 }
 
-async function startApp(baseUrl, webhookSecret, local) {
+async function startApp(baseUrl, webhookSecret, local, fixtureSlug) {
   const nextBin = fileURLToPath(new URL("../node_modules/next/dist/bin/next", import.meta.url));
   const child = spawn(process.execPath, [
     nextBin, "start", ".", "-H", "127.0.0.1", "-p", new URL(baseUrl).port,
@@ -325,7 +324,7 @@ async function expectEventually(message, assertion, timeout = 30_000) {
 async function paymentRows(local, laptopId) {
   const url = new URL("/rest/v1/ba_dev_laptop_bid_payments", local.apiUrl);
   url.searchParams.set("laptop_id", `eq.${laptopId}`);
-  url.searchParams.set("select", "id,bidder_name,status,logo_storage_path,stripe_checkout_session_id,stripe_payment_intent_id");
+  url.searchParams.set("select", "id,bidder_name,status,logo_storage_path,stripe_checkout_session_id,stripe_payment_intent_id,application_fee_id,application_fee_refunded");
   url.searchParams.set("order", "created_at.asc");
   const response = await fetch(url, {
     headers: { apikey: local.secretKey, Authorization: `Bearer ${local.secretKey}` },
@@ -335,6 +334,7 @@ async function paymentRows(local, laptopId) {
 }
 
 async function cleanupFixture(local, container, fixture) {
+  const fixtureSlug = fixture.slug;
   const rows = await paymentRows(local, fixture.laptopId);
   // Only this fixture's test payments/assets are in scope. Preserve its database
   // records if network cleanup fails so the exact leftovers can be reconciled.
@@ -350,6 +350,18 @@ async function cleanupFixture(local, container, fixture) {
         payment_intent: session.payment_intent, amount: session.amount_total - refunded, refund_application_fee: true,
         metadata: { test_fixture: fixtureSlug },
       }, { ...options, idempotencyKey: `cleanup-${fixtureSlug}-${row.id}` });
+      const confirmed = await stripe.refunds.list({ payment_intent: session.payment_intent, limit: 100 }, options);
+      assert.equal(confirmed.data.filter((refund) => refund.status === "succeeded").reduce((sum, refund) => sum + refund.amount, 0), session.amount_total,
+        "Preserve this fixture until all customer refunds have actually succeeded");
+      const charge = confirmed.data[0].charge;
+      const fees = await stripe.applicationFees.list({ charge: typeof charge === "string" ? charge : charge.id, limit: 2 });
+      assert.equal(fees.data.length, 1, "Preserve the fixture until its application fee can be verified");
+      const fee = fees.data[0];
+      assert.equal(fee.account, fixture.accountId);
+      if (!fee.refunded) await stripe.applicationFees.createRefund(fee.id, { metadata: { test_fixture: fixtureSlug } },
+        { idempotencyKey: `cleanup-fee-${fixtureSlug}-${row.id}` });
+      const confirmedFee = await stripe.applicationFees.retrieve(fee.id);
+      assert.equal(confirmedFee.refunded, true); assert.equal(confirmedFee.amount_refunded, confirmedFee.amount);
     }
   }
   const paths = rows.map((row) => row.logo_storage_path).filter(Boolean);
@@ -358,15 +370,16 @@ async function cleanupFixture(local, container, fixture) {
     const { error } = await client.storage.from("ba_dev_bid_logos").remove(paths);
     assert.ifError(error);
   }
-  removeFixture(container);
+  removeFixture(container, fixtureSlug);
 }
 
-test("homepage Stripe Bid → Outbid flow", { timeout: 300_000 }, async () => {
+for (const manualCustomerRefund of [false, true]) test(`homepage Stripe Bid → Outbid flow (${manualCustomerRefund ? "adopt manual customer refund" : "automatic full refund"})`, { timeout: 300_000 }, async () => {
+  const fixtureSlug = `stripe-e2e-${randomUUID().slice(0, 8)}`;
   const local = localSupabaseEnvironment();
   // NEXT_PUBLIC_* values are frozen during build, not at next start.
   await buildLocalApp({ ...localAppEnvironment(local), STRIPE_SECRET_KEY: stripeKey });
   const container = databaseContainer();
-  const fixture = createFixture(container);
+  const fixture = createFixture(container, fixtureSlug);
   const port = await reservePort();
   const baseUrl = `http://127.0.0.1:${port}`;
   let listener;
@@ -377,7 +390,7 @@ test("homepage Stripe Bid → Outbid flow", { timeout: 300_000 }, async () => {
     const account = await stripe.accounts.retrieve(fixture.accountId);
     assert.equal(account.charges_enabled, true, "Connected account must accept test card charges.");
 
-    app = await startApp(baseUrl, stripeWebhookSecret(), local);
+    app = await startApp(baseUrl, stripeWebhookSecret(), local, fixtureSlug);
     browser = await chromium.launch({ executablePath: chromePath, headless: true });
     const context = await browser.newContext({ locale: "en-US" });
     const page = await context.newPage();
@@ -432,6 +445,19 @@ test("homepage Stripe Bid → Outbid flow", { timeout: 300_000 }, async () => {
     );
     assert.ok(firstSession.success_url.startsWith(`${baseUrl}/${fixtureSlug}?payment=success`));
 
+    if (manualCustomerRefund) {
+      // Simulate a seller refunding only the customer's deposit before the
+      // outbid obligation is processed. Do not attach our application metadata.
+      const manual = await stripe.refunds.create({ payment_intent: firstRows[0].stripe_payment_intent_id,
+        refund_application_fee: false }, { stripeAccount: fixture.accountId });
+      assert.equal(manual.status, "succeeded");
+      const chargeId = typeof manual.charge === "string" ? manual.charge : manual.charge.id;
+      await expectEventually("manual customer refund must leave the fee unrefunded for this regression", async () => {
+        const fees = await stripe.applicationFees.list({ charge: chargeId, limit: 2 });
+        assert.equal(fees.data.length, 1); assert.equal(fees.data[0].amount_refunded, 0);
+      });
+    }
+
     listener = startStripeListener(baseUrl);
     await waitForListener(listener);
     await placeBid(page, fixture.accountId, {
@@ -462,6 +488,14 @@ test("homepage Stripe Bid → Outbid flow", { timeout: 300_000 }, async () => {
       { stripeAccount: fixture.accountId },
     );
     assert.equal(refunds.data[0]?.status, "succeeded");
+    await expectEventually("the platform fee must also be fully refunded and verified in the database", async () => {
+      const current = (await paymentRows(local, fixture.laptopId))[0];
+      assert.equal(current.application_fee_refunded, true); assert.ok(current.application_fee_id);
+      const fee = await stripe.applicationFees.retrieve(current.application_fee_id);
+      assert.equal(fee.account, fixture.accountId); assert.equal(fee.refunded, true);
+      assert.equal(fee.amount_refunded, fee.amount);
+      assert.equal(fee.charge, typeof refunds.data[0].charge === "string" ? refunds.data[0].charge : refunds.data[0].charge.id);
+    });
     const storage = createClient(local.apiUrl, local.secretKey, { auth: { persistSession: false } }).storage;
     const retainedLogo = await storage.from("ba_dev_bid_logos").download(rows[0].logo_storage_path);
     assert.ifError(retainedLogo.error);
