@@ -32,6 +32,7 @@ export function localAppEnvironment(local, prefix = "ba_dev") {
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local.publishableKey,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: local.publishableKey,
     SUPABASE_DATABASE_PREFIX: prefix,
+    ALLOW_LOCAL_PRODUCTION_NAMESPACE: "1",
     MODEL_UPLOAD_SIGNING_SECRET: "local-management-test-only-signing-key",
     // No payment-network calls in this suite. Real Checkout is tested separately.
     STRIPE_SECRET_KEY: "",

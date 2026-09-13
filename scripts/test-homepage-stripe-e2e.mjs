@@ -8,9 +8,11 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import nextEnv from "@next/env";
+import { createClient } from "@supabase/supabase-js";
 import { chromium } from "playwright-core";
 import Stripe from "stripe";
 import test from "node:test";
+import { buildLocalApp, localAppEnvironment, localStack } from "./lib/local-stack.mjs";
 
 const projectRoot = process.cwd();
 const { loadEnvConfig } = nextEnv;
@@ -44,20 +46,7 @@ function run(command, args, options = {}) {
 }
 
 function localSupabaseEnvironment() {
-  const output = run("npx", ["--no-install", "supabase", "status", "-o", "env"]);
-  const values = Object.fromEntries(output.split("\n").flatMap((line) => {
-    const match = line.match(/^([A-Z_]+)=(?:"(.*)"|(.*))$/);
-    return match ? [[match[1], match[2] ?? match[3]]] : [];
-  }));
-  const apiUrl = values.API_URL;
-  const secretKey = values.SECRET_KEY || values.SERVICE_ROLE_KEY;
-  const publishableKey = values.PUBLISHABLE_KEY || values.ANON_KEY;
-  if (!apiUrl || !secretKey || !publishableKey) {
-    throw new Error("Local Supabase is not ready. Run `npx supabase start` first.");
-  }
-  const hostname = new URL(apiUrl).hostname;
-  assert.ok(["127.0.0.1", "localhost"].includes(hostname), "Stripe E2E must use local Supabase.");
-  return { apiUrl, secretKey, publishableKey };
+  return localStack();
 }
 
 function databaseContainer() {
@@ -201,15 +190,9 @@ async function startApp(baseUrl, webhookSecret, local) {
   ], {
     cwd: projectRoot,
     env: {
-      ...process.env,
-      NEXT_TELEMETRY_DISABLED: "1",
+      ...localAppEnvironment(local),
       NEXT_PUBLIC_SITE_URL: baseUrl,
-      SUPABASE_URL: local.apiUrl,
-      NEXT_PUBLIC_SUPABASE_URL: local.apiUrl,
-      SUPABASE_SECRET_KEY: local.secretKey,
-      SUPABASE_SERVICE_ROLE_KEY: local.secretKey,
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: local.publishableKey,
-      SUPABASE_DATABASE_PREFIX: "ba_dev",
+      STRIPE_SECRET_KEY: stripeKey,
       STRIPE_WEBHOOK_SECRET: webhookSecret,
       STRIPE_CONNECT_WEBHOOK_SECRET: webhookSecret,
     },
@@ -342,7 +325,7 @@ async function expectEventually(message, assertion, timeout = 30_000) {
 async function paymentRows(local, laptopId) {
   const url = new URL("/rest/v1/ba_dev_laptop_bid_payments", local.apiUrl);
   url.searchParams.set("laptop_id", `eq.${laptopId}`);
-  url.searchParams.set("select", "bidder_name,status,stripe_checkout_session_id,stripe_payment_intent_id");
+  url.searchParams.set("select", "id,bidder_name,status,logo_storage_path,stripe_checkout_session_id,stripe_payment_intent_id");
   url.searchParams.set("order", "created_at.asc");
   const response = await fetch(url, {
     headers: { apikey: local.secretKey, Authorization: `Bearer ${local.secretKey}` },
@@ -351,8 +334,37 @@ async function paymentRows(local, laptopId) {
   return response.json();
 }
 
-test("homepage Stripe Bid → Outbid flow", { timeout: 180_000 }, async () => {
+async function cleanupFixture(local, container, fixture) {
+  const rows = await paymentRows(local, fixture.laptopId);
+  // Only this fixture's test payments/assets are in scope. Preserve its database
+  // records if network cleanup fails so the exact leftovers can be reconciled.
+  for (const row of rows) {
+    if (!row.stripe_checkout_session_id) continue;
+    const options = { stripeAccount: fixture.accountId };
+    const session = await stripe.checkout.sessions.retrieve(row.stripe_checkout_session_id, {}, options);
+    if (session.status === "open") await stripe.checkout.sessions.expire(session.id, {}, options);
+    if (session.payment_status === "paid" && typeof session.payment_intent === "string") {
+      const refunds = await stripe.refunds.list({ payment_intent: session.payment_intent, limit: 100 }, options);
+      const refunded = refunds.data.filter((refund) => !["failed", "canceled"].includes(refund.status)).reduce((total, refund) => total + refund.amount, 0);
+      if (refunded < session.amount_total) await stripe.refunds.create({
+        payment_intent: session.payment_intent, amount: session.amount_total - refunded, refund_application_fee: true,
+        metadata: { test_fixture: fixtureSlug },
+      }, { ...options, idempotencyKey: `cleanup-${fixtureSlug}-${row.id}` });
+    }
+  }
+  const paths = rows.map((row) => row.logo_storage_path).filter(Boolean);
+  if (paths.length) {
+    const client = createClient(local.apiUrl, local.secretKey, { auth: { persistSession: false } });
+    const { error } = await client.storage.from("ba_dev_bid_logos").remove(paths);
+    assert.ifError(error);
+  }
+  removeFixture(container);
+}
+
+test("homepage Stripe Bid → Outbid flow", { timeout: 300_000 }, async () => {
   const local = localSupabaseEnvironment();
+  // NEXT_PUBLIC_* values are frozen during build, not at next start.
+  await buildLocalApp({ ...localAppEnvironment(local), STRIPE_SECRET_KEY: stripeKey });
   const container = databaseContainer();
   const fixture = createFixture(container);
   const port = await reservePort();
@@ -450,6 +462,10 @@ test("homepage Stripe Bid → Outbid flow", { timeout: 180_000 }, async () => {
       { stripeAccount: fixture.accountId },
     );
     assert.equal(refunds.data[0]?.status, "succeeded");
+    const storage = createClient(local.apiUrl, local.secretKey, { auth: { persistSession: false } }).storage;
+    const retainedLogo = await storage.from("ba_dev_bid_logos").download(rows[0].logo_storage_path);
+    assert.ifError(retainedLogo.error);
+    assert.ok(retainedLogo.data.size > 0, "Outbid must not delete an accepted bid's historical logo.");
   } catch (error) {
     const diagnostics = [app?.logs(), listener?.logs()].filter(Boolean).join("\n\n");
     if (diagnostics) console.error(diagnostics);
@@ -458,6 +474,6 @@ test("homepage Stripe Bid → Outbid flow", { timeout: 180_000 }, async () => {
     await browser?.close();
     await stopChild(app?.child);
     await stopChild(listener?.child);
-    removeFixture(container, fixture);
+    await cleanupFixture(local, container, fixture);
   }
 });

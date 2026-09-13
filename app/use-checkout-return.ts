@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { AuctionSnapshot } from "@/lib/auction";
 
 type CheckoutFulfillment<Snapshot extends AuctionSnapshot> = {
-  status: "pending" | "accepted" | "refunded" | "expired" | "failed";
+  status: "pending" | "accepted" | "refund_pending" | "refunded" | "expired" | "failed";
   snapshot?: Snapshot;
 };
 
@@ -14,6 +14,7 @@ export type CheckoutReturnState =
   | "cancelled"
   | "confirming"
   | "accepted"
+  | "refund_pending"
   | "refunded"
   | "expired"
   | "failed";
@@ -77,10 +78,10 @@ export function useCheckoutReturn<Snapshot extends AuctionSnapshot>(
           const result = await response.json() as CheckoutFulfillment<Snapshot>;
           if (cancelled) return;
           if (result.status === "pending") continue;
-          if (!["accepted", "refunded", "expired", "failed"].includes(result.status)) continue;
+          if (!["accepted", "refund_pending", "refunded", "expired", "failed"].includes(result.status)) continue;
           if (result.snapshot) applySnapshot(result.snapshot);
           setState(result.status);
-          if (result.status !== "failed") removePaymentQuery();
+          if (result.status !== "failed" && result.status !== "refund_pending") removePaymentQuery();
           return;
         } catch {
           // A transient network failure is retried while the Stripe redirect settles.

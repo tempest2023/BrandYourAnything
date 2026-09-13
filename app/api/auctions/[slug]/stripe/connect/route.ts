@@ -5,6 +5,7 @@ import { auctionUrl, auctionPath } from "@/lib/site";
 import { getStripe, getStripeMerchantAccountState, isStripeConfigured } from "@/lib/stripe";
 import { isSupabaseConfigured } from "@/lib/supabase-admin";
 import { getPublishingOwnerCredential, PublishingAuthenticationError } from "@/lib/publishing-auth";
+import { getRequestOrigin } from "@/lib/request-origin";
 
 export const runtime = "nodejs";
 
@@ -113,13 +114,13 @@ export async function POST(
 
     const account = await syncAccount(campaign.id, accountId);
     if (account.chargesEnabled && account.payoutsEnabled) {
-      return Response.json({ connected: true, ready: true, returnUrl: new URL(auctionPath(campaign.slug), request.url).toString() });
+      return Response.json({ connected: true, ready: true, returnUrl: new URL(auctionPath(campaign.slug), getRequestOrigin(request)).toString() });
     }
 
-    const returnUrl = new URL("/manage", request.url);
+    const returnUrl = new URL("/manage", getRequestOrigin(request));
     returnUrl.searchParams.set("stripe", "return");
     returnUrl.searchParams.set("slug", campaign.slug);
-    const refreshUrl = new URL("/manage", request.url);
+    const refreshUrl = new URL("/manage", getRequestOrigin(request));
     refreshUrl.searchParams.set("stripe", "refresh");
     refreshUrl.searchParams.set("slug", campaign.slug);
 

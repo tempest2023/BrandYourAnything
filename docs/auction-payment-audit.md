@@ -61,3 +61,39 @@ Further audit findings to resolve before completion:
 - Extend tests to real Connect/Checkout/refund failure paths and paid SQL races;
   replace obsolete unpaid-concurrency tests. Verify 3D closed views and responsive
   navigation in all supported languages. Update environment/deploy docs and PR.
+
+2026-09-13 payment hardening follow-up (local; not yet pushed):
+
+- Reserved immutable Checkout parameters/account/session/payment identity;
+  ambiguous old creates fail closed rather than reuse expired Stripe keys.
+- Made refund obligations durable across chained outbids, preserved accepted
+  logos, and distinguished pending refunds from successful refunds.
+- Added authoritative Session/PaymentIntent amount, currency, metadata, account,
+  mode and fee checks; added late-paid compensation and orphan recovery.
+- Enforced deployment/database/Stripe boundaries, filtered unrelated webhooks,
+  fetched current account flags, and stopped assuming missing payouts are active.
+- Added authenticated reconciliation entrypoint and daily production cron;
+  runtime budgeting/fairness and deployed configuration remain to verify.
+- Real Stripe E2E exposed Next's local request hostname normalization. Added a
+  shared allowlisted external-origin resolver for Checkout and Connect.
+- `npm run test:stripe-e2e`: passing against real Stripe test Checkout + local
+  Supabase. Both bids, real refund success, winner/history, logo rendering and
+  retention, exact return origin and distinct button colors verified. Test now
+  builds with local browser credentials and cleans its own deposits/logos.
+- `npm run test:payment-core`: 19/19 passing, including 20 duplicate concurrent
+  confirmations, 12 distinct competing paid bids, closure races, actual dev/prod
+  database isolation, outage/lost-response injection and account-status updates.
+- `npm run test:management-e2e`: 15/15 passing again after payment changes.
+- Full lint and typecheck passed. Management E2E includes a fresh successful build.
+
+Remaining release gates (the resolved payment findings above do not close these):
+
+- Atomic Connect authorization/account binding, stable account-create retries,
+  actual onboarding/return flow and closed-account handling.
+- Reconciliation time budget, backlog fairness and operational deployment/alerts.
+- Atomic publish/layout/assets and safe photo retention after ambiguous writes.
+- Model repair ownership/race tests; actual 3D rendering and responsive locale QA.
+- Logo-cover spot persistence; maximum-price CTA gating; minimum bid/deposit and
+  payment-copy consistency (low-price rule awaiting user choice).
+- Legacy test replacement, remote migrations/configuration, PR description,
+  push and deployment verification. No remote migrations have been applied here.
