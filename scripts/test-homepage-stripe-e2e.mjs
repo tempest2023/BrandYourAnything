@@ -314,13 +314,14 @@ async function completeStripeCheckout(page, accountId) {
   await page.goto(returnUrl, { waitUntil: "commit" });
 }
 
-async function placeBid(page, accountId, { amount, brand, email }) {
+async function placeBid(page, accountId, { amount, brand, email, logo }) {
   await page.locator(".lid-spot--2").click();
   const dialog = page.locator("dialog[open]");
   await dialog.locator("#bid").fill(String(amount));
   await dialog.locator('input[name="brandName"]').fill(brand);
   await dialog.locator('input[name="email"]').fill(email);
   await dialog.locator('input[name="website"]').fill(`https://${brand.toLowerCase().replaceAll(" ", "-")}.example.com`);
+  if (logo) await dialog.locator('input[name="logo"]').setInputFiles(logo);
   await dialog.locator('button[type="submit"]').click();
   try {
     await completeStripeCheckout(page, accountId);
@@ -384,12 +385,29 @@ test("homepage Stripe Bid → Outbid flow", { timeout: 180_000 }, async () => {
       amount: 400,
       brand: "Alpha Brand",
       email: "alpha-stripe-e2e@example.com",
+      logo: {
+        name: "alpha-brand.png",
+        mimeType: "image/png",
+        buffer: readFileSync(`${projectRoot}/public/logo-small.png`),
+      },
     });
     await expectEventually("first paid bid should render on spot 2", async () => {
       const text = await page.locator(".lid-spot--2").innerText();
       assert.match(text, /Alpha Brand/);
       assert.match(text, /Outbid/);
       assert.match(text, /\$400/);
+    });
+    await expectEventually("the winning logo should load through Next.js image optimization", async () => {
+      const logo = page.locator('.lid-spot--2 img[alt="Alpha Brand"]');
+      assert.equal(await logo.count(), 1);
+      const state = await logo.evaluate((image) => ({
+        complete: image.complete,
+        currentSrc: image.currentSrc,
+        naturalWidth: image.naturalWidth,
+      }));
+      const response = await page.request.get(state.currentSrc);
+      assert.equal(response.status(), 200, `image optimizer returned ${response.status()} for ${state.currentSrc}`);
+      assert.equal(state.complete && state.naturalWidth > 0, true, JSON.stringify(state));
     });
 
     const firstRows = await paymentRows(local, fixture.laptopId);
