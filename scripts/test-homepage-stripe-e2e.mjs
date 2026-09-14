@@ -471,6 +471,8 @@ for (const { manualCustomerRefund, model } of [
       { stripeAccount: fixture.accountId },
     );
     assert.ok(firstSession.success_url.startsWith(`${baseUrl}/${fixtureSlug}?payment=success`));
+    assert.equal(firstSession.amount_total, 8000, "A $400 bid collects only the $80 deposit");
+    assert.match(firstSession.custom_text.submit.message, /remaining 80% is not collected automatically/);
 
     if (manualCustomerRefund) {
       // Simulate a seller refunding only the customer's deposit before the
