@@ -3,10 +3,10 @@ import { createHash } from "node:crypto";
 import type { AuctionPublishErrorCode } from "@/lib/auction-api-errors";
 import { getBrandModelMimeType } from "@/lib/brand-model";
 import { getAuctionMediaBucket, getBrandModelBucket } from "@/lib/database-names";
-import { attachCampaignAsset, createAuction, getAuctionSnapshot } from "@/lib/campaign-auction-repository";
+import { createAuction, getAuctionSnapshot } from "@/lib/campaign-auction-repository";
 import { AuctionValidationError, parseAuctionForm } from "@/lib/auction-validation";
 import { normalizeModelClaimInput, verifyModelUploadClaim } from "@/lib/model-upload-claim";
-import { getPublishingOwner, PublishingAuthenticationError } from "@/lib/publishing-auth";
+import { getPublishingOwnerCredential, PublishingAuthenticationError } from "@/lib/publishing-auth";
 import { getSupabaseAdmin, isSupabaseConfigured } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
@@ -36,23 +36,15 @@ async function uploadPhoto(photo: File, slug: string, idempotencyKey: string) {
   return path;
 }
 
-async function removePhoto(path: string | null) {
-  if (!path) return;
-  const supabase = getSupabaseAdmin();
-  const { error } = await supabase.storage.from(getAuctionMediaBucket()).remove([path]);
-  if (error) console.error("Failed to clean up rejected auction photo", error);
-}
-
 export async function POST(request: Request) {
   if (!isSupabaseConfigured()) {
     return errorResponse("publish_unavailable", 503);
   }
 
   let photoStoragePath: string | null = null;
-  let databaseAccepted = false;
 
   try {
-    const owner = await getPublishingOwner(request);
+    const owner = await getPublishingOwnerCredential(request);
     const formData = await request.formData();
     formData.set("ownerName", owner.ownerName);
     formData.set("ownerEmail", owner.ownerEmail);
@@ -99,11 +91,16 @@ export async function POST(request: Request) {
       largeOpeningBidCents: input.largeOpeningBidCents,
       minIncrementCents: input.minIncrementCents,
       spotLayout: input.spotLayout,
+      assetType: input.assetType,
+      assetName: input.assetName,
+      modelStoragePath: input.modelStoragePath,
+      modelFileName: input.modelFileName,
       idempotencyKey: input.idempotencyKey,
+      ownerUserId: owner.ownerUserId,
+      managerKeyHash: owner.managerKeyHash,
     });
 
     if (!result.accepted) {
-      await removePhoto(photoStoragePath);
       const status = result.reason === "rate_limited" ? 429 : 409;
       const errorCode: AuctionPublishErrorCode = result.reason === "slug_taken"
         ? "slug_taken"
@@ -113,16 +110,7 @@ export async function POST(request: Request) {
       return Response.json({ errorCode, result }, { status });
     }
 
-    databaseAccepted = true;
     if (!result.auctionId) throw new Error("The database accepted the campaign without an id.");
-    await attachCampaignAsset({
-      auctionId: result.auctionId,
-      assetType: input.assetType,
-      assetName: input.assetName,
-      modelStoragePath: input.modelStoragePath,
-      modelFileName: input.modelFileName,
-      idempotencyKey: input.idempotencyKey,
-    });
     const snapshot = await getAuctionSnapshot(result.slug).catch((error) => {
       console.error("Campaign was created but its first snapshot could not be loaded", error);
       return null;
@@ -133,7 +121,9 @@ export async function POST(request: Request) {
       { status: result.reason === "created" ? 201 : 200 },
     );
   } catch (error) {
-    if (!databaseAccepted) await removePhoto(photoStoragePath);
+    // A lost RPC response cannot prove rollback. The content-addressed photo
+    // may already belong to a published auction (including a concurrent retry).
+    // Keep it; orphan cleanup must check references independently of this request.
     if (error instanceof PublishingAuthenticationError) {
       return errorResponse(
         error.status === 401 ? "authentication_required" : "authentication_forbidden",

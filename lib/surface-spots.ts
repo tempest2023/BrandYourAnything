@@ -21,6 +21,7 @@ export type SpotLayoutItem = {
   size: SurfaceSpotSize;
   dimensions: string;
   openingBidCents: number;
+  logoCover?: true;
   position?: SurfaceVector;
   normal?: SurfaceVector;
 };

@@ -8,19 +8,24 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useI18n } from "@/app/i18n-provider";
 import { ModelStage } from "@/app/model-stage";
 import { PreferenceControls } from "@/app/preference-controls";
+import { useCheckoutReturn } from "@/app/use-checkout-return";
+import { useAuctionAvailability } from "@/app/use-auction-availability";
+import { AuctionStatus } from "@/app/auction-status";
+import { PaymentNotice } from "@/app/payment-notice";
 import type { Spot } from "@/lib/auction";
+import { canPlaceBid, MAX_BID_AMOUNT_USD } from "@/lib/bid-limits";
 import { getBrandModelFormat } from "@/lib/brand-model";
 import { formatRelativeTime, SPOT_NAME_KEYS } from "@/lib/i18n";
 import type { Locale } from "@/lib/i18n";
-import type { AuctionBidResult, AuctionCampaignSnapshot } from "@/lib/campaign-auction";
+import type { AuctionCampaignSnapshot } from "@/lib/campaign-auction";
 import {
   amountFromUsd,
-  amountToUsd,
   amountToUsdCents,
   currencyDisplayName,
   currencySymbol,
   formatMoney as formatCurrency,
   minimumDisplayAmount,
+  maximumDisplayAmount,
 } from "@/lib/money";
 import type { Currency } from "@/lib/money";
 
@@ -43,8 +48,7 @@ function compactMoney(amountUsd: number, currency: Currency, locale: Locale) {
 
 type BidResponse = {
   error?: string;
-  result?: AuctionBidResult;
-  snapshot?: AuctionCampaignSnapshot | null;
+  checkoutUrl?: string;
 };
 
 function useCountdown(closesAt: string) {
@@ -66,7 +70,7 @@ function useCountdown(closesAt: string) {
   return countdown;
 }
 
-function LaptopLid({ spots, onSelect }: { spots: Spot[]; onSelect: (spot: Spot) => void }) {
+function LaptopLid({ spots, onSelect, canBid }: { spots: Spot[]; onSelect: (spot: Spot) => void; canBid: boolean }) {
   const { currency, locale, t } = useI18n();
   const money = (amount: number) => formatCurrency(amount, currency, locale, 0);
   const compact = (amount: number) => compactMoney(amount, currency, locale);
@@ -82,6 +86,7 @@ function LaptopLid({ spots, onSelect }: { spots: Spot[]; onSelect: (spot: Spot) 
             <button
               className={`lid-spot lid-spot--${spot.id} ${hasBid ? "" : "lid-spot--available"}`}
               key={spot.id}
+              disabled={!canBid || !canPlaceBid(spot)}
               onClick={() => onSelect(spot)}
               aria-label={hasBid
                 ? t("laptop.heldSpotAria", { id: spot.id, holder: spot.holder, amount: money(spot.bid) })
@@ -105,69 +110,54 @@ function LaptopLid({ spots, onSelect }: { spots: Spot[]; onSelect: (spot: Spot) 
 
 function BidPanel({
   slug,
+  assetVersion,
   spot,
   isAnything,
-  onSnapshot,
 }: {
   slug: string;
+  assetVersion?: string;
   spot: Spot;
   isAnything: boolean;
-  onSnapshot: (snapshot: AuctionCampaignSnapshot) => void;
 }) {
-  const { currency, locale, t } = useI18n();
+  const { currency, locale, t, setCurrency } = useI18n();
   const money = (amountUsd: number) => formatCurrency(amountUsd, currency, locale, 0);
+  const maximumDisplayBid = maximumDisplayAmount(MAX_BID_AMOUNT_USD, currency);
+  const currencyHasBid = minimumDisplayAmount(spot.minBid, currency) <= maximumDisplayBid;
   const [amount, setAmount] = useState(String(minimumDisplayAmount(spot.minBid, currency)));
   const [logoName, setLogoName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (submitting) return;
+    if (submitting || !canPlaceBid(spot) || !currencyHasBid) return;
     setSubmitting(true);
     setErrorMessage("");
-    setSuccessMessage("");
     const formData = new FormData(event.currentTarget);
     formData.set("spotId", String(spot.id));
     formData.set("amountCents", String(amountToUsdCents(Number(amount), currency)));
     formData.set("idempotencyKey", idempotencyKey);
+    if (assetVersion) formData.set("assetVersion", assetVersion);
 
     try {
-      const response = await fetch(`/api/auctions/${encodeURIComponent(slug)}/bids`, {
+      const response = await fetch(`/api/auctions/${encodeURIComponent(slug)}/bids/checkout`, {
         method: "POST",
         body: formData,
       });
       const payload = await response.json() as BidResponse;
-      if (payload.snapshot) onSnapshot(payload.snapshot);
-      if (!response.ok || !payload.result?.accepted) {
-        setErrorMessage(t("home.bidError"));
-        if (response.status === 409) {
-          setIdempotencyKey(crypto.randomUUID());
-          if (payload.result?.minimumNextBid) setAmount(String(minimumDisplayAmount(payload.result.minimumNextBid, currency)));
-        }
+      if (response.ok && payload.checkoutUrl) {
+        window.location.assign(payload.checkoutUrl);
         return;
       }
-      setSuccessMessage(payload.result.reason === "already_processed"
-        ? t("laptop.alreadyRecorded", { amount: money(amountToUsd(Number(amount), currency)), spot: spot.id })
-        : t("laptop.leading", { amount: money(payload.result.currentBid), spot: spot.id }));
+      setErrorMessage(payload.error || t("home.bidError"));
+      if (response.status === 409) setIdempotencyKey(crypto.randomUUID());
     } catch {
       setErrorMessage(t("home.networkError"));
     } finally {
       setSubmitting(false);
     }
   };
-
-  if (successMessage) {
-    return (
-      <div className={styles.bidSuccess} role="status">
-        <span aria-hidden="true">✓</span>
-        <h3>{t("home.bidLive")}</h3>
-        <p>{successMessage}</p>
-      </div>
-    );
-  }
 
   return (
     <form className={styles.bidForm} onSubmit={handleSubmit}>
@@ -176,7 +166,8 @@ function BidPanel({
         <h3>{isAnything ? spot.name : SPOT_NAME_KEYS[spot.id] ? t(SPOT_NAME_KEYS[spot.id]!) : spot.name}</h3>
         <span>{spot.bids > 0 ? t("laptop.leadingLine", { holder: spot.holder, amount: money(spot.bid) }) : `${t("common.openingBid")} ${money(spot.minBid)}`}</span>
       </div>
-      <label>{t("laptop.yourBid", { currency: currencyDisplayName(currency) })}<input type="number" min={minimumDisplayAmount(spot.minBid, currency)} step="1" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>
+      <label>{t("laptop.yourBid", { currency: currencyDisplayName(currency) })}<input type="number" min={minimumDisplayAmount(spot.minBid, currency)} max={maximumDisplayBid} step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>
+      {!currencyHasBid && <button type="button" onClick={() => setCurrency("USD")}>{t("common.bidInUsd")}</button>}
       <div className={styles.fieldPair}>
         <label>{t("common.brandName")}<input name="brandName" type="text" maxLength={80} placeholder={t("common.brand")} required /></label>
         <label>{t("common.email")}<input name="email" type="email" maxLength={254} placeholder="you@company.com" required /></label>
@@ -191,8 +182,10 @@ function BidPanel({
         <span>{logoName || t("laptop.chooseLogo")}</span>
       </label>
       {errorMessage && <p className={styles.bidError} role="alert">{errorMessage}</p>}
-      <button type="submit" disabled={submitting}>{submitting ? t("home.savingBid") : spot.bids > 0 ? `${t("common.outbid")} ${spot.holder} →` : `${t("common.placeFirstBid")} →`}</button>
-      <small>{t(isAnything ? "laptop.bidFinalCampaign" : "laptop.bidFinal")}</small>
+      <button type="submit" disabled={submitting || !canPlaceBid(spot) || !currencyHasBid}>
+        {submitting ? t("home.redirectingCheckout") : `${t("home.payDeposit")} →`}
+      </button>
+      <small>{t("laptop.stripeDeposit")}</small>
     </form>
   );
 }
@@ -201,6 +194,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: AuctionCam
   const { currency, locale, t, formatDate } = useI18n();
   const money = (amount: number) => formatCurrency(amount, currency, locale, 0);
   const [snapshot, setSnapshot] = useState(initialSnapshot);
+  const { closed, canBid } = useAuctionAvailability(snapshot.campaign);
   const [selectedSpotId, setSelectedSpotId] = useState(initialSnapshot.spots[0]?.id ?? 1);
   const [backendStatus, setBackendStatus] = useState<"live" | "offline">("live");
   const countdown = useCountdown(snapshot.campaign.closesAt);
@@ -213,25 +207,22 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: AuctionCam
   const progress = Math.min(100, Math.round((totalRaised / snapshot.campaign.goal) * 100));
   const isAnything = snapshot.campaign.assetType === "anything";
 
+  const applySnapshot = useCallback((nextSnapshot: AuctionCampaignSnapshot) => {
+    setSnapshot(nextSnapshot);
+    setBackendStatus("live");
+  }, []);
+  const paymentState = useCheckoutReturn(applySnapshot, snapshot.campaign.slug);
+
   const refresh = useCallback(async () => {
     try {
       const response = await fetch(`/api/auctions/${encodeURIComponent(snapshot.campaign.slug)}`, { cache: "no-store" });
       if (!response.ok) throw new Error();
       const nextSnapshot = await response.json() as AuctionCampaignSnapshot;
-      setSnapshot((current) => ({
-        ...nextSnapshot,
-        campaign: {
-          ...nextSnapshot.campaign,
-          ...(current.campaign.modelFileName === nextSnapshot.campaign.modelFileName && current.campaign.modelUrl
-            ? { modelUrl: current.campaign.modelUrl }
-            : {}),
-        },
-      }));
-      setBackendStatus("live");
+      applySnapshot(nextSnapshot);
     } catch {
       setBackendStatus("offline");
     }
-  }, [snapshot.campaign.slug]);
+  }, [applySnapshot, snapshot.campaign.slug]);
 
   useEffect(() => {
     const timer = window.setInterval(() => void refresh(), 5_000);
@@ -242,7 +233,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: AuctionCam
     <main className={styles.page}>
       <nav className={styles.nav}>
         <Link href="/" className={styles.wordmark}>Brand Anything</Link>
-        <span className={backendStatus === "live" ? styles.live : styles.offline}>{backendStatus === "live" ? t("common.liveAuction") : t("laptop.reconnecting")}</span>
+        <span className={!closed && backendStatus === "live" ? styles.live : styles.offline}>{closed ? t("laptop.closed") : backendStatus === "live" ? t("common.liveAuction") : t("laptop.reconnecting")}</span>
         <div className={styles.navActions}>
           <PreferenceControls />
           <Link href="/sell" className={styles.createLink}>{t("common.listLaptopArrow")}</Link>
@@ -254,29 +245,35 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: AuctionCam
           <p className={styles.ownerLine}>{t(isAnything ? "laptop.byCampaignOwner" : "laptop.byOwner", { owner: snapshot.campaign.ownerName })}</p>
           <h1>{snapshot.campaign.title}</h1>
           <p>{snapshot.campaign.tagline}</p>
+          <PaymentNotice {...paymentState} />
+          {(closed || !snapshot.campaign.paymentsEnabled) && <AuctionStatus closed={closed} />}
           <div className={styles.heroStats}>
             <span><b>{money(totalRaised)}</b> {t("home.raised")}</span>
             <span><b>{t(snapshot.spots.length === 1 ? "laptop.spotClaimed" : "laptop.spotsClaimed", { filled, count: snapshot.spots.length })}</b></span>
-            <span><b>{countdown}</b></span>
+            <span><b>{closed ? t("common.finalResults") : countdown}</b></span>
           </div>
         </div>
         <div className={styles.lidWrap}>
           {isAnything && snapshot.campaign.modelUrl ? (
             <ModelStage
               sourceUrl={snapshot.campaign.modelUrl}
+              sourceKey={`${snapshot.campaign.assetVersion ?? ""}:${snapshot.campaign.modelUrl.split("?", 1)[0]}`}
               format={snapshot.campaign.modelFileName ? getBrandModelFormat(snapshot.campaign.modelFileName) || undefined : undefined}
               label={t("laptop.modelAria", { object: snapshot.campaign.assetName })}
               spots={snapshot.spots.map((spot) => ({
                 ...spot,
                 position: spot.surfacePosition,
                 normal: spot.surfaceNormal,
+                disabled: !canBid || !canPlaceBid(spot),
               }))}
               selectedSpotId={selectedSpotId}
               onSelectSpot={setSelectedSpotId}
               className={styles.modelHeroStage}
             />
+          ) : isAnything ? (
+            <p role="status">{t("laptop.modelUnavailable")}</p>
           ) : (
-            <LaptopLid spots={snapshot.spots} onSelect={(spot) => setSelectedSpotId(spot.id)} />
+            <LaptopLid spots={snapshot.spots} canBid={canBid} onSelect={(spot) => setSelectedSpotId(spot.id)} />
           )}
           <p>{isAnything ? t("laptop.orbitObject", { object: snapshot.campaign.assetName }) : t("laptop.tap", { model: snapshot.campaign.objectName })}</p>
         </div>
@@ -298,22 +295,24 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: AuctionCam
               <button
                 className={spot.id === selectedSpot?.id ? styles.selectedSpot : ""}
                 key={spot.id}
+                disabled={!canBid || !canPlaceBid(spot)}
                 onClick={() => setSelectedSpotId(spot.id)}
               >
                 <span>{String(spot.id).padStart(2, "0")}</span>
                 <p><b>{isAnything ? spot.name : SPOT_NAME_KEYS[spot.id] ? t(SPOT_NAME_KEYS[spot.id]!) : spot.name}</b><small>{spot.size} · {spot.dimensions}</small></p>
-                <strong>{compactMoney(spot.bids > 0 ? spot.bid : spot.minBid, currency, locale)}<small>{spot.bids > 0 ? `${spot.bids} ${t("common.bids")}` : t("laptop.opening")}</small></strong>
+                <strong>{compactMoney(spot.bids > 0 ? spot.bid : spot.minBid, currency, locale)}<small>{closed ? t("laptop.closed") : !canPlaceBid(spot) ? t("common.bidLimitReached") : spot.bids > 0 ? `${spot.bids} ${t("common.bids")}` : t("laptop.opening")}</small></strong>
               </button>
             ))}
           </div>
           <div className={styles.bidColumn}>
-            {selectedSpot && (
+            {selectedSpot && canBid && !canPlaceBid(selectedSpot) && <p role="status">{t("common.bidLimitReached")}</p>}
+            {selectedSpot && canBid && canPlaceBid(selectedSpot) && (
               <BidPanel
-                key={`${selectedSpot.id}-${currency}`}
+                key={`${selectedSpot.id}-${selectedSpot.minBid}-${currency}-${snapshot.campaign.assetVersion ?? ""}`}
                 slug={snapshot.campaign.slug}
+                assetVersion={snapshot.campaign.assetVersion}
                 spot={selectedSpot}
                 isAnything={isAnything}
-                onSnapshot={setSnapshot}
               />
             )}
           </div>

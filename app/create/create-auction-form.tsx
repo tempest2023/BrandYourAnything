@@ -12,6 +12,10 @@ import {
   isAuctionPublishErrorCode,
   type AuctionPublishErrorCode,
 } from "@/lib/auction-api-errors";
+import { MAX_BID_AMOUNT_USD } from "@/lib/bid-limits";
+import { rememberManagedAuction as saveManagedAuction } from "@/lib/managed-auctions";
+import { preparePublishAttempt, type PublishAttempt } from "@/lib/publish-attempt";
+import { appendLogoCoverSpot } from "@/lib/laptop-layout";
 import type { BrandModelPreview, UploadedBrandModel } from "@/lib/brand-model";
 import { LOCALES, type Locale, type TranslationKey } from "@/lib/i18n";
 import {
@@ -50,6 +54,7 @@ const STEPS = ["Object", "Ownership", "Showcase", "Layout", "Prices", "Listing",
 const DRAFT_STORAGE_KEY = "brand-anything-sell-draft";
 const LEGACY_DRAFT_STORAGE_KEY = "brandmylaptop-sell-draft";
 const PUBLISH_AFTER_AUTH_KEY = "brand-anything-publish-after-auth";
+const PUBLISH_ATTEMPT_STORAGE_KEY = "brand-anything-publish-attempt";
 const MANAGER_KEY_STORAGE_KEY = "brand-anything-auction-manager-key";
 const MANAGED_AUCTION_STORAGE_KEY = "brand-anything-managed-auction";
 const X_COMPOSE_URL = "https://x.com/compose/post";
@@ -209,7 +214,7 @@ function normalizeSurfaceSpotPricing(
 
 function validSurfacePrice(value: string) {
   const amount = Number(value);
-  return Number.isFinite(amount) && amount >= 1;
+  return Number.isFinite(amount) && amount >= 1 && amount <= MAX_BID_AMOUNT_USD;
 }
 
 function defaultTitleFor(machine: Machine, teslaModel: TeslaModel) {
@@ -286,19 +291,10 @@ type CreateResponse = {
   result?: { reason: string; slug: string };
 };
 
-const moneyFormatter = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
+const moneyFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 
 function formatMoney(amount: number) {
-  const rounded = Math.round(amount);
-  if (rounded >= 1_000_000) {
-    const millions = rounded / 1_000_000;
-    return `${Number.isInteger(millions) ? millions : millions.toFixed(1).replace(/\.0$/, "")}M €`;
-  }
-  if (rounded >= 10_000) {
-    const thousands = rounded / 1_000;
-    return `${Number.isInteger(thousands) ? thousands : thousands.toFixed(1).replace(/\.0$/, "")}K €`;
-  }
-  return `${moneyFormatter.format(rounded)} €`;
+  return moneyFormatter.format(amount);
 }
 
 function slugify(value: string) {
@@ -380,7 +376,7 @@ function SiteFooter() {
             <h2>Marketplace</h2>
             <Link href="/">All auctions</Link>
             <Link href="/sell">Brand your anything</Link>
-            <Link href="/">Your dashboard</Link>
+            <Link href="/manage">Your dashboard</Link>
           </div>
           <div>
             <h2>About</h2>
@@ -405,6 +401,7 @@ function SiteFooter() {
 export function CreateAuctionForm() {
   const { locale, t } = useI18n();
   const formRef = useRef<HTMLFormElement>(null);
+  const publishAttempt = useRef<PublishAttempt | null>(null);
   const surfaceSpotsRef = useRef<SurfaceSpotPlacement[]>([]);
   const [step, setStep] = useState(0);
   const [furthestStep, setFurthestStep] = useState(0);
@@ -415,6 +412,9 @@ export function CreateAuctionForm() {
   const [anythingSource, setAnythingSource] = useState<AnythingSource>("model");
   const [brandModel, setBrandModel] = useState<UploadedBrandModel | null>(null);
   const [brandModelPreview, setBrandModelPreview] = useState<BrandModelPreview | null>(null);
+  const [modelPreviewError, setModelPreviewError] = useState("");
+  const [previewAttempt, setPreviewAttempt] = useState(0);
+  const [unsavedRecoveryCode, setUnsavedRecoveryCode] = useState<string | null>(null);
   const [screenSize, setScreenSize] = useState<13 | 14 | 16>(14);
   const [ownership, setOwnership] = useState<Ownership>("own");
   const [machineCost, setMachineCost] = useState("");
@@ -438,6 +438,7 @@ export function CreateAuctionForm() {
   const [title, setTitle] = useState("Your brand, on my Mac.");
   const [slug, setSlug] = useState("");
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [ownerUserId, setOwnerUserId] = useState<string | null>(null);
   const [accountLabel, setAccountLabel] = useState("");
   const [authReady, setAuthReady] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
@@ -448,7 +449,6 @@ export function CreateAuctionForm() {
   const [managedAuction, setManagedAuction] = useState<ManagedAuction | null>(null);
   const [shareLocale, setShareLocale] = useState<Locale>(locale);
   const [copyFeedback, setCopyFeedback] = useState<"idle" | "copied">("idle");
-  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const placementProfile = placementProfileFor(machine);
   const resolvedSurfaceSpotPricing = useMemo(() => normalizeSurfaceSpotPricing(
     surfaceSpotPricing,
@@ -599,6 +599,29 @@ export function CreateAuctionForm() {
   }, [anythingSource, assetName, brandModel, customShowcase, customShowcaseEnabled, draftReady, extraNote, furthestStep, largePrice, layoutCount, listingDays, machine, machineCost, mediumPrice, modelMode, ownership, resolvedSurfaceSpotPricing, screenSize, showcase, slug, smallPrice, specialPrice, specialSpot, step, stickerMonths, surfaceSpots, teslaModel, title]);
 
   useEffect(() => {
+    if (!draftReady || !brandModel || brandModelPreview) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setModelPreviewError("");
+      try {
+        const response = await fetch("/api/models/preview-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: brandModel.storagePath, fileName: brandModel.fileName, size: brandModel.size, uploadClaim: brandModel.uploadClaim }),
+          signal: controller.signal,
+          cache: "no-store",
+        });
+        const payload = await response.json() as Partial<BrandModelPreview> & { error?: string };
+        if (!response.ok || !payload.sourceUrl || !payload.format) throw new Error(payload.error || "The model preview could not be restored.");
+        if (!controller.signal.aborted) setBrandModelPreview({ sourceUrl: payload.sourceUrl, format: payload.format });
+      } catch (error) {
+        if (!controller.signal.aborted) setModelPreviewError(error instanceof Error ? error.message : "The model preview could not be restored.");
+      }
+    }, 0);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [brandModel, brandModelPreview, draftReady, previewAttempt]);
+
+  useEffect(() => {
     let active = true;
     const callbackParameters = new URLSearchParams([
       window.location.search.replace(/^\?/, ""),
@@ -624,6 +647,7 @@ export function CreateAuctionForm() {
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!active) return;
       setAccessToken(session?.access_token ?? null);
+      setOwnerUserId(session?.user.id ?? null);
       setAccountLabel(session
         ? session.user.email
           || String(session.user.user_metadata.user_name || session.user.user_metadata.name || "Verified account")
@@ -634,6 +658,7 @@ export function CreateAuctionForm() {
     void supabase.auth.getSession().then(({ data, error }) => {
       if (!active) return;
       setAccessToken(data.session?.access_token ?? null);
+      setOwnerUserId(data.session?.user.id ?? null);
       setAccountLabel(data.session
         ? data.session.user.email
           || String(data.session.user.user_metadata.user_name || data.session.user.user_metadata.name || "Verified account")
@@ -685,7 +710,7 @@ export function CreateAuctionForm() {
     ...spot,
     amount: Math.round((spot.openingPrice === undefined
       ? prices[spot.price]
-      : validSurfacePrice(spot.openingPrice) ? Number(spot.openingPrice) : 0) * (spot.premium ?? 1)),
+      : validSurfacePrice(spot.openingPrice) ? Number(spot.openingPrice) : 0) * (spot.premium ?? 1) * 100) / 100,
   }));
   const spotCountBySize = {
     large: previewSpots.filter((spot) => spot.price === "large").length,
@@ -695,7 +720,7 @@ export function CreateAuctionForm() {
   const specialAmount = clampPrice(specialPrice, 1500);
   const hasSpecialSpot = machine === "mac" && specialSpot;
   const totalFloor = previewSpots.reduce((sum, spot) => sum + spot.amount, 0) + (hasSpecialSpot ? specialAmount : 0);
-  const minimumPrice = Math.min(...previewSpots.map((spot) => spot.amount));
+  const minimumPrice = Math.min(...previewSpots.map((spot) => spot.amount), ...(hasSpecialSpot ? [specialAmount] : []));
   const payloadPrices = isAnything
     ? (Object.keys(prices) as PriceKey[]).reduce<Record<PriceKey, number>>((result, key) => {
       const matchingPrices = previewSpots.filter((spot) => spot.price === key).map((spot) => spot.amount);
@@ -710,9 +735,9 @@ export function CreateAuctionForm() {
   const objectIsValid = !isAnything || (assetName.trim().length >= 2 && (usingPresetModel || brandModel !== null));
   const layoutIsValid = !isAnything || (surfaceSpots.length === layoutCount
     && surfaceSpots.every((spot) => spot.position.length === 3 && spot.normal.length === 3));
-  const surfacePricingIsValid = !isAnything || resolvedSurfaceSpotPricing.every((spot) => (
-    validSurfacePrice(spot.price)
-  ));
+  const surfacePricingIsValid = (isAnything ? resolvedSurfaceSpotPricing.every((spot) => validSurfacePrice(spot.price))
+    : [smallPrice, mediumPrice, largePrice, ...(hasSpecialSpot ? [specialPrice] : [])].every(validSurfacePrice))
+    && previewSpots.every((spot) => spot.amount >= 1 && spot.amount <= MAX_BID_AMOUNT_USD);
   const showcaseGroups = SHOWCASE_GROUPS_BY_MACHINE[machine];
   const normalizedCustomShowcase = normalizeCustomShowcase(customShowcase);
   const customShowcaseIsValid = !customShowcaseEnabled || normalizedCustomShowcase.length >= 2;
@@ -866,11 +891,20 @@ export function CreateAuctionForm() {
       : [...current, option]);
   };
 
-  const rememberManagedAuction = (location: string) => {
+  const rememberPublishedAuction = (location: string, recoveryCode?: string) => {
     const entry = { slug, title };
-    window.localStorage.setItem(MANAGED_AUCTION_STORAGE_KEY, JSON.stringify(entry));
     setManagedAuction(entry);
     setPublishedLocation(location);
+    // A successful publication must not become a failed/repeated request just
+    // because the browser denied storage. Keep the active recovery code visible.
+    try {
+      if (recoveryCode) saveManagedAuction({ ...entry, recoveryCode });
+      window.localStorage.setItem(MANAGED_AUCTION_STORAGE_KEY, JSON.stringify(entry));
+      window.sessionStorage.removeItem(DRAFT_STORAGE_KEY);
+      window.sessionStorage.removeItem(LEGACY_DRAFT_STORAGE_KEY);
+    } catch {
+      if (recoveryCode) setUnsavedRecoveryCode(recoveryCode);
+    }
   };
 
   const publishAuction = async (form: HTMLFormElement, mode: "auth" | "browser") => {
@@ -905,8 +939,9 @@ export function CreateAuctionForm() {
       openingBidCents: Math.round(spot.amount * 100),
       ...(spot.position && spot.normal ? { position: spot.position, normal: spot.normal } : {}),
     }));
-    formData.set("layoutCount", String(layoutCount));
-    formData.set("spotLayout", JSON.stringify(spotLayout));
+    const publishedLayout = hasSpecialSpot ? appendLogoCoverSpot(spotLayout, specialAmount) : spotLayout;
+    formData.set("layoutCount", String(publishedLayout.length));
+    formData.set("spotLayout", JSON.stringify(publishedLayout));
     if (brandModel && isAnything) {
       formData.set("modelStoragePath", brandModel.storagePath);
       formData.set("modelUploadClaim", brandModel.uploadClaim);
@@ -920,14 +955,24 @@ export function CreateAuctionForm() {
     formData.set("mediumOpeningBidCents", String(Math.round(payloadPrices.medium * 100)));
     formData.set("largeOpeningBidCents", String(Math.round(payloadPrices.large * 100)));
     formData.set("minIncrementCents", "1000");
-    formData.set("auctionClosesAt", new Date(Date.now() + listingDays * 86_400_000).toISOString());
-    formData.set("idempotencyKey", idempotencyKey);
-
-    const headers: Record<string, string> = mode === "auth" && accessToken
-      ? { Authorization: `Bearer ${accessToken}` }
-      : { "X-Auction-Manager-Key": getOrCreateManagerKey() };
-
     try {
+      if (mode === "auth" && (!accessToken || !ownerUserId)) {
+        throw new Error("Your session expired. Sign in again to publish.");
+      }
+      const headers: Record<string, string> = mode === "auth" && accessToken
+        ? { Authorization: `Bearer ${accessToken}` }
+        : { "X-Auction-Manager-Key": getOrCreateManagerKey() };
+      if (!publishAttempt.current) {
+        try { publishAttempt.current = JSON.parse(window.sessionStorage.getItem(PUBLISH_ATTEMPT_STORAGE_KEY) || "null"); }
+        catch { /* The in-memory attempt also survives ordinary network retries. */ }
+      }
+      const ownerIdentity = mode === "auth" ? `user:${ownerUserId}` : `manager:${headers["X-Auction-Manager-Key"]}`;
+      const attempt = await preparePublishAttempt(formData, ownerIdentity, listingDays, publishAttempt.current);
+      publishAttempt.current = attempt;
+      try { window.sessionStorage.setItem(PUBLISH_ATTEMPT_STORAGE_KEY, JSON.stringify(attempt)); }
+      catch { /* No credentials or draft contents are stored in the attempt. */ }
+      formData.set("auctionClosesAt", attempt.closesAt);
+      formData.set("idempotencyKey", attempt.idempotencyKey);
       const response = await fetch("/api/auctions", { method: "POST", headers, body: formData });
       const payload = await response.json() as CreateResponse;
       if (!response.ok || !payload.location) {
@@ -935,7 +980,6 @@ export function CreateAuctionForm() {
           ? payload.errorCode
           : "publish_failed";
         setErrorMessage(t(PUBLISH_ERROR_KEYS[errorCode]));
-        if (payload.result?.reason === "idempotency_conflict") setIdempotencyKey(crypto.randomUUID());
         if (response.status === 401 && mode === "auth" && isSupabaseBrowserConfigured()) {
           await getSupabaseBrowser().auth.signOut({ scope: "local" });
           setAccessToken(null);
@@ -943,9 +987,7 @@ export function CreateAuctionForm() {
         }
         return null;
       }
-      window.sessionStorage.removeItem(DRAFT_STORAGE_KEY);
-      window.sessionStorage.removeItem(LEGACY_DRAFT_STORAGE_KEY);
-      rememberManagedAuction(payload.location);
+      rememberPublishedAuction(payload.location, headers["X-Auction-Manager-Key"]);
       return payload.location;
     } catch {
       setErrorMessage(t("sell.error.network"));
@@ -1010,6 +1052,7 @@ export function CreateAuctionForm() {
     window.sessionStorage.setItem(PUBLISH_AFTER_AUTH_KEY, "1");
     setErrorMessage("");
     setAccessToken(session.access_token);
+    setOwnerUserId(session.user.id);
     setAccountLabel(session.user.email
       || String(session.user.user_metadata.user_name || session.user.user_metadata.name || "Verified account"));
   };
@@ -1019,6 +1062,7 @@ export function CreateAuctionForm() {
     await getSupabaseBrowser().auth.signOut({ scope: "local" });
     window.sessionStorage.removeItem(PUBLISH_AFTER_AUTH_KEY);
     setAccessToken(null);
+    setOwnerUserId(null);
     setAccountLabel("");
   };
 
@@ -1255,7 +1299,7 @@ export function CreateAuctionForm() {
                     <strong>I&apos;m funding it</strong><span>What the spots sell for pays for the machine, and the page carries a progress bar towards its price. If the goal is not reached, you still owe every sold sticker — topping the machine up yourself, or refunding the buyers you cannot deliver.</span>
                   </button>
                 </div>
-                {ownership === "fund" && <label className={styles.inputLabel}>What does the machine cost?<span className={styles.moneyField}><input type="number" min="1" value={machineCost} onChange={(event) => setMachineCost(event.target.value)} /><b>€</b></span><small>The maker&apos;s own price for the exact machine, so the bar means something.</small></label>}
+                {ownership === "fund" && <label className={styles.inputLabel}>What does the machine cost?<span className={styles.moneyField}><input type="number" min="1" value={machineCost} onChange={(event) => setMachineCost(event.target.value)} /><b>USD</b></span><small>The maker&apos;s own price for the exact machine, so the bar means something.</small></label>}
                 {!machineIsValid && <p className={styles.validation} role="alert">Give what the machine costs.</p>}
               </fieldset>
             )}
@@ -1398,14 +1442,14 @@ export function CreateAuctionForm() {
                   <label className={specialSpot ? styles.checkedSpecial : styles.specialSpot}>
                     <input type="checkbox" checked={specialSpot} onChange={(event) => setSpecialSpot(event.target.checked)} />
                     <span><strong>Add a special spot over the logo</strong><small>6 × 6 cm, covering the Apple mark in the middle of the lid. Name your own price — it is the one placement size says nothing about.</small></span>
-                    {specialSpot && <span className={styles.specialPrice}><small>Starts at</small><span><input type="number" min="1" value={specialPrice} onChange={(event) => setSpecialPrice(event.target.value)} /><b>€</b></span></span>}
+                    {specialSpot && <span className={styles.specialPrice}><small>Starts at</small><span><input type="number" min="1" max={MAX_BID_AMOUNT_USD} step="0.01" value={specialPrice} onChange={(event) => setSpecialPrice(event.target.value)} /><b>USD</b></span></span>}
                   </label>
                 )}
                 <p className={styles.totalCopy}>{surfacePricingIsValid
-                  ? <>Every spot sold at its floor: <strong>{formatMoney(totalFloor)}</strong>, before the platform&apos;s 10% and Stripe&apos;s fees.{ownership === "fund" && machineIsValid ? ` Your funding goal is ${formatMoney(fundingCost)}; each spot's price remains yours to set.` : ""}</>
+                  ? <>Total opening bids: <strong>{formatMoney(totalFloor)}</strong>. This is not money collected: Checkout charges a 20% deposit, with a platform fee of 10% of the full bid deducted from that deposit, plus Stripe&apos;s fees.{ownership === "fund" && machineIsValid ? ` Your funding goal is ${formatMoney(fundingCost)}; each spot's price remains yours to set.` : ""}</>
                   : "Complete every spot to see the full floor total."}</p>
-                {isAnything && !surfacePricingIsValid && (
-                  <p className={styles.validation} role="alert">Every spot needs a starting price of at least 1 €.</p>
+                {!surfacePricingIsValid && (
+                  <p className={styles.validation} role="alert">Every spot, including placement premiums, must start between $1 and $999,999.99 USD.</p>
                 )}
               </fieldset>
             )}
@@ -1413,7 +1457,7 @@ export function CreateAuctionForm() {
             {step === 5 && (
               <fieldset>
                 <legend>How long does it run?</legend>
-                <p className={styles.introCopy}>Long enough to be shared twice, short enough that a date on the page means something. Spots sell one at a time, so this is when the {isAnything ? "object" : "lid"} stops taking buyers rather than a finish line anybody races to.</p>
+                <p className={styles.introCopy}>Choose when bidding closes. Until then, any position can be outbid. The highest valid bid for each position at closing wins.</p>
                 <div className={styles.fourChoices}>{([7, 14, 21, 30] as const).map((days) => <button type="button" key={days} className={listingDays === days ? styles.selectedDuration : styles.duration} aria-pressed={listingDays === days} onClick={() => setListingDays(days)}><strong>{days}</strong><span>days</span></button>)}</div>
               </fieldset>
             )}
@@ -1423,7 +1467,7 @@ export function CreateAuctionForm() {
                 <legend>How long do the placements stay on?</legend>
                 <p className={styles.introCopy}>This is what a buyer is actually buying, so it is yours to set rather than ours. Longer is worth more — and if you mean to sell the object next year, do not promise two years of it.</p>
                 <div className={styles.threeChoices}>{([6, 12, 24] as const).map((months) => <button type="button" key={months} className={stickerMonths === months ? styles.selectedDuration : styles.duration} aria-pressed={stickerMonths === months} onClick={() => setStickerMonths(months)}><strong>{months}</strong><span>months</span></button>)}</div>
-                <p className={styles.stickerNote}>It is shown on your listing and on the board, and it runs from the day of each purchase. Remove a placement early and the buyer is refunded for the time left.</p>
+                <p className={styles.stickerNote}>This is the duration you promise on your listing. Confirm the start date and final artwork with the winning bidder. You are responsible for any refund owed for an unfulfilled placement; this version does not calculate or issue time-based refunds automatically.</p>
               </fieldset>
             )}
 
@@ -1436,11 +1480,18 @@ export function CreateAuctionForm() {
                   <div><dt>Object</dt><dd>{objectName}</dd></div>
                   <div><dt>Ownership</dt><dd>{ownership === "own" ? "You own it" : `Funding ${formatMoney(fundingCost || 0)}`}</dd></div>
                   <div><dt>Layout</dt><dd>{layoutCount + (hasSpecialSpot ? 1 : 0)} {layoutCount + (hasSpecialSpot ? 1 : 0) === 1 ? "spot" : "spots"}{hasSpecialSpot ? ", logo covered" : ""}</dd></div>
-                  <div><dt>If it all sells</dt><dd>{formatMoney(totalFloor)}</dd></div>
+                  <div><dt>Total opening bids</dt><dd>{formatMoney(totalFloor)}</dd></div>
                   <div><dt>Runs for</dt><dd>{listingDays} days</dd></div>
                   <div><dt>Stickers stay</dt><dd>{stickerMonths} months</dd></div>
                 </dl>
-                <p className={styles.publishCopy}>Buyers pay you directly — the money lands in your own Stripe account, minus the 10% platform fee and Stripe&apos;s processing fees. You produce each placement to the agreed spec and approve every logo before it appears.</p>
+                <p className={styles.publishCopy}>Stripe charges bidders a 20% deposit to your connected account. The platform deducts 10% of the full bid from that deposit, and Stripe&apos;s fees also apply. For a $100 bid, the deposit is $20 and the platform fee is $10, leaving $10 before Stripe&apos;s fees. This version does not automatically collect the remaining 80%. Leading logos appear publicly after payment; confirm final artwork before producing each placement.</p>
+                {publishedLocation && (
+                  <section className={styles.authPanel} aria-label="Published auction">
+                    <p>Your auction is published. Connect Stripe before brands can place paid bids.</p>
+                    <Link className={styles.publishButton} href="/manage">Connect Stripe and manage auction →</Link>
+                    {unsavedRecoveryCode && <p role="alert">This browser could not save your recovery code. Keep it somewhere safe before leaving: <code>{unsavedRecoveryCode}</code></p>}
+                  </section>
+                )}
                 {!isSupabaseBrowserConfigured() ? (
                   sharePanel
                 ) : accessToken ? (
@@ -1478,6 +1529,7 @@ export function CreateAuctionForm() {
           </section>
 
           <aside className={styles.previewColumn} aria-label={`${objectName} auction preview`}>
+            {brandModel && modelPreviewError && <p role="alert">{modelPreviewError} <button type="button" onClick={() => setPreviewAttempt((value) => value + 1)}>Retry preview</button></p>}
             {isAnything ? (
               previewModel ? (
                 <div className={styles.presetPreview}>
@@ -1526,7 +1578,7 @@ export function CreateAuctionForm() {
                 {hasSpecialSpot && <button type="button" className={`${styles.previewSpot} ${styles.specialPreview}`} aria-label={`Spot over the logo, Large. ${formatMoney(specialAmount)}.`}><strong>Large</strong><span>{formatMoney(specialAmount)}</span></button>}
               </div>
             )}
-            <p>{layoutCount} {layoutCount === 1 ? "spot" : "spots"} · {surfacePricingIsValid ? `from ${formatMoney(minimumPrice)}` : "finish pricing to continue"}</p>
+            <p>{layoutCount + (hasSpecialSpot ? 1 : 0)} {layoutCount === 1 && !hasSpecialSpot ? "spot" : "spots"} · {surfacePricingIsValid ? `from ${formatMoney(minimumPrice)}` : "finish pricing to continue"}</p>
           </aside>
         </form>
       </main>
@@ -1540,7 +1592,7 @@ function PriceField({ label, dimensions, value, onChange }: { label: string; dim
   return (
     <label className={styles.priceField}>
       <span><strong>{label}</strong><small>{dimensions}</small></span>
-      <span className={styles.priceInput}><input type="number" min="1" value={value} onChange={(event) => onChange(event.target.value)} /><b>€</b></span>
+      <span className={styles.priceInput}><input type="number" min="1" max={MAX_BID_AMOUNT_USD} step="0.01" value={value} onChange={(event) => onChange(event.target.value)} /><b>USD</b></span>
     </label>
   );
 }
@@ -1633,13 +1685,14 @@ function SurfacePriceEditor({
               type="number"
               inputMode="decimal"
               min="1"
-              step="1"
+              max={MAX_BID_AMOUNT_USD}
+              step="0.01"
               value={selectedSpot.price}
               aria-invalid={!validSurfacePrice(selectedSpot.price)}
               aria-describedby="surface-price-hint"
               onChange={(event) => onChangeSpot(selectedSpot.id, { price: event.target.value })}
             />
-            <b>€</b>
+            <b>USD</b>
           </span>
           <small id="surface-price-hint">This price and coverage are shown to buyers for this spot only.</small>
         </label>

@@ -1,29 +1,10 @@
 import "server-only";
+import { resolveDatabasePrefix } from "@/lib/environment-policy";
 
-const DATABASE_PREFIXES = ["ba_dev", "ba_prod"] as const;
-
-export type DatabasePrefix = (typeof DATABASE_PREFIXES)[number];
+export type DatabasePrefix = "ba_dev" | "ba_prod";
 
 export function getDatabasePrefix(): DatabasePrefix {
-  const configured = process.env.SUPABASE_DATABASE_PREFIX;
-  const fallback = process.env.VERCEL_ENV === "production" ? "ba_prod" : "ba_dev";
-  const prefix = configured || fallback;
-
-  if (!DATABASE_PREFIXES.includes(prefix as DatabasePrefix)) {
-    throw new Error(
-      `SUPABASE_DATABASE_PREFIX must be one of: ${DATABASE_PREFIXES.join(", ")}.`,
-    );
-  }
-
-  return prefix as DatabasePrefix;
-}
-
-export function getAuctionTable(name: "spots" | "bids") {
-  return `${getDatabasePrefix()}_${name}`;
-}
-
-export function getPlaceBidFunction() {
-  return `${getDatabasePrefix()}_place_bid`;
+  return resolveDatabasePrefix(process.env);
 }
 
 export function getLogoBucket() {
@@ -39,16 +20,8 @@ export function getCampaignTable(name: "campaigns" | "campaign_spots" | "campaig
   return `${getDatabasePrefix()}_${legacyTable}`;
 }
 
-export function getCreateAuctionFunction() {
-  return `${getDatabasePrefix()}_create_auction`;
-}
-
-export function getConfigureAuctionSpotsFunction() {
-  return `${getDatabasePrefix()}_configure_auction_spots`;
-}
-
-export function getPlaceAuctionBidFunction() {
-  return `${getDatabasePrefix()}_place_auction_bid`;
+export function getPublishOwnedAuctionFunction() {
+  return `${getDatabasePrefix()}_publish_owned_auction`;
 }
 
 export function getAuctionMediaBucket() {
@@ -61,4 +34,23 @@ export function getBrandModelBucket() {
 
 export function getCampaignAssetTable() {
   return `${getDatabasePrefix()}_campaign_assets`;
+}
+
+// The database migrations predate the application-level auction rename. Keep
+// these compatibility helpers private to the server-side ownership/payment
+// adapters while all public routes use auction terminology.
+export function getLaptopTable(name: "laptops" | "laptop_spots" | "laptop_bids") {
+  return `${getDatabasePrefix()}_${name}`;
+}
+
+export function getClaimAuctionFunction() {
+  return `${getDatabasePrefix()}_claim_auction`;
+}
+
+export function getLaptopBidPaymentTable() {
+  return `${getDatabasePrefix()}_laptop_bid_payments`;
+}
+
+export function getSettleLaptopBidPaymentFunction() {
+  return `${getDatabasePrefix()}_settle_laptop_bid_payment`;
 }

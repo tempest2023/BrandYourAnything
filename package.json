@@ -9,15 +9,24 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "auth:confirm-email": "bun scripts/confirm-supabase-email.ts",
-    "test:concurrency": "node scripts/test-concurrent-bids.mjs",
-    "test:laptop-platform": "node scripts/test-laptop-platform.mjs",
-    "test:api-e2e": "npm run build && node --test scripts/test-auction-api-e2e.mjs"
+    "test:concurrency": "npm run test:payment-core",
+    "test:laptop-platform": "node --test scripts/test-publication-core.mjs scripts/test-payment-core.mjs",
+    "test:api-e2e": "node --test scripts/test-auction-api-e2e.mjs",
+    "test:stripe-e2e": "node --test scripts/test-homepage-stripe-e2e.mjs",
+    "test:management-e2e": "node --test scripts/test-auction-management-e2e.mjs",
+    "test:payment-core": "node --test scripts/test-payment-core.mjs scripts/test-payment-work-budget.mjs",
+    "test:publication-core": "node --test scripts/test-publication-core.mjs",
+    "test:model-core": "node --test scripts/test-model-repair-core.mjs",
+    "test:layout-e2e": "node --test scripts/test-auction-layout-e2e.mjs",
+    "test:connect-core": "node --test scripts/test-stripe-connect-core.mjs",
+    "test:connect-e2e": "node --test scripts/test-stripe-connect-e2e.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",
     "next": "16.3.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "stripe": "^22.6.2",
     "three": "^0.185.1"
   },
   "devDependencies": {
@@ -27,6 +36,7 @@
     "@types/three": "^0.185.4",
     "eslint": "^9.34.0",
     "eslint-config-next": "16.3.3",
+    "playwright-core": "^1.63.0",
     "typescript": "^5.9.2"
   }
 }

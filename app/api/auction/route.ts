@@ -1,4 +1,5 @@
-import { getAuctionSnapshot } from "@/lib/auction-repository";
+import { getAuctionSnapshot } from "@/lib/campaign-auction-repository";
+import { DEFAULT_AUCTION_SLUG } from "@/lib/site";
 import { isSupabaseConfigured } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +13,13 @@ export async function GET() {
   }
 
   try {
-    const snapshot = await getAuctionSnapshot();
+    const snapshot = await getAuctionSnapshot(DEFAULT_AUCTION_SLUG);
+    if (!snapshot) {
+      return Response.json(
+        { error: "Default auction was not found." },
+        { status: 404, headers: { "Cache-Control": "no-store" } },
+      );
+    }
     return Response.json(snapshot, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("Failed to load auction data", error);

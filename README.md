@@ -109,6 +109,14 @@ In **Project Settings > Environment Variables**, configure:
 | `NEXT_PUBLIC_SITE_URL` | `https://brand-anything.vercel.app` | Production, Preview, Development |
 | `SUPABASE_DATABASE_PREFIX` | `ba_prod` | Production only |
 | `SUPABASE_DATABASE_PREFIX` | `ba_dev` | Preview and Development only |
+| `STRIPE_SECRET_KEY` | Live secret/restricted key | Production only |
+| `STRIPE_SECRET_KEY` | Test secret/restricted key | Preview and Development only |
+| `STRIPE_CONNECT_WEBHOOK_SECRET` | Connected-account snapshot endpoint signing secret | Separate value per endpoint/environment |
+| `CRON_SECRET` | Strong random server-only reconciliation bearer secret | Production; optional manual recovery elsewhere |
+
+See [Stripe setup, local tests and recovery operations](docs/local-stripe-sandbox-testing.md).
+Database namespace and Stripe mode mismatches fail closed. Publishing an auction
+does not enable bidding until its owner completes Stripe Connect from `/manage`.
 
 X sign-in is never inferred from the Vercel environment name. `/sell` asks `/api/auth/x-status`, which reads the optional X provider status from Supabase Auth without blocking Email/Password sign-in. The X OAuth client ID and client secret belong only in **Supabase Dashboard > Authentication > Sign In / Providers**, never in the app's environment variables. The browser caches an availability result for ten minutes.
 
@@ -175,30 +183,22 @@ Every environment adds four compact tables:
 
 The owner email, bidder emails, and Storage paths are never returned by the public API. Public images use short-lived signed URLs. `anon` and `authenticated` have no direct access to the tables, buckets, or write functions.
 
-Creation goes through `ba_<env>_create_auction(...)`. It uses advisory locks for slug and idempotency races, creates the auction and its spots atomically, and applies a small per-identity creation limit. Tenant bids go through `ba_<env>_place_auction_bid(...)`; it locks the exact campaign spot, re-checks the live minimum, appends the bid, and updates the winner in one transaction. Idempotency keys make network retries safe.
+Creation goes through `ba_<env>_create_auction(...)`. It uses advisory locks for slug and idempotency races, creates the auction and its spots atomically, and applies a small per-identity creation limit. Paid bids create Stripe Checkout Sessions; after payment, `ba_<env>_settle_laptop_bid_payment(...)` locks the exact campaign spot, re-checks the live minimum, appends the bid, and updates the winner in one transaction. Idempotency keys make Checkout, settlement, and refund retries safe.
 
 The browser only calls Next.js Route Handlers:
 
 - `POST /api/models/upload-ticket` validates a GLB request and returns a one-use signed upload URL plus a signed metadata claim.
 - `POST /api/auctions` publishes a campaign.
 - `GET /api/auctions/<slug>` returns its public snapshot.
-- `POST /api/auctions/<slug>/bids` places a concurrency-safe bid and optionally stores a private logo.
+- `POST /api/auctions/<slug>/bids/checkout` validates the bid, stores an optional private logo, and starts Stripe Checkout for the required 20% deposit.
+- `GET /api/stripe/checkout/<sessionId>` confirms and settles a paid Checkout Session.
+- `POST /api/stripe/webhook` settles completed payments and resumes any required refunds.
 
 ## Included starter auction
 
-The original single-laptop homepage remains available and uses two application tables per environment:
-
-- `ba_<env>_spots` stores the ten auction slots and their current winning state.
-- `ba_<env>_bids` is an append-only bid ledger. Bidder emails and private logo paths are never returned by the public API.
+The homepage reads the durable `brand-my-mac` tenant campaign through `GET /api/auction` and submits every bid to its Stripe Checkout endpoint. The former standalone auction repository and unpaid `POST /api/bids` and `POST /api/auctions/<slug>/bids` endpoints have been removed.
 
 `ba_dev_*` and `ba_prod_*` can safely share a Supabase project with each other and with unrelated applications. `SUPABASE_DATABASE_PREFIX` selects the environment. Production uses `ba_prod`; local development and Vercel previews use `ba_dev`.
-
-All writes go through `public.ba_<env>_place_bid(...)`. The function takes a PostgreSQL row lock on the selected spot, re-checks the latest minimum, inserts the bid, and updates the winner inside one transaction. An advisory transaction lock plus a unique key makes retries idempotent, including accidental key reuse across different spots.
-
-Its browser flow uses these Route Handlers:
-
-- `GET /api/auction` returns public spots and recent bid history.
-- `POST /api/bids` validates multipart form data, stores an optional logo in the private `ba_<env>_bid_logos` bucket, and calls the atomic database function.
 
 Supabase secret keys are server-only for both flows.
 
@@ -242,17 +242,20 @@ Reset the local database and replay all migrations:
 supabase db reset
 ```
 
-Run the real concurrency test against local Postgres:
+Run the local PostgreSQL integration and HTTP tests (no database reset required):
 
 ```bash
 npm run test:concurrency
 npm run test:laptop-platform
 npm run test:api-e2e
+npm run test:stripe-e2e
 ```
 
-The platform test verifies atomic campaign creation, ten-spot isolation, RLS, equal concurrent bids, simultaneous retries, and cross-tenant idempotency-key reuse. Run it once with `SUPABASE_DATABASE_PREFIX=ba_dev` and once with `ba_prod` when validating both namespaces.
+`test:concurrency` is an alias for `test:payment-core`. `test:laptop-platform` runs the current publication and payment suites. The obsolete unpaid-RPC scripts have been removed. Both commands discover the local Supabase stack and cover both namespaces automatically; they create and clean only their own fixtures, never modify fixed auction spots, and cannot opt into a remote target. Payment tests use a Stripe double with real PostgreSQL, not real card processing. Coverage includes equal paid bids, concurrent Checkout retries, cross-position/cross-auction key conflicts, exact maximum prices, atomic ten-spot premiums, slug conflicts and private-table access by anonymous and authenticated clients.
 
-The API E2E test builds and starts the production Next.js server on a free local port. It verifies the generic auction RPC surface, removed laptop routes, coded error responses, and the complete publish/read/bid flow for a non-laptop object. It creates uniquely named test auctions, so run `supabase db reset` first and use a local Supabase project unless you deliberately set `ALLOW_REMOTE_API_E2E=1`.
+The API E2E test builds with local server/browser credentials and starts production-mode Next.js servers against both local namespaces. It verifies current publication/settlement RPC exposure, removed laptop and unpaid-bid routes, coded publication errors, non-laptop publication/read/retry, environment isolation, and failure without a bid when Stripe is unavailable. It deliberately makes no Stripe calls. The previous remote-target and externally managed-server overrides are no longer supported; each fixture is cleaned after the test.
+
+The Stripe E2E test requires the local Supabase stack, the Stripe CLI, Google Chrome, and a test-mode `STRIPE_SECRET_KEY` whose platform owns a ready connected account associated with a local `ba_dev` auction. It runs normal Outbid, manual-customer-refund recovery, and rendered 3D auction scenarios, each with two real test-mode Checkout payments against spot 2. It verifies winner/history, loaded logos, distinct Outbid color, customer refunds and platform-fee refunds. It also reopens the losing bidder's original return link and checks the verified refund notice. The 3D variant verifies its form, claimed marker and history; logo availability is checked through the snapshot URL, not a mesh decal. It never changes the original auction's account association. Cleanup verifies fixture refunds before deleting fixture data. Set `PLAYWRIGHT_CHROME_PATH` when Chrome is installed somewhere other than the standard macOS location. See [local Stripe testing and deployment](docs/local-stripe-sandbox-testing.md) for setup and release gates.
 
 ## Follow and support
 

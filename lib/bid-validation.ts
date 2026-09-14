@@ -1,3 +1,5 @@
+import { MAX_BID_AMOUNT_CENTS } from "@/lib/bid-limits";
+
 export const MAX_LOGO_BYTES = 2 * 1024 * 1024;
 
 const ACCEPTED_LOGO_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml"]);
@@ -12,6 +14,7 @@ export class BidValidationError extends Error {
 }
 
 export type ParsedBidForm = {
+  assetVersion?: string | null;
   spotId: number;
   amountCents: number;
   brandName: string;
@@ -56,7 +59,11 @@ function normalizedWebsite(value: string | null) {
   }
 }
 
-export function parseBidForm(formData: FormData, maximumSpotId = 10): ParsedBidForm {
+export function parseBidForm(
+  formData: FormData,
+  maximumSpotId = 10,
+  maximumAmountCents = MAX_BID_AMOUNT_CENTS,
+): ParsedBidForm {
   const spotId = Number(requiredText(formData, "spotId", 2));
   const amountCents = Number(requiredText(formData, "amountCents", 12));
   const brandName = requiredText(formData, "brandName", 80);
@@ -64,12 +71,18 @@ export function parseBidForm(formData: FormData, maximumSpotId = 10): ParsedBidF
   const website = normalizedWebsite(optionalText(formData, "website", 2048));
   const xHandle = optionalText(formData, "xHandle", 50);
   const idempotencyKey = requiredText(formData, "idempotencyKey", 36).toLowerCase();
+  const assetVersion = optionalText(formData, "assetVersion", 36)?.toLowerCase() ?? null;
+  if (assetVersion && !UUID_PATTERN.test(assetVersion)) throw new BidValidationError("assetVersion must be a UUID.");
 
   if (!Number.isInteger(spotId) || spotId < 1 || spotId > maximumSpotId) {
     throw new BidValidationError("spotId must identify a valid sticker spot.");
   }
-  if (!Number.isSafeInteger(amountCents) || amountCents < 1000 || amountCents > 100_000_000_000) {
-    throw new BidValidationError("amountCents must be between $10 and $1,000,000,000.");
+  if (!Number.isSafeInteger(amountCents) || amountCents < 1000 || amountCents > maximumAmountCents) {
+    const maximumAmount = (maximumAmountCents / 100).toLocaleString("en-US", {
+      minimumFractionDigits: maximumAmountCents % 100 === 0 ? 0 : 2,
+      maximumFractionDigits: 2,
+    });
+    throw new BidValidationError(`amountCents must be between $10 and $${maximumAmount}.`);
   }
   if (!EMAIL_PATTERN.test(email)) {
     throw new BidValidationError("email must be valid.");
@@ -87,5 +100,5 @@ export function parseBidForm(formData: FormData, maximumSpotId = 10): ParsedBidF
     throw new BidValidationError("Logo files must be PNG, JPG, WEBP, or SVG.");
   }
 
-  return { spotId, amountCents, brandName, email, website, xHandle, idempotencyKey, logo };
+  return { spotId, amountCents, brandName, email, website, xHandle, idempotencyKey, logo, assetVersion };
 }

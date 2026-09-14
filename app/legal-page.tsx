@@ -29,6 +29,7 @@ type LegalPageProps = {
   sections: LegalSection[];
   companionHref: "/privacy" | "/terms";
   companionLabel: string;
+  lastUpdated?: string;
 };
 
 export function LegalPage({
@@ -38,6 +39,7 @@ export function LegalPage({
   sections,
   companionHref,
   companionLabel,
+  lastUpdated = LEGAL_LAST_UPDATED,
 }: LegalPageProps) {
   return (
     <div className={styles.shell}>
@@ -63,7 +65,7 @@ export function LegalPage({
           <h1>{title}</h1>
           <p className={styles.summary}>{summary}</p>
           <dl className={styles.documentMeta}>
-            <div><dt>Last updated</dt><dd>{LEGAL_LAST_UPDATED}</dd></div>
+            <div><dt>Last updated</dt><dd>{lastUpdated}</dd></div>
             <div><dt>Operator</dt><dd>{OPERATOR_NAME}</dd></div>
             <div><dt>Applies to</dt><dd>The hosted Brand Anything service</dd></div>
           </dl>

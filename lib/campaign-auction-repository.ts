@@ -6,24 +6,28 @@ import {
   getBrandModelBucket,
   getCampaignAssetTable,
   getCampaignTable,
-  getConfigureAuctionSpotsFunction,
-  getCreateAuctionFunction,
+  getPublishOwnedAuctionFunction,
   getAuctionMediaBucket,
   getLogoBucket,
-  getPlaceAuctionBidFunction,
 } from "@/lib/database-names";
 import type {
   AuctionCampaignSnapshot,
-  AuctionBidResult,
   CreateAuctionInput,
   CreateAuctionResult,
 } from "@/lib/campaign-auction";
 import { getPresetModelFromStoragePath } from "@/lib/preset-models";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { isStripeConfigured } from "@/lib/stripe";
+import { AuctionValidationError } from "@/lib/auction-validation";
+import type { SpotLayoutItem } from "@/lib/surface-spots";
 
 type CampaignRow = {
   id: string;
   slug: string;
+  status: "published" | "closed";
+  stripe_account_id: string | null;
+  stripe_charges_enabled: boolean;
+  stripe_payouts_enabled: boolean;
   owner_name: string;
   title: string;
   tagline: string;
@@ -33,6 +37,7 @@ type CampaignRow = {
   auction_closes_at: string;
   photo_storage_path: string | null;
   created_at: string;
+  spot_layout: SpotLayoutItem[] | null;
 };
 
 type CampaignSpotRow = {
@@ -76,37 +81,6 @@ type CreateAuctionRow = {
   auction_slug: string;
 };
 
-type PlaceAuctionBidRow = {
-  accepted: boolean;
-  reason: AuctionBidResult["reason"];
-  current_bid_cents: number;
-  minimum_next_bid_cents: number;
-  current_bidder_name: string;
-  bid_count: number;
-  bid_id: string | null;
-};
-
-export type PlaceAuctionBidInput = {
-  slug: string;
-  spotPosition: number;
-  amountCents: number;
-  brandName: string;
-  email: string;
-  website: string | null;
-  xHandle: string | null;
-  logoStoragePath: string | null;
-  idempotencyKey: string;
-};
-
-export type AttachCampaignAssetInput = {
-  auctionId: string;
-  assetType: CampaignAssetType;
-  assetName: string;
-  modelStoragePath: string | null;
-  modelFileName: string | null;
-  idempotencyKey: string;
-};
-
 async function signStoragePath(bucket: string, path: string | null) {
   if (!path) return undefined;
   const supabase = getSupabaseAdmin();
@@ -122,9 +96,9 @@ export async function getAuctionSnapshot(slug: string): Promise<AuctionCampaignS
   const supabase = getSupabaseAdmin();
   const { data: campaignData, error: campaignError } = await supabase
     .from(getCampaignTable("campaigns"))
-    .select("id,slug,owner_name,title,tagline,story,laptop_model,goal_cents,auction_closes_at,photo_storage_path,created_at")
+    .select("id,slug,status,stripe_account_id,stripe_charges_enabled,stripe_payouts_enabled,owner_name,title,tagline,story,laptop_model,goal_cents,auction_closes_at,photo_storage_path,created_at,spot_layout")
     .eq("slug", slug.toLowerCase())
-    .eq("status", "published")
+    .in("status", ["published", "closed"])
     .maybeSingle();
 
   if (campaignError) throw campaignError;
@@ -180,6 +154,8 @@ export async function getAuctionSnapshot(slug: string): Promise<AuctionCampaignS
         ? spot.current_bid_cents! + spot.min_increment_cents
         : spot.opening_bid_cents) / 100,
       bids: spot.bid_count,
+      ...(assetType === "laptop" && campaign.spot_layout?.find((entry) => entry.id === spot.position)?.logoCover
+        ? { logoCover: true as const } : {}),
       ...(logoUrls[index] ? { logo: logoUrls[index] } : {}),
       ...(hasBid && spot.current_website ? { website: spot.current_website } : {}),
       ...(spot.surface_position ? { surfacePosition: spot.surface_position } : {}),
@@ -199,6 +175,9 @@ export async function getAuctionSnapshot(slug: string): Promise<AuctionCampaignS
   return {
     campaign: {
       slug: campaign.slug,
+      status: campaign.status,
+      paymentsEnabled: isStripeConfigured() && Boolean(campaign.stripe_account_id)
+        && campaign.stripe_charges_enabled && campaign.stripe_payouts_enabled,
       title: campaign.title,
       tagline: campaign.tagline,
       story: campaign.story,
@@ -212,109 +191,30 @@ export async function getAuctionSnapshot(slug: string): Promise<AuctionCampaignS
       ...(photoUrl ? { photoUrl } : {}),
       ...(modelUrl ? { modelUrl } : {}),
       ...(asset?.model_file_name ? { modelFileName: asset.model_file_name } : {}),
+      ...(asset?.idempotency_key ? { assetVersion: asset.idempotency_key } : {}),
     },
     spots,
     history,
   };
 }
 
-export async function attachCampaignAsset(input: AttachCampaignAssetInput) {
-  const supabase = getSupabaseAdmin();
-  const row = {
-    laptop_id: input.auctionId,
-    asset_type: input.assetType,
-    asset_name: input.assetName,
-    model_storage_path: input.modelStoragePath,
-    model_file_name: input.modelFileName,
-    idempotency_key: input.idempotencyKey,
-  };
-  const { error: insertError } = await supabase
-    .from(getCampaignAssetTable())
-    .upsert(row, { onConflict: "laptop_id", ignoreDuplicates: true });
-  if (insertError) throw insertError;
-
-  const { data, error } = await supabase
-    .from(getCampaignAssetTable())
-    .select("laptop_id,asset_type,asset_name,model_storage_path,model_file_name,idempotency_key")
-    .eq("laptop_id", input.auctionId)
-    .single();
-  if (error) throw error;
-  const stored = data as CampaignAssetRow;
-  const matches = stored.idempotency_key === input.idempotencyKey
-    && stored.asset_type === input.assetType
-    && stored.asset_name === input.assetName
-    && stored.model_storage_path === input.modelStoragePath
-    && stored.model_file_name === input.modelFileName;
-  if (!matches) throw new Error("The campaign asset conflicts with an existing idempotent request.");
-}
-
 export async function createAuction(input: CreateAuctionInput): Promise<CreateAuctionResult> {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.rpc(getCreateAuctionFunction(), {
-    p_slug: input.slug,
-    p_owner_name: input.ownerName,
-    p_owner_email: input.ownerEmail,
-    p_title: input.title,
-    p_tagline: input.tagline,
-    p_story: input.story,
-    p_object_name: input.objectName,
-    p_goal_cents: input.goalCents,
-    p_auction_closes_at: input.auctionClosesAt,
-    p_photo_storage_path: input.photoStoragePath,
-    p_small_opening_bid_cents: input.smallOpeningBidCents,
-    p_medium_opening_bid_cents: input.mediumOpeningBidCents,
-    p_large_opening_bid_cents: input.largeOpeningBidCents,
-    p_min_increment_cents: input.minIncrementCents,
-    p_idempotency_key: input.idempotencyKey,
+  const { ownerUserId, managerKeyHash, ...parameters } = input;
+  const { data, error } = await getSupabaseAdmin().rpc(getPublishOwnedAuctionFunction(), {
+    p_owner_user_id: ownerUserId ?? null,
+    p_manager_key_hash: managerKeyHash ?? null,
+    p_input: parameters,
   });
-
+  if (error && ["22023", "23514", "23502", "22P02"].includes(error.code)) {
+    throw new AuctionValidationError("The publication details are invalid.");
+  }
   if (error) throw error;
   const row = (Array.isArray(data) ? data[0] : data) as CreateAuctionRow | undefined;
-  if (!row) throw new Error("The database returned no result for auction creation.");
-  if (row.accepted && row.auction_id) {
-    const { error: layoutError } = await supabase.rpc(getConfigureAuctionSpotsFunction(), {
-      p_auction_id: row.auction_id,
-      p_layout: input.spotLayout,
-      p_small_opening_bid_cents: input.smallOpeningBidCents,
-      p_medium_opening_bid_cents: input.mediumOpeningBidCents,
-      p_large_opening_bid_cents: input.largeOpeningBidCents,
-      p_min_increment_cents: input.minIncrementCents,
-      p_idempotency_key: input.idempotencyKey,
-    });
-    if (layoutError) throw layoutError;
-  }
+  if (!row) throw new Error("The database returned no result for auction publication.");
   return {
     accepted: row.accepted,
     reason: row.reason,
     auctionId: row.auction_id,
     slug: row.auction_slug,
-  };
-}
-
-export async function placeAuctionBid(input: PlaceAuctionBidInput): Promise<AuctionBidResult> {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.rpc(getPlaceAuctionBidFunction(), {
-    p_auction_slug: input.slug,
-    p_spot_position: input.spotPosition,
-    p_amount_cents: input.amountCents,
-    p_bidder_name: input.brandName,
-    p_bidder_email: input.email,
-    p_website: input.website,
-    p_x_handle: input.xHandle,
-    p_logo_storage_path: input.logoStoragePath,
-    p_idempotency_key: input.idempotencyKey,
-  });
-
-  if (error) throw error;
-  const row = (Array.isArray(data) ? data[0] : data) as PlaceAuctionBidRow | undefined;
-  if (!row) throw new Error("The database returned no result for the auction bid.");
-  return {
-    accepted: row.accepted,
-    reason: row.reason,
-    currentBid: row.current_bid_cents / 100,
-    minimumNextBid: row.minimum_next_bid_cents / 100,
-    currentBidderName: row.current_bidder_name,
-    bidCount: row.bid_count,
-    bidId: row.bid_id,
   };
 }

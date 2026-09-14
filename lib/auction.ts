@@ -11,6 +11,7 @@ export type Spot = {
   bid: number;
   minBid: number;
   bids: number;
+  logoCover?: true;
   logo?: string;
   website?: string;
   surfacePosition?: SurfaceVector;
@@ -28,16 +29,6 @@ export type BidHistoryItem = {
 export type AuctionSnapshot = {
   spots: Spot[];
   history: BidHistoryItem[];
-};
-
-export type PlaceBidResult = {
-  accepted: boolean;
-  reason: "accepted" | "already_processed" | "bid_too_low" | "auction_closed" | "idempotency_conflict";
-  currentBid: number;
-  minimumNextBid: number;
-  currentBidderName: string;
-  bidCount: number;
-  bidId: string | null;
 };
 
 export const STARTER_SPOTS: Spot[] = [
