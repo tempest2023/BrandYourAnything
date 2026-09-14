@@ -215,6 +215,17 @@ test("payment service and real local PostgreSQL preserve payment invariants", { 
       assert.equal(fake.state.creates, count + 1);
     });
 
+    await t.test("the disclosed $100 bid example charges $20 and deducts $10, never the full bid", async () => {
+      const f = await fixture();
+      assert.ifError((await admin.from(prefix + "_laptop_spots").update({ opening_bid_cents: 10000 }).eq("laptop_id", f.id)).error);
+      const result = await checkout(f, input(10000));
+      const parameters = fake.state.sessions.get(result.sessionId).params;
+      assert.equal(parameters.line_items[0].price_data.unit_amount, 2000);
+      assert.equal(parameters.payment_intent_data.application_fee_amount, 1000);
+      assert.match(parameters.custom_text.submit.message, /remaining 80% is not collected automatically/);
+      assert.equal((await bids(f)).length, 0, "The deposit must actually be paid before a bid is recorded");
+    });
+
     await t.test("lost Checkout response reuses exact parameters and never deletes/resubmits a conflicting logo", async () => {
       const f = await fixture(); const bid = input(); const count = fake.state.creates;
       fake.state.lostCheckoutResponse = true;
@@ -227,6 +238,20 @@ test("payment service and real local PostgreSQL preserve payment invariants", { 
       let uploaded = false;
       await assert.rejects(service.createLaptopBidCheckout(f.slug, { ...bid, brandName: "Changed" }, "different-logo", "http://localhost", async () => { uploaded = true; }), /different details/);
       assert.equal(uploaded, false);
+    });
+
+    await t.test("updated disclosure never changes parameters of a previously reserved Checkout", async () => {
+      const f = await fixture(); const bid = input(); const count = fake.state.creates;
+      const oldCopy = "This is a 20% bid deposit.";
+      const previousRelease = loadTypeScript("lib/stripe-bids.ts", { ...overrides, "@/lib/stripe-bid-repository": {
+        ...repository, saveCheckoutParameters: (id, parameters) => repository.saveCheckoutParameters(id,
+          { ...parameters, custom_text: { submit: { message: oldCopy } } }),
+      } });
+      fake.state.lostCheckoutResponse = true;
+      await assert.rejects(previousRelease.createLaptopBidCheckout(f.slug, bid, null, "http://localhost:3000"), /lost Checkout/);
+      const retry = await checkout(f, bid);
+      assert.equal(fake.state.creates, count + 1);
+      assert.equal(fake.state.sessions.get(retry.sessionId).params.custom_text.submit.message, oldCopy);
     });
 
     await t.test("20 concurrent confirmations settle once; stale expiry cannot undo a paid bid", async () => {

@@ -1446,7 +1446,7 @@ export function CreateAuctionForm() {
                   </label>
                 )}
                 <p className={styles.totalCopy}>{surfacePricingIsValid
-                  ? <>Every spot sold at its floor: <strong>{formatMoney(totalFloor)}</strong>, before the platform&apos;s 10% and Stripe&apos;s fees.{ownership === "fund" && machineIsValid ? ` Your funding goal is ${formatMoney(fundingCost)}; each spot's price remains yours to set.` : ""}</>
+                  ? <>Total opening bids: <strong>{formatMoney(totalFloor)}</strong>. This is not money collected: Checkout charges a 20% deposit, with a platform fee of 10% of the full bid deducted from that deposit, plus Stripe&apos;s fees.{ownership === "fund" && machineIsValid ? ` Your funding goal is ${formatMoney(fundingCost)}; each spot's price remains yours to set.` : ""}</>
                   : "Complete every spot to see the full floor total."}</p>
                 {!surfacePricingIsValid && (
                   <p className={styles.validation} role="alert">Every spot, including placement premiums, must start between $1 and $999,999.99 USD.</p>
@@ -1457,7 +1457,7 @@ export function CreateAuctionForm() {
             {step === 5 && (
               <fieldset>
                 <legend>How long does it run?</legend>
-                <p className={styles.introCopy}>Long enough to be shared twice, short enough that a date on the page means something. Spots sell one at a time, so this is when the {isAnything ? "object" : "lid"} stops taking buyers rather than a finish line anybody races to.</p>
+                <p className={styles.introCopy}>Choose when bidding closes. Until then, any position can be outbid. The highest valid bid for each position at closing wins.</p>
                 <div className={styles.fourChoices}>{([7, 14, 21, 30] as const).map((days) => <button type="button" key={days} className={listingDays === days ? styles.selectedDuration : styles.duration} aria-pressed={listingDays === days} onClick={() => setListingDays(days)}><strong>{days}</strong><span>days</span></button>)}</div>
               </fieldset>
             )}
@@ -1467,7 +1467,7 @@ export function CreateAuctionForm() {
                 <legend>How long do the placements stay on?</legend>
                 <p className={styles.introCopy}>This is what a buyer is actually buying, so it is yours to set rather than ours. Longer is worth more — and if you mean to sell the object next year, do not promise two years of it.</p>
                 <div className={styles.threeChoices}>{([6, 12, 24] as const).map((months) => <button type="button" key={months} className={stickerMonths === months ? styles.selectedDuration : styles.duration} aria-pressed={stickerMonths === months} onClick={() => setStickerMonths(months)}><strong>{months}</strong><span>months</span></button>)}</div>
-                <p className={styles.stickerNote}>It is shown on your listing and on the board, and it runs from the day of each purchase. Remove a placement early and the buyer is refunded for the time left.</p>
+                <p className={styles.stickerNote}>This is the duration you promise on your listing. Confirm the start date and final artwork with the winning bidder. You are responsible for any refund owed for an unfulfilled placement; this version does not calculate or issue time-based refunds automatically.</p>
               </fieldset>
             )}
 
@@ -1480,11 +1480,11 @@ export function CreateAuctionForm() {
                   <div><dt>Object</dt><dd>{objectName}</dd></div>
                   <div><dt>Ownership</dt><dd>{ownership === "own" ? "You own it" : `Funding ${formatMoney(fundingCost || 0)}`}</dd></div>
                   <div><dt>Layout</dt><dd>{layoutCount + (hasSpecialSpot ? 1 : 0)} {layoutCount + (hasSpecialSpot ? 1 : 0) === 1 ? "spot" : "spots"}{hasSpecialSpot ? ", logo covered" : ""}</dd></div>
-                  <div><dt>If it all sells</dt><dd>{formatMoney(totalFloor)}</dd></div>
+                  <div><dt>Total opening bids</dt><dd>{formatMoney(totalFloor)}</dd></div>
                   <div><dt>Runs for</dt><dd>{listingDays} days</dd></div>
                   <div><dt>Stickers stay</dt><dd>{stickerMonths} months</dd></div>
                 </dl>
-                <p className={styles.publishCopy}>Buyers pay you directly — the money lands in your own Stripe account, minus the 10% platform fee and Stripe&apos;s processing fees. You produce each placement to the agreed spec and approve every logo before it appears.</p>
+                <p className={styles.publishCopy}>Stripe charges bidders a 20% deposit to your connected account. The platform deducts 10% of the full bid from that deposit, and Stripe&apos;s fees also apply. For a $100 bid, the deposit is $20 and the platform fee is $10, leaving $10 before Stripe&apos;s fees. This version does not automatically collect the remaining 80%. Leading logos appear publicly after payment; confirm final artwork before producing each placement.</p>
                 {publishedLocation && (
                   <section className={styles.authPanel} aria-label="Published auction">
                     <p>Your auction is published. Connect Stripe before brands can place paid bids.</p>

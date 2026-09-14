@@ -55,7 +55,7 @@ function checkoutParameters(payment: LaptopBidPayment, context: StripeBidContext
     } }],
     metadata,
     payment_intent_data: { application_fee_amount: Math.min(payment.depositAmountCents, Math.round(payment.bidAmountCents * 0.1)), metadata },
-    custom_text: { submit: { message: "This is a 20% bid deposit. It is refunded automatically if another bidder takes the lead or if your paid bid can no longer be accepted." } },
+    custom_text: { submit: { message: "This charges a 20% bid deposit now. If you are outbid or the bid cannot be accepted, a refund is initiated automatically and may take time. The remaining 80% is not collected automatically." } },
   };
 }
 
