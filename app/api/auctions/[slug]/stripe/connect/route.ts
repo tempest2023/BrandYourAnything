@@ -1,159 +1,46 @@
 import Stripe from "stripe";
-
-import { getOwnedStripeCampaign, setStripeCampaignAccount, stripeEnvironment } from "@/lib/stripe-bid-repository";
-import { auctionUrl, auctionPath } from "@/lib/site";
-import { getStripe, getStripeMerchantAccountState, isStripeConfigured } from "@/lib/stripe";
+import { isStripeConfigured } from "@/lib/stripe";
 import { isSupabaseConfigured } from "@/lib/supabase-admin";
 import { getPublishingOwnerCredential, PublishingAuthenticationError } from "@/lib/publishing-auth";
+import { getRequestOrigin } from "@/lib/request-origin";
+import { readOwnedStripeStatus, startOwnedStripeOnboarding } from "@/lib/stripe-connect";
+import { StripeConnectError } from "@/lib/stripe-connect-repository";
 
 export const runtime = "nodejs";
 
-function unavailable() {
-  return Response.json(
-    { error: "Stripe Connect is not configured for this deployment." },
-    { status: 503 },
-  );
+function json(value: unknown, status = 200) {
+  return Response.json(value, { status, headers: { "Cache-Control": "no-store" } });
 }
 
-async function campaignForOwner(request: Request, slug: string) {
-  const owner = await getPublishingOwnerCredential(request);
-  return getOwnedStripeCampaign(slug, owner);
-}
-
-async function syncAccount(auctionId: string, accountId: string) {
-  const account = await getStripeMerchantAccountState(accountId);
-  if (account.closed) throw new Error("The connected Stripe account was closed.");
-  await setStripeCampaignAccount(
-    auctionId,
-    account.id,
-    account.chargesEnabled,
-    account.payoutsEnabled,
-  );
-  return account;
-}
-
-export async function GET(
-  request: Request,
-  context: { params: Promise<{ slug: string }> },
-) {
-  if (!isSupabaseConfigured() || !isStripeConfigured()) return unavailable();
-  try {
-    const { slug } = await context.params;
-    const campaign = await campaignForOwner(request, slug);
-    if (!campaign) return Response.json({ error: "This auction was not found." }, { status: 404 });
-    if (!campaign.stripeAccountId) {
-      return Response.json({ connected: false, ready: false });
-    }
-    const account = await syncAccount(campaign.id, campaign.stripeAccountId);
-    return Response.json({
-      connected: true,
-      ready: account.chargesEnabled && account.payoutsEnabled,
-      chargesEnabled: account.chargesEnabled,
-      payoutsEnabled: account.payoutsEnabled,
-      detailsSubmitted: account.detailsSubmitted,
-    });
-  } catch (error) {
-    if (error instanceof PublishingAuthenticationError) {
-      return Response.json({ error: error.message }, { status: error.status });
-    }
-    console.error("Failed to read Stripe Connect status", error);
-    return Response.json({ error: "Stripe status could not be loaded." }, { status: 500 });
-  }
-}
-
-export async function POST(
-  request: Request,
-  context: { params: Promise<{ slug: string }> },
-) {
-  if (!isSupabaseConfigured() || !isStripeConfigured()) return unavailable();
+async function handle(request: Request, context: { params: Promise<{ slug: string }> }, start: boolean) {
+  if (!isSupabaseConfigured() || !isStripeConfigured()) return json({ error: "Stripe Connect is not configured for this deployment." }, 503);
   try {
     const { slug } = await context.params;
     const owner = await getPublishingOwnerCredential(request);
-    const campaign = await getOwnedStripeCampaign(slug, owner);
-    if (!campaign) return Response.json({ error: "This auction was not found." }, { status: 404 });
-
-    const stripe = getStripe();
-    let accountId = campaign.stripeAccountId;
-    if (!accountId) {
-      const account = await stripe.v2.core.accounts.create({
-        contact_email: owner.ownerEmail,
-        dashboard: "express",
-        display_name: campaign.title,
-        defaults: {
-          profile: {
-            business_url: auctionUrl(campaign.slug),
-            product_description: "Auctioned brand placement on a creator-owned object.",
-          },
-          responsibilities: {
-            fees_collector: "stripe",
-            losses_collector: "stripe",
-          },
-        },
-        configuration: {
-          merchant: {
-            capabilities: {
-              card_payments: { requested: true },
-            },
-          },
-        },
-        include: ["configuration.merchant", "requirements"],
-        metadata: {
-          brand_anything_auction_id: campaign.id,
-          brand_anything_slug: campaign.slug,
-        },
-      }, { idempotencyKey: `ba-${stripeEnvironment()}-connect-${campaign.id}` });
-      accountId = account.id;
-      await setStripeCampaignAccount(
-        campaign.id,
-        account.id,
-        false,
-        false,
-      );
+    let country: string | undefined;
+    if (start) {
+      const body = await request.text();
+      if (body) {
+        let value;
+        try { value = JSON.parse(body); } catch { throw new StripeConnectError(400, "Invalid Stripe setup request."); }
+        if (!value || typeof value !== "object" || Array.isArray(value)
+          || (value.country !== undefined && (typeof value.country !== "string" || !/^[A-Z]{2}$/.test(value.country)))) {
+          throw new StripeConnectError(400, "Choose a two-letter country code for your business.");
+        }
+        country = value.country;
+      }
     }
-
-    const account = await syncAccount(campaign.id, accountId);
-    if (account.chargesEnabled && account.payoutsEnabled) {
-      return Response.json({ connected: true, ready: true, returnUrl: new URL(auctionPath(campaign.slug), request.url).toString() });
-    }
-
-    const returnUrl = new URL("/manage", request.url);
-    returnUrl.searchParams.set("stripe", "return");
-    returnUrl.searchParams.set("slug", campaign.slug);
-    const refreshUrl = new URL("/manage", request.url);
-    refreshUrl.searchParams.set("stripe", "refresh");
-    refreshUrl.searchParams.set("slug", campaign.slug);
-
-    const accountLink = await stripe.v2.core.accountLinks.create({
-      account: accountId,
-      use_case: {
-        type: "account_onboarding",
-        account_onboarding: {
-          configurations: ["merchant"],
-          refresh_url: refreshUrl.toString(),
-          return_url: returnUrl.toString(),
-          collection_options: { fields: "eventually_due", future_requirements: "include" },
-        },
-      },
-    });
-    return Response.json({ connected: true, ready: false, onboardingUrl: accountLink.url });
+    return json(start
+      ? await startOwnedStripeOnboarding(slug, owner, getRequestOrigin(request), country)
+      : await readOwnedStripeStatus(slug, owner));
   } catch (error) {
-    if (error instanceof PublishingAuthenticationError) {
-      return Response.json({ error: error.message }, { status: error.status });
-    }
-    if (error instanceof Stripe.errors.StripePermissionError) {
-      console.error("Stripe Connect key is missing permissions", {
-        code: error.code,
-        requestId: error.requestId,
-      });
-      return Response.json(
-        { error: "The Stripe key needs Core: Write permission for Accounts v2." },
-        { status: 503 },
-      );
-    }
-    console.error("Failed to start Stripe Connect onboarding", error);
-    return Response.json(
-      { error: "Stripe onboarding could not be started. Check that Connect is enabled on the platform account." },
-      { status: 500 },
-    );
+    if (error instanceof PublishingAuthenticationError || error instanceof StripeConnectError) return json({ error: error.message }, error.status);
+    if (error instanceof Stripe.errors.StripePermissionError) return json({ error: "The Stripe key needs Core: Read/Write permission for Accounts v2." }, 503);
+    console.error("Stripe Connect request failed", error instanceof Stripe.errors.StripeError
+      ? { type: error.type, code: error.code, parameter: error.param, requestId: error.requestId } : error);
+    return json({ error: "Stripe setup could not finish. Retry is safe; contact support if the problem persists." }, 500);
   }
 }
+
+export function GET(request: Request, context: { params: Promise<{ slug: string }> }) { return handle(request, context, false); }
+export function POST(request: Request, context: { params: Promise<{ slug: string }> }) { return handle(request, context, true); }

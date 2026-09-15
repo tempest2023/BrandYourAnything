@@ -1,8 +1,10 @@
 import "server-only";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { paymentWorkFetch, paymentWorkRemaining } from "@/lib/payment-work-budget";
 
 let adminClient: SupabaseClient | undefined;
+let recoveryAdminClient: SupabaseClient | undefined;
 
 export function isSupabaseConfigured() {
   return Boolean(
@@ -12,7 +14,9 @@ export function isSupabaseConfigured() {
 }
 
 export function getSupabaseAdmin() {
-  if (adminClient) return adminClient;
+  const bounded = Number.isFinite(paymentWorkRemaining());
+  const cached = bounded ? recoveryAdminClient : adminClient;
+  if (cached) return cached;
 
   const url = process.env.SUPABASE_URL;
   const secretKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -21,7 +25,11 @@ export function getSupabaseAdmin() {
     throw new Error("Supabase is not configured. Set SUPABASE_URL and SUPABASE_SECRET_KEY.");
   }
 
-  adminClient = createClient(url, secretKey, {
+  const client = createClient(url, secretKey, {
+    // A Retry-After response can make the SDK sleep beyond the worker deadline.
+    // Durable recovery owns its retries; ordinary requests retain SDK defaults.
+    db: { retry: !bounded },
+    global: { fetch: paymentWorkFetch },
     auth: {
       autoRefreshToken: false,
       detectSessionInUrl: false,
@@ -29,5 +37,7 @@ export function getSupabaseAdmin() {
     },
   });
 
-  return adminClient;
+  if (bounded) recoveryAdminClient = client;
+  else adminClient = client;
+  return client;
 }

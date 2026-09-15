@@ -1,5 +1,7 @@
 import "server-only";
 
+import type Stripe from "stripe";
+
 import {
   getDatabasePrefix,
   getLaptopBidPaymentTable,
@@ -8,7 +10,6 @@ import {
 } from "@/lib/database-names";
 import type { LaptopBidPaymentStatus } from "@/lib/laptop";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import type { AuctionOwnerCredential } from "@/lib/publishing-auth";
 
 type LaptopPaymentRow = {
   id: string;
@@ -42,16 +43,11 @@ export type StripeBidContext = {
   stripeAccountId: string;
 };
 
-export type StripeCampaignAccount = {
-  id: string;
-  slug: string;
-  title: string;
-  stripeAccountId: string | null;
-  chargesEnabled: boolean;
-  payoutsEnabled: boolean;
-};
 
 export type LaptopBidPayment = {
+  applicationFeeId: string | null;
+  applicationFeeRefunded: boolean;
+  assetVersion: string | null;
   id: string;
   laptopId: string;
   spotPosition: number;
@@ -68,9 +64,18 @@ export type LaptopBidPayment = {
   previousPaymentIntentId: string | null;
   status: LaptopBidPaymentStatus;
   failureReason: string | null;
+  stripeAccountId: string | null;
+  checkoutParameters: Stripe.Checkout.SessionCreateParams | null;
+  createdAt: string;
+  refundId: string | null;
+  refundStatus: string | null;
+  checkoutRequestVersion: number;
 };
 
 type LaptopBidPaymentRow = {
+  application_fee_id: string | null;
+  application_fee_refunded: boolean;
+  asset_version: string | null;
   id: string;
   laptop_id: string;
   spot_position: number;
@@ -87,6 +92,12 @@ type LaptopBidPaymentRow = {
   previous_payment_intent_id: string | null;
   status: LaptopBidPaymentStatus;
   failure_reason: string | null;
+  stripe_account_id: string | null;
+  checkout_parameters: Stripe.Checkout.SessionCreateParams | null;
+  created_at: string;
+  stripe_refund_id: string | null;
+  refund_status: string | null;
+  checkout_request_version: number;
 };
 
 type SettlePaymentRow = {
@@ -100,10 +111,13 @@ type SettlePaymentRow = {
   bid_id: string | null;
 };
 
-const PAYMENT_COLUMNS = "id,laptop_id,spot_position,bid_amount_cents,deposit_amount_cents,bidder_name,bidder_email,website,x_handle,logo_storage_path,idempotency_key,stripe_checkout_session_id,stripe_payment_intent_id,previous_payment_intent_id,status,failure_reason";
+const PAYMENT_COLUMNS = "application_fee_id,application_fee_refunded,asset_version,id,laptop_id,spot_position,bid_amount_cents,deposit_amount_cents,bidder_name,bidder_email,website,x_handle,logo_storage_path,idempotency_key,stripe_checkout_session_id,stripe_payment_intent_id,previous_payment_intent_id,status,failure_reason,stripe_account_id,checkout_parameters,created_at,stripe_refund_id,refund_status,checkout_request_version";
 
 function mapPayment(row: LaptopBidPaymentRow): LaptopBidPayment {
   return {
+    applicationFeeId: row.application_fee_id,
+    applicationFeeRefunded: row.application_fee_refunded,
+    assetVersion: row.asset_version,
     id: row.id,
     laptopId: row.laptop_id,
     spotPosition: row.spot_position,
@@ -120,50 +134,13 @@ function mapPayment(row: LaptopBidPaymentRow): LaptopBidPayment {
     previousPaymentIntentId: row.previous_payment_intent_id,
     status: row.status,
     failureReason: row.failure_reason,
-  };
-}
-
-export async function getOwnedStripeCampaign(slug: string, owner: AuctionOwnerCredential) {
-  const { data, error } = await getSupabaseAdmin()
-    .from(getLaptopTable("laptops"))
-    .select("id,slug,owner_email,owner_user_id,manager_key_hash,title,auction_closes_at,status,stripe_account_id,stripe_charges_enabled,stripe_payouts_enabled")
-    .eq("slug", slug.toLowerCase())
-    .maybeSingle();
-  if (error) throw error;
-  if (!data) return null;
-  const row = data as LaptopPaymentRow;
-  const ownedByUser = Boolean(owner.ownerUserId && row.owner_user_id === owner.ownerUserId);
-  const ownedByManager = Boolean(
-    row.manager_key_hash
-    && owner.managerKeyHashCandidates.includes(row.manager_key_hash),
-  );
-  if (!ownedByUser && !ownedByManager) return null;
-  return {
-    id: row.id,
-    slug: row.slug,
-    title: row.title,
     stripeAccountId: row.stripe_account_id,
-    chargesEnabled: row.stripe_charges_enabled,
-    payoutsEnabled: row.stripe_payouts_enabled,
-  } satisfies StripeCampaignAccount;
-}
-
-export async function setStripeCampaignAccount(
-  laptopId: string,
-  accountId: string,
-  chargesEnabled: boolean,
-  payoutsEnabled: boolean,
-) {
-  const { error } = await getSupabaseAdmin()
-    .from(getLaptopTable("laptops"))
-    .update({
-      stripe_account_id: accountId,
-      stripe_charges_enabled: chargesEnabled,
-      stripe_payouts_enabled: payoutsEnabled,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", laptopId);
-  if (error) throw error;
+    checkoutParameters: row.checkout_parameters,
+    createdAt: row.created_at,
+    refundId: row.stripe_refund_id,
+    refundStatus: row.refund_status,
+    checkoutRequestVersion: row.checkout_request_version,
+  };
 }
 
 export async function updateCampaignsForStripeAccount(
@@ -180,6 +157,13 @@ export async function updateCampaignsForStripeAccount(
     })
     .eq("stripe_account_id", accountId);
   if (error) throw error;
+}
+
+export async function hasCampaignForStripeAccount(accountId: string) {
+  const { data, error } = await getSupabaseAdmin().from(getLaptopTable("laptops"))
+    .select("id").eq("stripe_account_id", accountId).limit(1);
+  if (error) throw error;
+  return Boolean(data?.length);
 }
 
 export async function getStripeBidContext(
@@ -228,6 +212,7 @@ export async function getStripeBidContext(
 }
 
 export type CreateBidPaymentInput = {
+  assetVersion?: string | null;
   laptopId: string;
   spotPosition: number;
   bidAmountCents: number;
@@ -238,6 +223,7 @@ export type CreateBidPaymentInput = {
   xHandle: string | null;
   logoStoragePath: string | null;
   idempotencyKey: string;
+  stripeAccountId: string;
 };
 
 export async function createOrGetBidPayment(input: CreateBidPaymentInput) {
@@ -254,6 +240,7 @@ export async function createOrGetBidPayment(input: CreateBidPaymentInput) {
     const { data, error } = await supabase
       .from(getLaptopBidPaymentTable())
       .insert({
+        asset_version: input.assetVersion ?? null,
         laptop_id: input.laptopId,
         spot_position: input.spotPosition,
         bid_amount_cents: input.bidAmountCents,
@@ -264,18 +251,28 @@ export async function createOrGetBidPayment(input: CreateBidPaymentInput) {
         x_handle: input.xHandle,
         logo_storage_path: input.logoStoragePath,
         idempotency_key: input.idempotencyKey,
+        stripe_account_id: input.stripeAccountId,
       })
       .select(PAYMENT_COLUMNS)
       .single();
     if (error) {
-      if (error.code === "23505") return createOrGetBidPayment(input);
+      if (error.code === "23505") {
+        // Only an idempotency race is recoverable; never recursively retry an
+        // unrelated uniqueness violation indefinitely.
+        const existing = await getBidPaymentByIdempotencyKey(input.idempotencyKey);
+        if (existing) return assertPaymentMatches(existing, input);
+      }
       throw error;
     }
     row = data as LaptopBidPaymentRow;
   }
 
-  const payment = mapPayment(row);
+  return assertPaymentMatches(mapPayment(row), input);
+}
+
+export function assertPaymentMatches(payment: LaptopBidPayment, input: Omit<CreateBidPaymentInput, "stripeAccountId">) {
   const matches = payment.laptopId === input.laptopId
+    && payment.assetVersion === (input.assetVersion ?? null)
     && payment.spotPosition === input.spotPosition
     && payment.bidAmountCents === input.bidAmountCents
     && payment.depositAmountCents === input.depositAmountCents
@@ -288,6 +285,23 @@ export async function createOrGetBidPayment(input: CreateBidPaymentInput) {
   return payment;
 }
 
+export async function getBidPaymentByIdempotencyKey(key: string) {
+  const { data, error } = await getSupabaseAdmin().from(getLaptopBidPaymentTable())
+    .select(PAYMENT_COLUMNS).eq("idempotency_key", key).maybeSingle();
+  if (error) throw error;
+  return data ? mapPayment(data as LaptopBidPaymentRow) : null;
+}
+
+export async function saveCheckoutParameters(paymentId: string, parameters: Stripe.Checkout.SessionCreateParams) {
+  const { data, error } = await getSupabaseAdmin().from(getLaptopBidPaymentTable())
+    .update({ checkout_parameters: parameters }).eq("id", paymentId).is("checkout_parameters", null)
+    .select(PAYMENT_COLUMNS).maybeSingle();
+  if (error) throw error;
+  const payment = data ? mapPayment(data as LaptopBidPaymentRow) : await getBidPaymentById(paymentId);
+  if (!payment?.checkoutParameters) throw new Error("Checkout parameters were not saved.");
+  return payment.checkoutParameters;
+}
+
 export async function attachCheckoutSession(paymentId: string, checkoutSessionId: string) {
   const { data, error } = await getSupabaseAdmin()
     .from(getLaptopBidPaymentTable())
@@ -298,7 +312,9 @@ export async function attachCheckoutSession(paymentId: string, checkoutSessionId
     .maybeSingle();
   if (error) throw error;
   if (data) return mapPayment(data as LaptopBidPaymentRow);
-  return getBidPaymentById(paymentId);
+  const existing = await getBidPaymentById(paymentId);
+  if (!existing || existing.checkoutSessionId !== checkoutSessionId) throw new Error("Checkout attachment conflict.");
+  return existing;
 }
 
 export async function getBidPaymentById(paymentId: string) {
@@ -331,12 +347,19 @@ export async function getStripeAuctionForPayment(laptopId: string) {
   return data as { stripe_account_id: string | null; slug: string } | null;
 }
 
+export async function getStripeAuctionBySlug(slug: string) {
+  const { data, error } = await getSupabaseAdmin().from(getLaptopTable("laptops"))
+    .select("stripe_account_id,slug").eq("slug", slug.toLowerCase()).maybeSingle();
+  if (error) throw error;
+  return data as { stripe_account_id: string | null; slug: string } | null;
+}
+
 export async function markBidPaymentPaid(
   paymentId: string,
   checkoutSessionId: string,
   paymentIntentId: string,
 ) {
-  const { error } = await getSupabaseAdmin()
+  const { data, error } = await getSupabaseAdmin()
     .from(getLaptopBidPaymentTable())
     .update({
       stripe_checkout_session_id: checkoutSessionId,
@@ -346,20 +369,73 @@ export async function markBidPaymentPaid(
       updated_at: new Date().toISOString(),
     })
     .eq("id", paymentId)
-    .in("status", ["pending", "paid"]);
+    .eq("stripe_checkout_session_id", checkoutSessionId)
+    .in("status", ["pending", "paid"])
+    .select(PAYMENT_COLUMNS).maybeSingle();
+  if (error) throw error;
+  return data ? mapPayment(data as LaptopBidPaymentRow) : getBidPaymentById(paymentId);
+}
+
+export async function expirePendingPayment(paymentId: string) {
+  const { data, error } = await getSupabaseAdmin().from(getLaptopBidPaymentTable())
+    .update({ status: "expired", failure_reason: "checkout_expired", updated_at: new Date().toISOString() })
+    .eq("id", paymentId).eq("status", "pending").select("id").maybeSingle();
+  if (error) throw error;
+  return Boolean(data);
+}
+
+export async function recordRefund(paymentId: string, refund: Stripe.Refund) {
+  const succeeded = refund.status === "succeeded";
+  const { error } = await getSupabaseAdmin().from(getLaptopBidPaymentTable())
+    .update({ stripe_refund_id: refund.id, refund_status: refund.status,
+      status: succeeded ? "refunded" : "refund_pending", updated_at: new Date().toISOString() })
+    .eq("id", paymentId).eq("status", "refund_pending");
   if (error) throw error;
 }
 
-export async function markBidPaymentStatus(
-  paymentId: string,
-  status: LaptopBidPaymentStatus,
-  failureReason: string | null = null,
-) {
-  const { error } = await getSupabaseAdmin()
-    .from(getLaptopBidPaymentTable())
-    .update({ status, failure_reason: failureReason, updated_at: new Date().toISOString() })
-    .eq("id", paymentId);
+export async function recordApplicationFee(paymentId: string, feeId: string, refunded: boolean) {
+  const { data, error } = await getSupabaseAdmin().from(getLaptopBidPaymentTable()).update({
+    application_fee_id: feeId,
+    ...(refunded ? { application_fee_refunded: true, application_fee_refunded_at: new Date().toISOString() } : {}),
+  }).eq("id", paymentId).eq("status", "refunded").select("id").maybeSingle();
   if (error) throw error;
+  if (!data) throw new Error("Application fee recovery requires a confirmed customer refund.");
+}
+
+export async function compensateLatePayment(paymentId: string, intentId: string) {
+  const { error } = await getSupabaseAdmin().from(getLaptopBidPaymentTable())
+    .update({ status: "refund_pending", stripe_payment_intent_id: intentId, failure_reason: "payment_rejected", updated_at: new Date().toISOString() })
+    .eq("id", paymentId).in("status", ["expired", "failed"]);
+  if (error) throw error;
+}
+
+export type PaymentRecoveryWork = LaptopBidPayment & { leaseToken: string; attempts: number };
+
+export async function claimPaymentWork(kind: "payment" | "refund", scope: { laptopId?: string; paymentId?: string } = {}): Promise<PaymentRecoveryWork | null> {
+  const { data, error } = await getSupabaseAdmin().rpc(`${getDatabasePrefix()}_claim_payment_work`, {
+    p_kind: kind, p_laptop_id: scope.laptopId ?? null, p_payment_id: scope.paymentId ?? null,
+  });
+  if (error) throw error;
+  if (!data) return null;
+  return { ...mapPayment(data), leaseToken: data.reconcile_token, attempts: data.reconcile_attempts };
+}
+
+export async function finishPaymentWork(work: PaymentRecoveryWork, errorCode: string | null, retrySeconds = 60) {
+  const delay = errorCode ? Math.min(3600, 60 * 2 ** Math.min(work.attempts - 1, 6)) : retrySeconds;
+  const { error } = await getSupabaseAdmin().from(getLaptopBidPaymentTable()).update({
+    reconcile_after: new Date(Date.now() + delay * 1000).toISOString(), reconcile_last_error: errorCode,
+    reconcile_token: null, reconcile_lease_until: null,
+  }).eq("id", work.id).eq("reconcile_token", work.leaseToken);
+  if (error) throw error;
+}
+
+export async function listRefundPendingPayments(laptopId?: string, limit = 50) {
+  let query = getSupabaseAdmin().from(getLaptopBidPaymentTable())
+    .select(PAYMENT_COLUMNS).eq("status", "refund_pending").order("updated_at", { ascending: true }).limit(limit);
+  if (laptopId) query = query.eq("laptop_id", laptopId);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data as LaptopBidPaymentRow[]).map(mapPayment);
 }
 
 export async function settleLaptopBidPayment(paymentId: string) {

@@ -35,6 +35,18 @@ test("different file contents are distinct even when metadata is unchanged", asy
   assert.notEqual((await preparePublishAttempt(form, "owner", 7, first)).idempotencyKey, first.idempotencyKey);
 });
 
+test("publication identity is stable across login-token refresh but not account switches", async () => {
+  const form = new FormData(); form.set("title", "Token refresh regression");
+  const firstSession = { user: { id: "same-user" }, access_token: "first-token" };
+  const refreshedSession = { user: { id: "same-user" }, access_token: "refreshed-token" };
+  const first = await preparePublishAttempt(form, `user:${firstSession.user.id}`, 7, null);
+  const retry = await preparePublishAttempt(form, `user:${refreshedSession.user.id}`, 7, first);
+  assert.deepEqual(retry, first);
+  assert.notEqual((await preparePublishAttempt(form, "user:other-user", 7, first)).idempotencyKey, first.idempotencyKey);
+  assert.ok(!JSON.stringify(retry).includes(firstSession.access_token));
+  assert.ok(!JSON.stringify(retry).includes(refreshedSession.access_token));
+});
+
 test("recovery storage preserves legacy keys and never resurrects removed entries", () => {
   const saved = new Map();
   globalThis.window = Object.assign(new EventTarget(), { localStorage: {

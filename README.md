@@ -109,6 +109,14 @@ In **Project Settings > Environment Variables**, configure:
 | `NEXT_PUBLIC_SITE_URL` | `https://brand-anything.vercel.app` | Production, Preview, Development |
 | `SUPABASE_DATABASE_PREFIX` | `ba_prod` | Production only |
 | `SUPABASE_DATABASE_PREFIX` | `ba_dev` | Preview and Development only |
+| `STRIPE_SECRET_KEY` | Live secret/restricted key | Production only |
+| `STRIPE_SECRET_KEY` | Test secret/restricted key | Preview and Development only |
+| `STRIPE_CONNECT_WEBHOOK_SECRET` | Connected-account snapshot endpoint signing secret | Separate value per endpoint/environment |
+| `CRON_SECRET` | Strong random server-only reconciliation bearer secret | Production; optional manual recovery elsewhere |
+
+See [Stripe setup, local tests and recovery operations](docs/local-stripe-sandbox-testing.md).
+Database namespace and Stripe mode mismatches fail closed. Publishing an auction
+does not enable bidding until its owner completes Stripe Connect from `/manage`.
 
 X sign-in is never inferred from the Vercel environment name. `/sell` asks `/api/auth/x-status`, which reads the optional X provider status from Supabase Auth without blocking Email/Password sign-in. The X OAuth client ID and client secret belong only in **Supabase Dashboard > Authentication > Sign In / Providers**, never in the app's environment variables. The browser caches an availability result for ten minutes.
 

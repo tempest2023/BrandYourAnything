@@ -46,6 +46,9 @@ type AuctionView = {
 };
 
 type ApiPayload = {
+  closed?: boolean;
+  requiresCountry?: boolean;
+  countries?: string[];
   auction?: AuctionSummary;
   auctions?: AuctionSummary[];
   error?: string;
@@ -111,6 +114,8 @@ export function ManageAuctions() {
   const [importSlug, setImportSlug] = useState("");
   const [importCode, setImportCode] = useState("");
   const [unsavedRecovery, setUnsavedRecovery] = useState<{ slug: string; code: string } | null>(null);
+  const [stripeCountries, setStripeCountries] = useState<Record<string, string[]>>({});
+  const [stripeCountry, setStripeCountry] = useState<Record<string, string>>({});
 
   const refreshBrowserAuctions = useCallback(async (saved = loadManagedAuctions()) => {
     const version = ++browserRequest.current;
@@ -390,9 +395,16 @@ export function ManageAuctions() {
     try {
       const payload = await readPayload(await fetch(`/api/auctions/${encodeURIComponent(view.auction.slug)}/stripe/connect`, {
         method,
-        headers,
+        headers: { ...headers, ...(method === "POST" ? { "Content-Type": "application/json" } : {}) },
+        ...(method === "POST" ? { body: JSON.stringify({ country: stripeCountry[view.auction.slug] || undefined }) } : {}),
       }));
-      if (payload.ready) {
+      if (payload.requiresCountry && payload.countries) {
+        setStripeCountries((current) => ({ ...current, [view.auction.slug]: payload.countries! }));
+        setFeedback("Choose the country where your business is legally based, then continue Stripe setup.");
+      } else if (payload.closed) {
+        await Promise.all([refreshBrowserAuctions(), refreshAccountAuctions(accessToken)]);
+        setError("The connected Stripe account is closed. Contact support before reconnecting.");
+      } else if (payload.ready) {
         await Promise.all([refreshBrowserAuctions(), refreshAccountAuctions(accessToken)]);
         setFeedback("Stripe payments are ready.");
       } else if (payload.onboardingUrl) {
@@ -408,7 +420,7 @@ export function ManageAuctions() {
     } finally {
       setBusySlug(null);
     }
-  }, [accessToken, refreshAccountAuctions, refreshBrowserAuctions]);
+  }, [accessToken, refreshAccountAuctions, refreshBrowserAuctions, stripeCountry]);
 
   useEffect(() => {
     if (!authReady || loadingBrowser || loadingAccount || handledReturn.current) return;
@@ -536,6 +548,16 @@ export function ManageAuctions() {
                     <i data-ready={view.auction.paymentsEnabled} aria-hidden="true" />
                   </div>
                   <div className={styles.rowActions}>
+                    {stripeCountries[view.auction.slug] && !view.auction.stripeConnected && (
+                      <label className={styles.countryField}>
+                        Business country
+                        <select value={stripeCountry[view.auction.slug] || ""} disabled={busySlug === view.auction.slug}
+                          onChange={(event) => setStripeCountry((current) => ({ ...current, [view.auction.slug]: event.target.value }))}>
+                          <option value="">Choose your country</option>
+                          {stripeCountries[view.auction.slug].map((country) => <option key={country} value={country}>{new Intl.DisplayNames(["en"], { type: "region" }).of(country) || country}</option>)}
+                        </select>
+                      </label>
+                    )}
                     <Link href={auctionPath(view.auction.slug)}>Open</Link>
                     {view.auction.stripeConnected && (
                       <button type="button" disabled={Boolean(busySlug)} onClick={() => void connectStripe(view, "GET")}>Refresh Stripe status</button>

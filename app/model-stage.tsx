@@ -20,17 +20,20 @@ import {
   type SurfaceVector,
 } from "@/lib/surface-spots";
 import styles from "./model-stage.module.css";
+import { useI18n } from "@/app/i18n-provider";
 
 export type ModelStageSpot = {
   id: number;
   holder?: string;
   bids?: number;
+  disabled?: boolean;
   position?: SurfaceVector;
   normal?: SurfaceVector;
 };
 
 type ModelStageProps = {
   sourceUrl: string;
+  sourceKey?: string;
   format?: BrandModelFormat;
   label: string;
   className?: string;
@@ -277,6 +280,7 @@ function analyzeModelSurface(root: THREE.Object3D, profile: SurfacePlacementProf
 
 export function ModelStage({
   sourceUrl,
+  sourceKey,
   format,
   label,
   className = "",
@@ -298,7 +302,12 @@ export function ModelStage({
   const onPlaceSpotRef = useRef(onPlaceSpot);
   const onPlacementErrorRef = useRef(onPlacementError);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const { t } = useI18n();
+  const [retry, setRetry] = useState(0);
+  const sourceUrlRef = useRef(sourceUrl);
+  const sourceIdentity = sourceKey ?? sourceUrl;
   const resolvedFormat = format || getBrandModelFormat(sourceUrl) || "glb";
+  useEffect(() => { sourceUrlRef.current = sourceUrl; }, [sourceUrl]);
 
   useEffect(() => { spotsRef.current = spots; }, [spots]);
   useEffect(() => { selectedSpotIdRef.current = selectedSpotId; }, [selectedSpotId]);
@@ -309,6 +318,7 @@ export function ModelStage({
 
   useEffect(() => {
     const mount = mountRef.current;
+    const sourceUrl = sourceUrlRef.current;
     if (!mount || !sourceUrl) return;
 
     let disposed = false;
@@ -502,7 +512,7 @@ export function ModelStage({
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [placementProfile, resolvedFormat, sourceUrl]);
+  }, [placementProfile, resolvedFormat, sourceIdentity, retry]);
 
   return (
     <div className={`${styles.stage} ${editing ? styles.editing : ""} ${className}`} role={editing || onSelectSpot ? "group" : "img"} aria-label={label}>
@@ -512,6 +522,7 @@ export function ModelStage({
         <div className={styles.error} role="status">
           <strong>This {resolvedFormat.toUpperCase()} model could not be previewed.</strong>
           <span>Use one self-contained file without missing textures or companion files.</span>
+          <button type="button" onClick={() => setRetry((value) => value + 1)}>{t("laptop.retryModel")}</button>
         </div>
       )}
       {status === "ready" && (
@@ -528,6 +539,7 @@ export function ModelStage({
               else markerRefs.current.delete(spot.id);
             }}
             type="button"
+            disabled={spot.disabled || !onSelectSpot}
             className={`${styles.marker} ${claimed ? styles.claimed : ""} ${selectedSpotId === spot.id ? styles.selected : ""}`}
             style={spot.position ? undefined : { left: `${fallback[0]}%`, top: `${fallback[1]}%` }}
             onClick={() => onSelectSpot?.(spot.id)}

@@ -15,6 +15,7 @@ export const runtime = "nodejs";
 const MODEL_PATH_PATTERN = /^([a-f0-9]{16})\/([a-f0-9-]{36})-[a-zA-Z0-9_-]+\.(?:glb|gltf|obj|fbx|stl|ply)$/i;
 
 type ModelRepairRequest = {
+  expectedAssetVersion?: unknown;
   assetName?: unknown;
   path?: unknown;
   fileName?: unknown;
@@ -34,14 +35,17 @@ export async function PUT(
     const owner = await getPublishingOwnerCredential(request);
     const { slug } = await context.params;
     const body = await request.json() as ModelRepairRequest;
+    if (!body || typeof body !== "object" || Array.isArray(body)) return Response.json({ error: "Invalid model repair request." }, { status: 400 });
     const assetName = typeof body.assetName === "string" ? body.assetName.trim() : "";
     const path = typeof body.path === "string" ? body.path.trim() : "";
     const fileName = typeof body.fileName === "string" ? body.fileName.trim() : "";
     const size = typeof body.size === "number" ? body.size : Number.NaN;
     const uploadClaim = typeof body.uploadClaim === "string" ? body.uploadClaim.trim() : "";
     const pathMatch = path.match(MODEL_PATH_PATTERN);
+    const expectedAssetVersion = body.expectedAssetVersion;
 
-    if (assetName.length < 2
+    if ((expectedAssetVersion !== null && (typeof expectedAssetVersion !== "string" || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(expectedAssetVersion)))
+      || assetName.length < 2
       || assetName.length > 80
       || !pathMatch
       || !fileName
@@ -70,6 +74,7 @@ export async function PUT(
     }
 
     const auction = await attachOwnedCampaignModel(slug, owner, {
+      expectedAssetVersion,
       assetName,
       modelStoragePath: path,
       modelFileName: fileName,
@@ -89,6 +94,12 @@ export async function PUT(
         { error: "This auction already has bids, so its advertised object can no longer be changed." },
         { status: 409 },
       );
+    }
+    if (error instanceof Error && error.message === "auction_model_locked_by_payments") {
+      return Response.json({ error: "A bidder is checking out. The advertised object cannot change until pending payments are resolved." }, { status: 409 });
+    }
+    if (error instanceof Error && error.message === "auction_asset_changed") {
+      return Response.json({ error: "The auction model changed. Refresh it before starting another repair." }, { status: 409 });
     }
     if (error instanceof SyntaxError) return Response.json({ error: "Invalid JSON." }, { status: 400 });
     if (error instanceof Error && error.message === "auction_closed") return Response.json({ error: "A closed auction cannot change its object." }, { status: 409 });

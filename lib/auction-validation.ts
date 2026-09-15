@@ -100,9 +100,9 @@ function surfaceVector(value: unknown): SurfaceVector | undefined {
 function parseSpotLayout(formData: FormData, assetType: CampaignAssetType) {
   const layoutCount = Number(requiredText(formData, "layoutCount", 1, 2));
   const minimum = assetType === "anything" ? MIN_SURFACE_SPOTS : 6;
-  const maximum = assetType === "anything" ? MAX_SURFACE_SPOTS : 10;
+  const maximum = assetType === "anything" ? MAX_SURFACE_SPOTS : 11;
   if (!Number.isInteger(layoutCount) || layoutCount < minimum || layoutCount > maximum
-    || (assetType === "laptop" && layoutCount !== 6 && layoutCount !== 10)) {
+    || (assetType === "laptop" && ![6, 7, 10, 11].includes(layoutCount))) {
     throw new AuctionValidationError("Choose a supported number of brand spots.");
   }
   const raw = requiredText(formData, "spotLayout", 2, 12_000);
@@ -118,6 +118,12 @@ function parseSpotLayout(formData: FormData, assetType: CampaignAssetType) {
   return parsed.map((value, index): SpotLayoutItem => {
     if (!value || typeof value !== "object") throw new AuctionValidationError("A spot layout entry is invalid.");
     const spot = value as Record<string, unknown>;
+    const expectsLogoCover = assetType === "laptop" && [7, 11].includes(layoutCount) && index === layoutCount - 1;
+    if ((spot.logoCover === true) !== expectsLogoCover
+      || (spot.logoCover !== undefined && spot.logoCover !== true)
+      || (expectsLogoCover && (!/^mac\b/i.test(String(formData.get("objectName"))) || spot.size !== "L"))) {
+      throw new AuctionValidationError("The logo-cover spot does not match this laptop layout.");
+    }
     const position = surfaceVector(spot.position);
     const normal = surfaceVector(spot.normal);
     const name = typeof spot.name === "string" ? spot.name.trim() : "";
@@ -141,6 +147,7 @@ function parseSpotLayout(formData: FormData, assetType: CampaignAssetType) {
       size: size as SpotLayoutItem["size"],
       dimensions,
       openingBidCents: Number(openingBidCents),
+      ...(expectsLogoCover ? { logoCover: true as const } : {}),
       ...(position && normal ? { position, normal } : {}),
     };
   });
@@ -182,8 +189,6 @@ export function parseAuctionForm(formData: FormData): ParsedAuctionForm {
   const minIncrementCents = cents(formData, "minIncrementCents", 100, 100_000_000);
   const auctionClosesAtInput = requiredText(formData, "auctionClosesAt", 10, 40);
   const auctionClosesAtDate = new Date(auctionClosesAtInput);
-  const minimumClose = Date.now() + 60 * 60 * 1000;
-  const maximumClose = Date.now() + 90 * 24 * 60 * 60 * 1000;
 
   if (!SLUG_PATTERN.test(slug)) {
     throw new AuctionValidationError("URL slug can use lowercase letters, numbers, and single hyphens only.");
@@ -208,10 +213,10 @@ export function parseAuctionForm(formData: FormData): ParsedAuctionForm {
   if (!UUID_PATTERN.test(idempotencyKey)) {
     throw new AuctionValidationError("The creation request is missing a valid idempotency key.");
   }
-  if (!Number.isFinite(auctionClosesAtDate.getTime())
-    || auctionClosesAtDate.getTime() <= minimumClose
-    || auctionClosesAtDate.getTime() > maximumClose) {
-    throw new AuctionValidationError("Auction end must be between one hour and 90 days from now.");
+  // The transaction enforces the 1-hour/90-day window for NEW publications.
+  // An exact retry of a committed request must also work after that window.
+  if (!Number.isFinite(auctionClosesAtDate.getTime())) {
+    throw new AuctionValidationError("Auction end must be a valid date.");
   }
 
   const photoValue = formData.get("photo");

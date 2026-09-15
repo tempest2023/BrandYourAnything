@@ -11,6 +11,7 @@ export type Spot = {
   bid: number;
   minBid: number;
   bids: number;
+  logoCover?: true;
   logo?: string;
   website?: string;
   surfacePosition?: SurfaceVector;
