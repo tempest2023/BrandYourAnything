@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { createClient } from "@supabase/supabase-js";
 import { chromium } from "playwright-core";
 import { buildLocalApp, localAppEnvironment, localStack, startLocalApp } from "./lib/local-stack.mjs";
+import { paymentNoticeChecks } from "./lib/payment-notice-checks.mjs";
 
 const local = localStack();
 const admin = createClient(local.apiUrl, local.secretKey, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -77,6 +78,9 @@ test("auction ownership and public lifecycle on isolated local dev/prod namespac
           await page.getByText("Checkout cancelled. No new bid was placed.").waitFor();
           assert.equal(new URL(page.url()).searchParams.has("payment"), false);
         });
+
+        await t.test("laptop payment-return UI handles every confirmation outcome", (t) =>
+          paymentNoticeChecks(t, { page, baseUrl: app.baseUrl, slug, endpoint, model: false, prefix }));
 
         await t.test("signed model draft previews survive refresh and reject forged claims", async () => {
           const bytes = new TextEncoder().encode("o Preview\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
@@ -154,6 +158,9 @@ test("auction ownership and public lifecycle on isolated local dev/prod namespac
             await page.locator("canvas").screenshot({ path: `/tmp/model-repair-${prefix}.png` });
           } finally { page.off("request", track); }
         });
+
+        await t.test("rendered 3D payment-return UI handles every confirmation outcome", (t) =>
+          paymentNoticeChecks(t, { page, baseUrl: app.baseUrl, slug, endpoint, model: true, prefix }));
 
         const users = [];
         for (let index = 0; index < 2; index++) {

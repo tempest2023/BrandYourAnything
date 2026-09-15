@@ -215,6 +215,17 @@ test("payment service and real local PostgreSQL preserve payment invariants", { 
       assert.equal(fake.state.creates, count + 1);
     });
 
+    await t.test("the disclosed $100 bid example charges $20 and deducts $10, never the full bid", async () => {
+      const f = await fixture();
+      assert.ifError((await admin.from(prefix + "_laptop_spots").update({ opening_bid_cents: 10000 }).eq("laptop_id", f.id)).error);
+      const result = await checkout(f, input(10000));
+      const parameters = fake.state.sessions.get(result.sessionId).params;
+      assert.equal(parameters.line_items[0].price_data.unit_amount, 2000);
+      assert.equal(parameters.payment_intent_data.application_fee_amount, 1000);
+      assert.match(parameters.custom_text.submit.message, /remaining 80% is not collected automatically/);
+      assert.equal((await bids(f)).length, 0, "The deposit must actually be paid before a bid is recorded");
+    });
+
     await t.test("lost Checkout response reuses exact parameters and never deletes/resubmits a conflicting logo", async () => {
       const f = await fixture(); const bid = input(); const count = fake.state.creates;
       fake.state.lostCheckoutResponse = true;
@@ -229,6 +240,20 @@ test("payment service and real local PostgreSQL preserve payment invariants", { 
       assert.equal(uploaded, false);
     });
 
+    await t.test("updated disclosure never changes parameters of a previously reserved Checkout", async () => {
+      const f = await fixture(); const bid = input(); const count = fake.state.creates;
+      const oldCopy = "This is a 20% bid deposit.";
+      const previousRelease = loadTypeScript("lib/stripe-bids.ts", { ...overrides, "@/lib/stripe-bid-repository": {
+        ...repository, saveCheckoutParameters: (id, parameters) => repository.saveCheckoutParameters(id,
+          { ...parameters, custom_text: { submit: { message: oldCopy } } }),
+      } });
+      fake.state.lostCheckoutResponse = true;
+      await assert.rejects(previousRelease.createLaptopBidCheckout(f.slug, bid, null, "http://localhost:3000"), /lost Checkout/);
+      const retry = await checkout(f, bid);
+      assert.equal(fake.state.creates, count + 1);
+      assert.equal(fake.state.sessions.get(retry.sessionId).params.custom_text.submit.message, oldCopy);
+    });
+
     await t.test("20 concurrent confirmations settle once; stale expiry cannot undo a paid bid", async () => {
       const f = await fixture(); const bid = input(); const session = await checkout(f, bid); fake.pay(session.sessionId);
       const results = await Promise.all(Array.from({ length: 20 }, () => service.fulfillCheckoutSession(session.sessionId, f.accountId)));
@@ -236,6 +261,86 @@ test("payment service and real local PostgreSQL preserve payment invariants", { 
       await service.expireCheckoutSession(session.sessionId, f.accountId);
       assert.equal((await repository.getBidPaymentBySessionId(session.sessionId)).status, "accepted");
       const retry = await checkout(f, bid); assert.ok(retry.checkoutUrl.includes("payment=success"));
+    });
+
+    for (const namespace of ["ba_dev", "ba_prod"]) await t.test(`${namespace}: paid concurrency, request isolation and exact maximum`, async (t) => {
+      Object.assign(process.env, { SUPABASE_DATABASE_PREFIX: namespace, ALLOW_LOCAL_PRODUCTION_NAMESPACE: "1" });
+      const spot = async (f, position = 2) => {
+        const result = await admin.from(namespace + "_laptop_spots").select("current_bid_cents,bid_count")
+          .eq("laptop_id", f.id).eq("position", position).single();
+        assert.ifError(result.error); return result.data;
+      };
+      try {
+        await t.test("equal paid bids accept exactly one and refund the loser", async () => {
+          const f = await fixture(namespace);
+          const attempts = await Promise.all([checkout(f, input()), checkout(f, input())]);
+          assert.equal((await bids(f)).length, 0, "Reserving Checkout is not a bid");
+          attempts.forEach((attempt) => fake.pay(attempt.sessionId));
+          await Promise.all(attempts.map((attempt) => service.fulfillCheckoutSession(attempt.sessionId, f.accountId)));
+          await service.reconcilePendingRefunds(f.id);
+          const payments = await Promise.all(attempts.map((attempt) => repository.getBidPaymentBySessionId(attempt.sessionId)));
+          assert.equal(payments.filter((p) => p.status === "accepted").length, 1);
+          const loser = payments.find((p) => p.status === "refunded");
+          assert.ok(loser?.applicationFeeRefunded); assert.equal(loser.failureReason, "bid_too_low");
+          assert.equal((await bids(f)).length, 1);
+          assert.deepEqual(await spot(f), { current_bid_cents: 40000, bid_count: 1 });
+        });
+        await t.test("20 identical Checkout creates and confirmations produce one charge identity and ledger row", async () => {
+          const f = await fixture(namespace); const bid = input(); const count = fake.state.creates;
+          const attempts = await Promise.all(Array.from({ length: 20 }, () => checkout(f, bid)));
+          assert.equal(new Set(attempts.map((attempt) => attempt.sessionId)).size, 1);
+          assert.equal(fake.state.creates, count + 1);
+          assert.equal((await bids(f)).length, 0);
+          fake.pay(attempts[0].sessionId);
+          const results = await Promise.all(attempts.map((attempt) => service.fulfillCheckoutSession(attempt.sessionId)));
+          assert.ok(results.every((result) => result.status === "accepted"));
+          assert.equal((await bids(f)).length, 1);
+          assert.deepEqual(await spot(f), { current_bid_cents: 40000, bid_count: 1 });
+        });
+        await t.test("a key cannot reserve two positions or two auctions; independent keys remain isolated", async () => {
+          for (const crossAuction of [false, true]) {
+            const first = await fixture(namespace); const second = crossAuction ? await fixture(namespace) : first;
+            const position = crossAuction ? 2 : 3;
+            if (!crossAuction) assert.ifError((await admin.from(namespace + "_laptop_spots").insert({ laptop_id: first.id,
+              position, name: "Other spot", size: "L", dimensions: "9 × 5 cm", opening_bid_cents: 40000, min_increment_cents: 1000 })).error);
+            const bid = input(); const count = fake.state.creates;
+            const requests = [{ f: first, bid }, { f: second, bid: { ...bid, spotId: position } }];
+            const results = await Promise.allSettled(requests.map(({ f, bid }) => checkout(f, bid)));
+            assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+            assert.equal(results.find((result) => result.status === "rejected").reason.code, "idempotency_conflict");
+            assert.equal(fake.state.creates, count + 1);
+            const winningIndex = results.findIndex((result) => result.status === "fulfilled");
+            const sessionId = results[winningIndex].value.sessionId;
+            const winner = requests[winningIndex]; const other = requests[1 - winningIndex];
+            fake.pay(sessionId); await service.fulfillCheckoutSession(sessionId, winner.f.accountId);
+            assert.deepEqual(await spot(winner.f, winner.bid.spotId), { current_bid_cents: 40000, bid_count: 1 });
+            assert.deepEqual(await spot(other.f, other.bid.spotId), { current_bid_cents: null, bid_count: 0 });
+            const independent = await checkout(other.f, { ...other.bid, idempotencyKey: randomUUID() });
+            fake.pay(independent.sessionId); await service.fulfillCheckoutSession(independent.sessionId, other.f.accountId);
+            assert.deepEqual(await spot(other.f, other.bid.spotId), { current_bid_cents: 40000, bid_count: 1 });
+            assert.deepEqual(await spot(winner.f, winner.bid.spotId), { current_bid_cents: 40000, bid_count: 1 });
+            for (const table of ["laptop_bid_payments", "laptop_bids"]) {
+              const rows = await admin.from(namespace + "_" + table).select("id").eq("idempotency_key", bid.idempotencyKey);
+              assert.ifError(rows.error); assert.equal(rows.data.length, 1, "One request key creates one reservation and one ledger row across tenants");
+            }
+          }
+        });
+        await t.test("$999999.99 is accepted, larger and fractional-cent bids cannot create Checkout", async () => {
+          const f = await fixture(namespace); const count = fake.state.creates;
+          const { parseBidForm } = loadTypeScript("lib/bid-validation.ts");
+          for (const amount of [100000000, 100000001, 99999999.5]) {
+            const bid = input(amount); const form = new FormData();
+            for (const [name, value] of Object.entries(bid)) if (value !== null) form.set(name, String(value));
+            assert.throws(() => parseBidForm(form));
+            if (Number.isInteger(amount)) await assert.rejects(checkout(f, bid), "SQL must also reject an over-limit reservation");
+          }
+          assert.equal(fake.state.creates, count);
+          const result = await checkout(f, input(99999999)); fake.pay(result.sessionId);
+          assert.equal((await service.fulfillCheckoutSession(result.sessionId, f.accountId)).status, "accepted");
+          assert.deepEqual(await spot(f), { current_bid_cents: 99999999, bid_count: 1 });
+          assert.equal((await bids(f))[0].amount_cents, 99999999);
+        });
+      } finally { process.env.SUPABASE_DATABASE_PREFIX = prefix; }
     });
 
     await t.test("amount, currency, metadata, mode and account mismatches never enter the ledger", async () => {

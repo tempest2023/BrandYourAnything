@@ -76,7 +76,7 @@ function sqlString(value) {
   return `'${value.replaceAll("'", "''")}'`;
 }
 
-function createFixture(container, fixtureSlug) {
+function createFixture(container, fixtureSlug, model = false) {
   const accountRow = sql(
     container,
     "select stripe_account_id || '|' || slug from public.ba_dev_laptops where stripe_account_id is not null limit 1;",
@@ -107,6 +107,10 @@ function createFixture(container, fixtureSlug) {
     )
     select id, 2, 'Marquee — above the logo', 'L', '9.5 × 5.5 cm', 40000, 1000
       from public.ba_dev_laptops where slug = ${sqlString(fixtureSlug)};
+    ${model ? `insert into public.ba_dev_campaign_assets
+      (laptop_id, asset_type, asset_name, model_storage_path, model_file_name, idempotency_key)
+      select id, 'anything', 'Tesla Cybertruck', 'preset:tesla-cybertruck', 'tesla-cybertruck.glb', ${sqlString(randomUUID())}
+      from public.ba_dev_laptops where slug = ${sqlString(fixtureSlug)};` : ""}
     commit;
   `);
   const laptopId = sql(
@@ -286,10 +290,11 @@ async function completeStripeCheckout(page, accountId) {
   await page.goto(returnUrl, { waitUntil: "commit" });
 }
 
-async function placeBid(page, accountId, { amount, brand, email, logo }) {
-  await page.locator(".lid-spot--2").click();
-  const dialog = page.locator("dialog[open]");
-  await dialog.locator("#bid").fill(String(amount));
+async function placeBid(page, accountId, { amount, brand, email, logo }, model = false) {
+  if (model) await page.getByRole("button", { name: /^Spot 2, / }).click();
+  else await page.locator(".lid-spot--2").click();
+  const dialog = model ? page.locator('form:has(input[name="brandName"])') : page.locator("dialog[open]");
+  await dialog.locator('input[type="number"]').fill(String(amount));
   await dialog.locator('input[name="brandName"]').fill(brand);
   await dialog.locator('input[name="email"]').fill(email);
   await dialog.locator('input[name="website"]').fill(`https://${brand.toLowerCase().replaceAll(" ", "-")}.example.com`);
@@ -298,7 +303,7 @@ async function placeBid(page, accountId, { amount, brand, email, logo }) {
   try {
     await completeStripeCheckout(page, accountId);
   } catch (error) {
-    const formError = await dialog.locator(".bid-error").textContent().catch(() => null);
+    const formError = await dialog.locator('[role="alert"], .bid-error').textContent().catch(() => null);
     throw new Error(
       `Checkout navigation failed at ${page.url()}${formError ? `: ${formError}` : ""}. ${error instanceof Error ? error.message : error}`,
       { cause: error },
@@ -373,13 +378,17 @@ async function cleanupFixture(local, container, fixture) {
   removeFixture(container, fixtureSlug);
 }
 
-for (const manualCustomerRefund of [false, true]) test(`homepage Stripe Bid → Outbid flow (${manualCustomerRefund ? "adopt manual customer refund" : "automatic full refund"})`, { timeout: 300_000 }, async () => {
+for (const { manualCustomerRefund, model } of [
+  { manualCustomerRefund: false, model: false },
+  { manualCustomerRefund: true, model: false },
+  { manualCustomerRefund: false, model: true },
+]) test(`${model ? "3D" : "homepage"} Stripe Bid → Outbid flow (${manualCustomerRefund ? "adopt manual customer refund" : "automatic full refund"})`, { timeout: 300_000 }, async () => {
   const fixtureSlug = `stripe-e2e-${randomUUID().slice(0, 8)}`;
   const local = localSupabaseEnvironment();
   // NEXT_PUBLIC_* values are frozen during build, not at next start.
   await buildLocalApp({ ...localAppEnvironment(local), STRIPE_SECRET_KEY: stripeKey });
   const container = databaseContainer();
-  const fixture = createFixture(container, fixtureSlug);
+  const fixture = createFixture(container, fixtureSlug, model);
   const port = await reservePort();
   const baseUrl = `http://127.0.0.1:${port}`;
   let listener;
@@ -396,7 +405,12 @@ for (const manualCustomerRefund of [false, true]) test(`homepage Stripe Bid → 
     const page = await context.newPage();
     await page.goto(`${baseUrl}/${fixtureSlug}`, { waitUntil: "domcontentloaded" });
     const actionButton = page.locator(".spots-table .outbid-button");
-    const bidButtonBackground = await actionButton.evaluate((button) => getComputedStyle(button).backgroundColor);
+    if (model) {
+      await page.getByText("Drag to orbit · scroll to zoom", { exact: true }).waitFor();
+      assert.equal(await page.locator("canvas").count(), 1);
+      assert.equal(await page.locator(".mac-lid").count(), 0);
+    }
+    const bidButtonBackground = model ? null : await actionButton.evaluate((button) => getComputedStyle(button).backgroundColor);
 
     await placeBid(page, fixture.accountId, {
       amount: 400,
@@ -407,14 +421,21 @@ for (const manualCustomerRefund of [false, true]) test(`homepage Stripe Bid → 
         mimeType: "image/png",
         buffer: readFileSync(`${projectRoot}/public/logo-small.png`),
       },
-    });
+    }, model);
+    await page.locator(".payment-notice--accepted").waitFor();
+    assert.equal(new URL(page.url()).searchParams.has("session_id"), false);
     await expectEventually("first paid bid should render on spot 2", async () => {
+      if (model) {
+        assert.equal(await page.getByRole("button", { name: "Spot 2, held by Alpha Brand", exact: true }).count(), 1);
+        assert.match(await page.locator('form:has(input[name="brandName"])').innerText(), /Alpha Brand.*\$400/);
+        return;
+      }
       const text = await page.locator(".lid-spot--2").innerText();
       assert.match(text, /Alpha Brand/);
       assert.match(text, /Outbid/);
       assert.match(text, /\$400/);
     });
-    await expectEventually("Outbid should use a distinct action color", async () => {
+    if (!model) await expectEventually("Outbid should use a distinct action color", async () => {
       assert.equal(await actionButton.textContent(), "Outbid");
       assert.equal(await actionButton.evaluate((button) => button.classList.contains("outbid-button--outbid")), true);
       assert.notEqual(
@@ -422,7 +443,13 @@ for (const manualCustomerRefund of [false, true]) test(`homepage Stripe Bid → 
         bidButtonBackground,
       );
     });
-    await expectEventually("the winning logo should load through Next.js image optimization", async () => {
+    await expectEventually("the winning logo should remain accessible after payment", async () => {
+      if (model) {
+        const snapshot = await (await page.request.get(`${baseUrl}/api/auctions/${fixtureSlug}`)).json();
+        assert.ok(snapshot.spots[0].logo);
+        assert.equal((await page.request.get(snapshot.spots[0].logo)).status(), 200);
+        return;
+      }
       const logo = page.locator('.lid-spot--2 img[alt="Alpha Brand"]');
       assert.equal(await logo.count(), 1);
       const state = await logo.evaluate((image) => ({
@@ -444,6 +471,8 @@ for (const manualCustomerRefund of [false, true]) test(`homepage Stripe Bid → 
       { stripeAccount: fixture.accountId },
     );
     assert.ok(firstSession.success_url.startsWith(`${baseUrl}/${fixtureSlug}?payment=success`));
+    assert.equal(firstSession.amount_total, 8000, "A $400 bid collects only the $80 deposit");
+    assert.match(firstSession.custom_text.submit.message, /remaining 80% is not collected automatically/);
 
     if (manualCustomerRefund) {
       // Simulate a seller refunding only the customer's deposit before the
@@ -464,17 +493,23 @@ for (const manualCustomerRefund of [false, true]) test(`homepage Stripe Bid → 
       amount: 410,
       brand: "Beta Brand",
       email: "beta-stripe-e2e@example.com",
-    });
+    }, model);
     await expectEventually("outbid winner should replace the spot holder", async () => {
+      if (model) {
+        assert.equal(await page.getByRole("button", { name: "Spot 2, held by Beta Brand", exact: true }).count(), 1);
+        assert.match(await page.locator('form:has(input[name="brandName"])').innerText(), /Beta Brand.*\$410/);
+        return;
+      }
       const text = await page.locator(".lid-spot--2").innerText();
       assert.match(text, /Beta Brand/);
       assert.match(text, /Outbid/);
       assert.match(text, /\$410/);
     });
 
-    const historyTab = page.getByRole("tab", { name: /History \(2\)/ });
-    await historyTab.click();
-    const history = await page.locator(".history-list").innerText();
+    if (!model) await page.getByRole("tab", { name: /History \(2\)/ }).click();
+    const history = await (model
+      ? page.locator("section").filter({ has: page.getByRole("heading", { name: "Bid history", exact: true }) })
+      : page.locator(".history-list")).innerText();
     assert.match(history, /Alpha Brand/);
     assert.match(history, /Beta Brand/);
     assert.match(history, /\$400/);
@@ -500,6 +535,16 @@ for (const manualCustomerRefund of [false, true]) test(`homepage Stripe Bid → 
     const retainedLogo = await storage.from("ba_dev_bid_logos").download(rows[0].logo_storage_path);
     assert.ifError(retainedLogo.error);
     assert.ok(retainedLogo.data.size > 0, "Outbid must not delete an accepted bid's historical logo.");
+    // The first bidder's real return link now reflects a verified refund, not
+    // stale success. This exercises both public renderers without HTTP mocks.
+    await page.goto(firstSession.success_url.replace("{CHECKOUT_SESSION_ID}", firstSession.id), { waitUntil: "domcontentloaded" });
+    await page.locator(".payment-notice--refunded").waitFor();
+    assert.equal(new URL(page.url()).searchParams.has("session_id"), false);
+    if (model) {
+      await page.getByText("Drag to orbit · scroll to zoom", { exact: true }).waitFor();
+      assert.equal(await page.getByRole("button", { name: "Spot 2, held by Beta Brand", exact: true }).count(), 1);
+      await page.screenshot({ path: "/tmp/stripe-3d-outbid-refunded.png" });
+    } else assert.match(await page.locator(".lid-spot--2").innerText(), /Beta Brand/);
   } catch (error) {
     const diagnostics = [app?.logs(), listener?.logs()].filter(Boolean).join("\n\n");
     if (diagnostics) console.error(diagnostics);

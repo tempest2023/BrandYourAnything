@@ -242,7 +242,7 @@ Reset the local database and replay all migrations:
 supabase db reset
 ```
 
-Run the real concurrency test against local Postgres:
+Run the local PostgreSQL integration and HTTP tests (no database reset required):
 
 ```bash
 npm run test:concurrency
@@ -251,11 +251,11 @@ npm run test:api-e2e
 npm run test:stripe-e2e
 ```
 
-The platform test verifies atomic campaign creation, ten-spot isolation, RLS, equal concurrent bids, simultaneous retries, and cross-tenant idempotency-key reuse. Run it once with `SUPABASE_DATABASE_PREFIX=ba_dev` and once with `ba_prod` when validating both namespaces.
+`test:concurrency` is an alias for `test:payment-core`. `test:laptop-platform` runs the current publication and payment suites. The obsolete unpaid-RPC scripts have been removed. Both commands discover the local Supabase stack and cover both namespaces automatically; they create and clean only their own fixtures, never modify fixed auction spots, and cannot opt into a remote target. Payment tests use a Stripe double with real PostgreSQL, not real card processing. Coverage includes equal paid bids, concurrent Checkout retries, cross-position/cross-auction key conflicts, exact maximum prices, atomic ten-spot premiums, slug conflicts and private-table access by anonymous and authenticated clients.
 
-The API E2E test builds and starts the production Next.js server on a free local port. It verifies the generic auction RPC surface, removed laptop routes, coded error responses, and the complete publish/read/bid flow for a non-laptop object. It creates uniquely named test auctions, so run `supabase db reset` first and use a local Supabase project unless you deliberately set `ALLOW_REMOTE_API_E2E=1`.
+The API E2E test builds with local server/browser credentials and starts production-mode Next.js servers against both local namespaces. It verifies current publication/settlement RPC exposure, removed laptop and unpaid-bid routes, coded publication errors, non-laptop publication/read/retry, environment isolation, and failure without a bid when Stripe is unavailable. It deliberately makes no Stripe calls. The previous remote-target and externally managed-server overrides are no longer supported; each fixture is cleaned after the test.
 
-The Stripe E2E test requires the local Supabase stack, the Stripe CLI, Google Chrome, and a test-mode `STRIPE_SECRET_KEY` whose platform owns the connected account seeded into `ba_dev`. It runs two real test-mode Checkout payments against spot 2, verifies the winner, public bid history, Outbid state, and first-deposit refund, then removes its isolated auction fixture and restores the homepage account. Set `PLAYWRIGHT_CHROME_PATH` when Chrome is installed somewhere other than the standard macOS location.
+The Stripe E2E test requires the local Supabase stack, the Stripe CLI, Google Chrome, and a test-mode `STRIPE_SECRET_KEY` whose platform owns a ready connected account associated with a local `ba_dev` auction. It runs normal Outbid, manual-customer-refund recovery, and rendered 3D auction scenarios, each with two real test-mode Checkout payments against spot 2. It verifies winner/history, loaded logos, distinct Outbid color, customer refunds and platform-fee refunds. It also reopens the losing bidder's original return link and checks the verified refund notice. The 3D variant verifies its form, claimed marker and history; logo availability is checked through the snapshot URL, not a mesh decal. It never changes the original auction's account association. Cleanup verifies fixture refunds before deleting fixture data. Set `PLAYWRIGHT_CHROME_PATH` when Chrome is installed somewhere other than the standard macOS location. See [local Stripe testing and deployment](docs/local-stripe-sandbox-testing.md) for setup and release gates.
 
 ## Follow and support
 

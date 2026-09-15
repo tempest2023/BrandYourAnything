@@ -55,17 +55,23 @@ and a ready test connected account already associated with a local `ba_dev`
 auction. Never attach a live account to a local fixture. The test shares that
 account with an isolated temporary auction; it does not change the original
 auction's account association. It builds with local browser/server credentials,
-runs two isolated scenarios, each paying twice using Stripe's `4242` test card,
+runs three isolated scenarios, each paying twice using Stripe's `4242` test card,
 and checks:
 
 - First payment: return-page settlement without a webhook listener.
 - Second payment: local Stripe listener plus return-page confirmation.
-- Winning placement, both history entries, loaded logo and distinct Bid/Outbid colors.
+- Winning placement and both history entries; laptop scenarios also verify the
+  rendered logo and distinct Bid/Outbid colors.
 - First deposit refunded in Stripe and Supabase, historical logo retained.
 - Platform fee fully refunded and its completion recorded separately. One scenario
   uses normal automatic Outbid refunds; the other first manually refunds the
   customer without the fee, then verifies Outbid adopts that refund and returns
   the fee without refunding the customer twice.
+- The third scenario uses an actually rendered 3D Cybertruck, its own bid form,
+  claimed-spot marker and history. Every scenario revisits the original losing
+  bidder's return link and expects a verified refund notice and the new winner.
+  The 3D view exposes the winning brand through its marker and form; its logo
+  check verifies the downloadable snapshot URL, not a logo decal on the mesh.
 
 Finally it expires open fixture Sessions and verifies successful full refunds
 of remaining fixture deposits and platform fees before removing fixture logos
@@ -74,6 +80,28 @@ database records for reconciliation. Do not reset the whole local database to
 clean up a failed test.
 
 Run browser suites serially: they share the `.next` build directory.
+
+`test:concurrency` aliases `test:payment-core`; `test:laptop-platform` combines
+publication and payment core suites. Their old unpaid-bid scripts were removed,
+not kept as a second write path. The replacement tests cover both local
+namespaces, including equal paid bids, twenty identical Checkout creates,
+cross-position/cross-auction key conflicts, exact upper bounds, ten-position
+premiums and actual anonymous/authenticated table permissions. They discover
+local credentials automatically and have no remote-target override.
+
+`test:api-e2e` similarly discovers the local stack, builds with matching local
+browser/server credentials and runs HTTP publication, retry, removed-route,
+namespace isolation and missing-Stripe checks against both namespaces. It
+cleans only its own auctions. Neither this HTTP suite nor payment doubles
+replace the separate real Stripe E2E requirement.
+
+The management browser suite tests all payment-return states on both the laptop
+and rendered 3D views, in both local namespaces. It injects pending, accepted,
+refund-pending, refunded, expired and failed confirmation responses, HTTP errors,
+network failures, malformed JSON and unknown statuses. It verifies bounded
+automatic retries, explicit rechecks of the same Session, snapshot updates and
+query cleanup without losing unrelated URL parameters. These UI fault tests
+do not make real payments and must not be reported as Stripe-network coverage.
 
 ## Creator Connect setup
 
