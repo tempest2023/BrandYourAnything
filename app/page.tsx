@@ -7,16 +7,20 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AccountNav } from "@/app/auth/account-nav";
 import { useI18n } from "@/app/i18n-provider";
 import { PreferenceControls } from "@/app/preference-controls";
+import { useCheckoutReturn } from "@/app/use-checkout-return";
+import { useAuctionAvailability } from "@/app/use-auction-availability";
+import { AuctionStatus } from "@/app/auction-status";
+import { PaymentNotice } from "@/app/payment-notice";
 import {
   STARTER_HISTORY,
   STARTER_SPOTS,
   type AuctionSnapshot,
-  type PlaceBidResult,
   type Spot,
 } from "@/lib/auction";
 import { formatRelativeTime, SPOT_NAME_KEYS } from "@/lib/i18n";
 import type { Locale } from "@/lib/i18n";
-import type { AuctionCampaign } from "@/lib/campaign-auction";
+import type { AuctionCampaign, AuctionCampaignSnapshot } from "@/lib/campaign-auction";
+import { MAX_BID_AMOUNT_USD } from "@/lib/bid-limits";
 import {
   amountFromUsd,
   amountToUsd,
@@ -27,6 +31,7 @@ import {
   minimumDisplayAmount,
 } from "@/lib/money";
 import type { Currency } from "@/lib/money";
+import { DEFAULT_AUCTION_SLUG } from "@/lib/site";
 
 function compactMoney(amountUsd: number, currency: Currency, locale: Locale) {
   const converted = amountFromUsd(amountUsd, currency);
@@ -106,10 +111,14 @@ function Logo({ spot, compact = false }: { spot: Spot; compact?: boolean }) {
 function MacLid({
   spots,
   showApple = true,
+  canBid,
+  closed,
   onSelect,
 }: {
   spots: Spot[];
   showApple?: boolean;
+  canBid: boolean;
+  closed: boolean;
   onSelect: (spot: Spot) => void;
 }) {
   const { currency, locale, t } = useI18n();
@@ -130,6 +139,7 @@ function MacLid({
             <button
               className={`lid-spot lid-spot--${spot.id} ${hasBid ? "" : "lid-spot--available"}`}
               key={spot.id}
+              disabled={!canBid}
               onClick={() => onSelect(spot)}
               aria-label={hasBid
                 ? t("home.heldSpotAria", { id: spot.id, name: spotName, size: spot.size, holder: spot.holder, amount: money(spot.bid) })
@@ -138,7 +148,7 @@ function MacLid({
               {hasBid ? <Logo spot={spot} /> : <span className="lid-spot-number">{spot.id}</span>}
               {(!hasBid || spot.logo) && <span className="lid-holder">{hasBid ? spot.holder : t("common.available")}</span>}
               <span className="lid-price">{hasBid ? compact(spot.bid) : t("common.starts", { amount: compact(spot.minBid) })}</span>
-              <span className="lid-outbid">{hasBid ? t("common.outbid") : t("common.placeBid")}</span>
+              <span className="lid-outbid">{closed ? t("laptop.closed") : hasBid ? t("common.outbid") : t("common.placeBid")}</span>
             </button>
           );
         })}
@@ -149,34 +159,30 @@ function MacLid({
 
 type BidApiResponse = {
   error?: string;
-  result?: PlaceBidResult;
-  snapshot?: AuctionSnapshot;
+  checkoutUrl?: string;
 };
 
 function BidDialog({
   spot,
   endpoint,
   onClose,
-  onSnapshot,
 }: {
   spot: Spot | null;
   endpoint: string;
   onClose: () => void;
-  onSnapshot: (snapshot: AuctionSnapshot) => void;
 }) {
   const { currency, locale, t } = useI18n();
   const money = (amountUsd: number) => formatCurrency(amountUsd, currency, locale);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const minimumDisplayBid = spot ? minimumDisplayAmount(spot.minBid, currency) : 0;
+  const maximumDisplayBid = Math.floor(amountFromUsd(MAX_BID_AMOUNT_USD, currency) * 100) / 100;
   const bidContext = `${spot?.id ?? "closed"}-${spot?.minBid ?? 0}-${currency}`;
   const [bidInput, setBidInput] = useState(() => ({ context: bidContext, value: String(minimumDisplayBid) }));
   const bid = bidInput.context === bidContext ? bidInput.value : String(minimumDisplayBid);
   const [logoName, setLogoName] = useState("");
-  const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
-  const [acceptedBid, setAcceptedBid] = useState<{ brand: string; amountUsd: number } | null>(null);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -206,19 +212,12 @@ function BidDialog({
     try {
       const response = await fetch(endpoint, { method: "POST", body: formData });
       const payload = await response.json() as BidApiResponse;
-      if (payload.snapshot) onSnapshot(payload.snapshot);
-
-      if (!response.ok || !payload.result?.accepted) {
-        setErrorMessage(t("home.bidError"));
-        if (response.status === 409) setIdempotencyKey(crypto.randomUUID());
+      if (response.ok && payload.checkoutUrl) {
+        window.location.assign(payload.checkoutUrl);
         return;
       }
-
-      setAcceptedBid({
-        brand: String(formData.get("brandName")),
-        amountUsd: amountCents / 100,
-      });
-      setSubmitted(true);
+      setErrorMessage(payload.error || t("home.bidError"));
+      if (response.status === 409) setIdempotencyKey(crypto.randomUUID());
     } catch {
       setErrorMessage(t("home.networkError"));
     } finally {
@@ -233,8 +232,7 @@ function BidDialog({
       {spot && (
         <div className="bid-panel">
           <button className="dialog-close" onClick={onClose} aria-label={t("common.close")}>×</button>
-          {!submitted ? (
-            <form onSubmit={handleSubmit}>
+          <form onSubmit={handleSubmit}>
               <div className="bid-heading">
                 <p className="eyebrow">{t("common.spot")} {spot.id}</p>
                 <h3>{SPOT_NAME_KEYS[spot.id] ? t(SPOT_NAME_KEYS[spot.id]!) : spot.name}</h3>
@@ -254,15 +252,15 @@ function BidDialog({
 
               <label htmlFor="bid">{t("home.yourBid", { currency: currencyDisplayName(currency) })}</label>
               <div className="money-input">
-                <input id="bid" type="number" min={minimumDisplayBid} step="1" value={bid} onChange={(event) => setBidInput({ context: bidContext, value: event.target.value })} required />
+                <input id="bid" type="number" min={minimumDisplayBid} max={maximumDisplayBid} step="0.01" value={bid} onChange={(event) => setBidInput({ context: bidContext, value: event.target.value })} required />
                 <span>{currencySymbol(currency)}</span>
               </div>
               <p className="field-note">{t("home.minimumBid", { amount: money(spot.minBid) })}</p>
 
               <div className="deposit-box">
                 <p><span>{t("home.expectedDeposit", { amount: money(amountUsd) })}</span><span>{money(depositUsd)}</span></p>
-                <p className="due"><span>{t("home.paymentIntegration")}</span><strong>{t("home.notCharged")}</strong></p>
-                <small>{t("home.depositNote")}</small>
+                <p className="due"><span>{t("home.paymentIntegration")}</span><strong>{t("home.stripeCheckout")}</strong></p>
+                <small>{t("home.stripeDepositNote")}</small>
               </div>
 
               <div className="form-grid">
@@ -282,25 +280,19 @@ function BidDialog({
 
               {errorMessage && <p className="bid-error" role="alert">{errorMessage}</p>}
               <button className="primary-button bid-submit" type="submit" disabled={submitting}>
-                {submitting ? t("home.savingBid") : spot.bids > 0 ? `${t("common.outbid")} ${spot.holder}` : t("common.placeFirstBid")}
+                {submitting ? t("home.redirectingCheckout") : t("home.payDeposit")}
               </button>
               <p className="hand-check">{t("home.reviewNote")}</p>
             </form>
-          ) : (
-            <div className="bid-success" role="status">
-              <span>✓</span>
-              <h3>{t("home.bidLive")}</h3>
-              <p>{t("home.bidLiveBody", { brand: acceptedBid?.brand ?? "", amount: money(acceptedBid?.amountUsd ?? spot.bid) })}</p>
-              <button className="primary-button" onClick={onClose}>{t("home.backAuction")}</button>
-            </div>
-          )}
         </div>
       )}
     </dialog>
   );
 }
 
-export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLandingProps) {
+export function AuctionLandingPage({ campaign: initialCampaign, initialSnapshot }: AuctionLandingProps) {
+  const [campaign, setCampaign] = useState(initialCampaign);
+  const { closed, canBid } = useAuctionAvailability(campaign);
   const { currency, locale, t, formatDate } = useI18n();
   const money = (amount: number) => formatCurrency(amount, currency, locale);
   const campaignGoal = campaign?.goal ?? CAMPAIGN_GOAL_USD;
@@ -308,8 +300,8 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
     ? `/api/auctions/${encodeURIComponent(campaign.slug)}`
     : "/api/auction";
   const bidEndpoint = campaign
-    ? `/api/auctions/${encodeURIComponent(campaign.slug)}/bids`
-    : "/api/bids";
+    ? `/api/auctions/${encodeURIComponent(campaign.slug)}/bids/checkout`
+    : `/api/auctions/${DEFAULT_AUCTION_SLUG}/bids/checkout`;
   const isMac = !campaign || /^mac\b/i.test(campaign.objectName);
   const machineImage = campaign?.photoUrl ?? "/macbook.webp";
   const machineAssetKey = campaign && !campaign.photoUrl && !isMac
@@ -326,7 +318,7 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
   const [loadedFinalAssets, setLoadedFinalAssets] = useState<Set<string>>(() => new Set());
   const [failedFinalAssets, setFailedFinalAssets] = useState<Set<string>>(() => new Set());
   const countdown = useCountdown(campaign?.closesAt);
-  const selectedSpot = spots.find((spot) => spot.id === selectedSpotId) ?? null;
+  const selectedSpot = canBid ? spots.find((spot) => spot.id === selectedSpotId) ?? null : null;
   const totalRaised = useMemo(() => spots.reduce((sum, spot) => sum + (spot.bids > 0 ? spot.bid : 0), 0), [spots]);
   const filledSpotCount = useMemo(() => spots.filter((spot) => spot.bids > 0).length, [spots]);
   const availableSpotCount = spots.length - filledSpotCount;
@@ -366,17 +358,19 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
     });
   }, []);
 
-  const applySnapshot = useCallback((snapshot: AuctionSnapshot) => {
+  const applySnapshot = useCallback((snapshot: AuctionCampaignSnapshot) => {
+    setCampaign(snapshot.campaign);
     setSpots(snapshot.spots);
     setHistory(snapshot.history);
     setBackendStatus("live");
   }, []);
+  const paymentState = useCheckoutReturn(applySnapshot, campaign?.slug ?? DEFAULT_AUCTION_SLUG);
 
   const refreshAuction = useCallback(async () => {
     try {
       const response = await fetch(auctionEndpoint, { cache: "no-store" });
       if (!response.ok) throw new Error("Auction API unavailable");
-      applySnapshot(await response.json() as AuctionSnapshot);
+      applySnapshot(await response.json() as AuctionCampaignSnapshot);
     } catch {
       setBackendStatus("offline");
     }
@@ -401,13 +395,12 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
             <span>Brand Anything</span>
           </a>
           <div className="nav-links">
-            <a href="#how">{t("common.how")}</a>
-            <a href="#faq">{t("common.faq")}</a>
-            <a href={CREATE_URL}>{t("common.listLaptop")}</a>
+            <a className="nav-link--how" href="#how">{t("common.how")}</a>
+            <a className="nav-link--faq" href="#faq">{t("common.faq")}</a>
           </div>
           <div className="nav-actions">
             <PreferenceControls />
-            <a className="dark-button" href="#spots">{t("common.getSpot")}</a>
+            <a className="dark-button" href="#spots">{t(closed ? "common.finalResults" : "common.getSpot")}</a>
             <AccountNav />
           </div>
         </div>
@@ -415,10 +408,12 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
 
       <main id="main-content">
         <header className="hero" id="top">
-          <div className="live-visitors"><span />{t("home.auctionOpen")}</div>
-          <p className="total-visits"><span>·</span>{t("home.spotsAvailable", { count: availableSpotCount })}</p>
+          <div className={`live-visitors ${closed ? "live-visitors--closed" : ""}`}><span />{closed ? t("laptop.closed") : t("home.auctionOpen")}</div>
+          {!closed && <p className="total-visits"><span>·</span>{t("home.spotsAvailable", { count: availableSpotCount })}</p>}
           <h1>{campaign?.title ?? t("home.heroTitle")}</h1>
           <p className="hero-subtitle">{campaign?.tagline ?? t("home.heroSubtitle")}</p>
+          <PaymentNotice {...paymentState} />
+          {campaign && (closed || !campaign.paymentsEnabled) && <AuctionStatus closed={closed} />}
 
           <div className="funding">
             <div className="funding-row">
@@ -426,7 +421,7 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
               <p>{t("home.goal", { amount: money(campaignGoal), progress: goalProgress })}</p>
             </div>
             <div className="progress-track"><span style={{ width: `${goalProgress}%` }} /></div>
-            <p className="auction-time">{t("home.auctionEnds", { countdown })} · {filledSpotCount === 0 ? t("home.firstBrand") : t("home.stillOutbid")}</p>
+            <p className="auction-time">{closed ? t("laptop.closed") : `${t("home.auctionEnds", { countdown })} · ${filledSpotCount === 0 ? t("home.firstBrand") : t("home.stillOutbid")}`}</p>
             <p className={`data-status data-status--${backendStatus}`} aria-live="polite">
               <span />{backendStatus === "live" ? t("home.dbLive") : backendStatus === "connecting" ? t("home.dbConnecting") : t("home.dbOffline")}
             </p>
@@ -434,7 +429,7 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
 
           <div className="lid-view">
             <div className={`lid-layer lid-layer--live ${lidView === "live" ? "is-active" : ""}`} aria-hidden={lidView !== "live"}>
-              <MacLid spots={spots} showApple={isMac} onSelect={(spot) => setSelectedSpotId(spot.id)} />
+              <MacLid spots={spots} showApple={isMac} canBid={canBid} closed={closed} onSelect={(spot) => setSelectedSpotId(spot.id)} />
             </div>
             <div className={`lid-layer lid-layer--final ${lidView === "final" && finalLookReady ? "is-active" : ""}`} aria-hidden={lidView !== "final" || !finalLookReady}>
               <div className="final-mac">
@@ -493,7 +488,7 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
             <button className={lidView === "live" ? "active" : ""} aria-pressed={lidView === "live"} onClick={() => setLidView("live")}>{t("common.liveAuction")}</button>
             <button className={lidView === "final" ? "active" : ""} aria-pressed={lidView === "final"} onClick={() => setLidView("final")}>{t("home.finalLook")}</button>
           </div>
-          <p className="lid-caption">{lidView === "live" ? t("home.tapBid") : finalLookFailed ? t("home.incompleteHidden") : !finalLookReady ? t("home.appearWhenReady") : filledSpotCount === 0 ? t("home.cleanSlate") : t("home.finishedLid")}</p>
+          <p className="lid-caption">{closed ? t("common.finalResults") : lidView === "live" ? (canBid ? t("home.tapBid") : t("common.spots")) : finalLookFailed ? t("home.incompleteHidden") : !finalLookReady ? t("home.appearWhenReady") : filledSpotCount === 0 ? t("home.cleanSlate") : t("home.finishedLid")}</p>
 
           <div className="hero-close">
             <p>{campaign?.story ?? t("home.zeroPlaceholders")}</p>
@@ -521,8 +516,8 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
 
         <section className="auction-section" id="spots">
           <div className="section-inner auction-inner">
-            <p className="auction-status"><span />{t("home.auctionStatus", { countdown, available: availableSpotCount, total: spots.length })}</p>
-            <h2>{t("home.auctionTitle")}</h2>
+            <p className="auction-status">{!closed && <span />}{closed ? t("laptop.closed") : t("home.auctionStatus", { countdown, available: availableSpotCount, total: spots.length })}</p>
+            <h2>{t(closed ? "common.finalResults" : "home.auctionTitle")}</h2>
             <p className="section-lead">{t("home.auctionLead")}</p>
             <p className="section-copy">{t("home.auctionPrices", {
               small: money(openingBySize("S", 125)),
@@ -546,7 +541,7 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
                         <td data-label={t("common.size")}><span className={`size-tag size-tag--${spot.size.toLowerCase()}`}>{spot.size}</span>{spot.dimensions}</td>
                         <td data-label={t("common.brand")}>{spot.bids === 0 ? <span className="availability-pill">{t("common.available")}</span> : spot.website ? <a href={spot.website} target="_blank" rel="noreferrer"><Logo spot={spot} compact /></a> : <Logo spot={spot} compact />}</td>
                         <td data-label={spot.bids === 0 ? t("home.startingBid") : t("common.currentBid")}><strong>{compactMoney(spot.bids === 0 ? spot.minBid : spot.bid, currency, locale)}</strong><small>{spot.bids === 0 ? t("common.noBids") : `${spot.bids} ${spot.bids === 1 ? t("common.bid").toLowerCase() : t("common.bids")}`}</small></td>
-                        <td data-label={t("common.action")}><button className="outbid-button" onClick={() => setSelectedSpotId(spot.id)}>{spot.bids === 0 ? t("common.placeBid") : t("common.outbid")}</button></td>
+                        <td data-label={t("common.action")}><button disabled={!canBid} className={`outbid-button ${spot.bids > 0 ? "outbid-button--outbid" : ""}`.trim()} onClick={() => setSelectedSpotId(spot.id)}>{closed ? t("laptop.closed") : spot.bids === 0 ? t("common.placeBid") : t("common.outbid")}</button></td>
                       </tr>
                     ))}
                   </tbody>
@@ -740,7 +735,6 @@ export function AuctionLandingPage({ campaign, initialSnapshot }: AuctionLanding
         spot={selectedSpot}
         endpoint={bidEndpoint}
         onClose={() => setSelectedSpotId(null)}
-        onSnapshot={applySnapshot}
       />
     </>
   );

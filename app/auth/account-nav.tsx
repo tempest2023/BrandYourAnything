@@ -66,7 +66,7 @@ export function AccountNav() {
   const label = userLabel(user, t("auth.accountFallback"));
 
   return (
-    <Link className={styles.avatarLink} href="/auth" aria-label={`${t("common.account")}: ${label}`} title={label}>
+    <Link className={styles.avatarLink} href="/manage" aria-label={`${t("common.manageAuctions")}: ${label}`} title={label}>
       {image ? (
         // OAuth profile images are provided by the authenticated identity at runtime.
         // eslint-disable-next-line @next/next/no-img-element

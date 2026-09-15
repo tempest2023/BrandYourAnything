@@ -132,7 +132,7 @@ p {
 
 .wordmark {
   display: inline-flex;
-  min-width: 0;
+  flex: 0 0 auto;
   align-items: center;
   gap: 0.55rem;
   font-size: 0.93rem;
@@ -148,11 +148,34 @@ p {
 }
 
 .nav-links {
+  container: auction-nav / inline-size;
+  display: flex;
+  min-width: 0;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(0.75rem, 1.2vw, 1.1rem);
+  color: var(--ink-2);
+  font-size: 0.78rem;
+}
+
+.nav-links a {
   display: none;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+@container auction-nav (min-width: 6.5rem) {
+  .nav-links .nav-link--how { display: inline; }
+}
+
+@container auction-nav (min-width: 10.75rem) {
+  .nav-links .nav-link--faq { display: inline; }
 }
 
 .nav-actions {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 0.5rem;
 }
@@ -184,7 +207,7 @@ p {
 
 .language-switch select {
   appearance: none;
-  width: 4rem;
+  width: 5.6rem;
   min-height: 2.3rem;
   border: 1px solid color-mix(in oklch, var(--hairline) 82%, transparent);
   border-radius: 999px;
@@ -1024,6 +1047,31 @@ p {
   font-size: 0.78rem;
   white-space: nowrap;
 }
+
+.outbid-button--outbid {
+  background: var(--ink);
+}
+
+.outbid-button:disabled {
+  background: var(--surface);
+  color: var(--ink-2);
+  cursor: default;
+  transform: none;
+  box-shadow: none;
+}
+
+.lid-spot:disabled { cursor: default; }
+.lid-spot:disabled .lid-outbid { display: none; }
+.payment-notice, .auction-state-notice {
+  margin: 1rem auto;
+  max-width: 42rem;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  background: var(--surface);
+  color: var(--ink);
+}
+.payment-notice--accepted { background: var(--green-soft); }
+.live-visitors--closed > span { background: var(--ink-3); }
 
 .history-row {
   display: grid;
@@ -2094,14 +2142,19 @@ p {
   }
 
   .primary-button:hover,
-  .outbid-button:hover,
+  .outbid-button:not(:disabled):hover,
   .floating-cta:hover {
     background: var(--blue-dark);
     box-shadow: 0 0.75rem 1.8rem oklch(45% 0.17 255 / 0.3);
     transform: translateY(-1px);
   }
 
-  .lid-spot:hover {
+  .outbid-button--outbid:not(:disabled):hover {
+    background: oklch(30% 0.01 255);
+    box-shadow: 0 0.75rem 1.8rem oklch(20% 0.01 255 / 0.22);
+  }
+
+  .lid-spot:not(:disabled):hover {
     z-index: 4;
     border-color: var(--blue);
     background: oklch(99% 0.005 255 / 0.58);
@@ -2175,13 +2228,6 @@ p {
 }
 
 @media (min-width: 48rem) {
-  .nav-links {
-    display: flex;
-    align-items: center;
-    gap: clamp(1.1rem, 2.5vw, 2rem);
-    color: var(--ink-2);
-    font-size: 0.78rem;
-  }
 
   .hero {
     padding-top: 4.25rem;
@@ -2327,7 +2373,7 @@ p {
   }
 }
 
-@media (max-width: 34rem) {
+@media (max-width: 63.99rem) {
   .nav-actions > .dark-button {
     display: none;
   }
