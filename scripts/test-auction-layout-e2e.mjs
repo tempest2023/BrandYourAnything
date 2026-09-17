@@ -5,6 +5,40 @@ import { createClient } from "@supabase/supabase-js";
 import { chromium } from "playwright-core";
 import { buildLocalApp, localAppEnvironment, localStack, startLocalApp } from "./lib/local-stack.mjs";
 
+async function assertPaymentCopy(page, model = false) {
+  for (const [locale, total, balance] of [
+    ["en", "in leading bids", "The remaining 80% is not collected automatically."],
+    ["zh", "领先出价总额", "剩余 80% 不会自动收取。"],
+    ["es", "en pujas líderes", "El 80 % restante no se cobra automáticamente."],
+  ]) {
+    await page.locator(".language-switch select").selectOption(locale);
+    await page.locator(model ? "header" : "#top").getByText(total, { exact: !model }).waitFor();
+    if (!model) await page.locator(".lid-spot--1").click();
+    const form = model ? page.locator('form:has(input[name="brandName"])') : page.getByRole("dialog");
+    await form.getByText(balance, { exact: false }).waitFor();
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await form.evaluate((element) => element.scrollWidth > element.clientWidth + 1), false, `${locale} payment disclosure must not overflow`);
+    if (locale === "en") await page.screenshot({ path: `/tmp/payment-copy-${model ? "3d" : "laptop"}.png` });
+    if (!model) {
+      await form.locator('input[name="logo"]').setInputFiles({ name: "visible-logo.png", mimeType: "image/png",
+        buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aPioAAAAASUVORK5CYII=", "base64") });
+      const expected = { en: "Selected for upload", zh: "已选择，待上传", es: "Seleccionado para subir" }[locale];
+      await form.getByText(expected, { exact: true }).waitFor();
+      await form.locator(".dialog-close").click();
+      const question = { en: "How does payment work?", zh: "如何付款？", es: "¿Cómo funciona el pago?" }[locale];
+      // The summary appends a decorative "+" span, so an exact text match finds
+      // no element. Match the question as part of the disclosure's text instead.
+      const faq = page.locator("details").filter({ hasText: question });
+      await faq.locator("summary").click();
+      const answer = await faq.locator(".faq-answer").innerText();
+      assert.match(answer, /Stripe/); assert.match(answer, /20/); assert.match(answer, /80/);
+      await faq.locator("summary").click();
+    }
+  }
+  await page.locator(".language-switch select").selectOption("en");
+  await page.setViewportSize({ width: 1280, height: 900 });
+}
+
 test("published layouts and exhausted bid actions in the real browser", { timeout: 180_000 }, async (t) => {
   const local = localStack();
   const admin = createClient(local.apiUrl, local.secretKey, { auth: { persistSession: false } });
@@ -41,6 +75,8 @@ test("published layouts and exhausted bid actions in the real browser", { timeou
       }, { slug, baseCount });
       await page.goto(app.baseUrl + "/sell");
       await page.getByText(`${baseCount + 1} spots, logo covered`, { exact: true }).waitFor();
+      await page.getByText("For a $100 bid, the deposit is $20 and the platform fee is $10", { exact: false }).waitFor();
+      await page.getByText("This version does not automatically collect the remaining 80%.", { exact: false }).waitFor();
       const [response] = await Promise.all([
         page.waitForResponse((response) => new URL(response.url()).pathname === "/api/auctions" && response.request().method() === "POST"),
         page.getByRole("button", { name: "Publish your auction", exact: true }).click(),
@@ -79,6 +115,7 @@ test("published layouts and exhausted bid actions in the real browser", { timeou
       await page.getByRole("dialog").getByRole("heading", { name: "Over the Apple logo" }).waitFor();
       assert.equal(await page.locator("#bid").inputValue(), "1500.27");
       await page.getByRole("button", { name: "Close", exact: true }).click();
+      await assertPaymentCopy(page);
       const auctionId = publication.result.auctionId;
       // UI fixture only: represent a highest possible accepted bid without
       // simulating a payment or creating an unpaid bid through the application.
@@ -130,6 +167,7 @@ test("published layouts and exhausted bid actions in the real browser", { timeou
       const marker = page.getByRole("button", { name: "Spot 1, available", exact: true });
       assert.equal(await marker.isDisabled(), false);
       assert.equal(await page.locator('form button[type="submit"]').isDisabled(), false);
+      await assertPaymentCopy(page, true);
       await page.screenshot({ path: "/tmp/auction-model-ready.png", fullPage: false });
       assert.ifError((await admin.from("ba_dev_laptop_spots").update({ current_bid_cents: 99999999,
         current_bidder_name: "Model limit", bid_count: 1 }).eq("laptop_id", payload.result.auctionId)).error);
@@ -144,6 +182,14 @@ test("published layouts and exhausted bid actions in the real browser", { timeou
       assert.equal(await marker.isDisabled(), true);
       assert.equal(await page.locator('form button[type="submit"]').count(), 0);
       assert.equal(checkoutRequests, 0);
+    });
+    await t.test("terms explain the actual deposit flow without changing the privacy revision", async () => {
+      await page.goto(app.baseUrl + "/terms");
+      await page.getByText("September 13, 2026", { exact: true }).waitFor();
+      await page.getByText("10% of the full bid amount, deducted from the 20% deposit", { exact: true }).waitFor();
+      await page.getByText("It does not automatically collect the remaining 80% when the auction closes.", { exact: false }).waitFor();
+      await page.goto(app.baseUrl + "/privacy");
+      await page.getByText("September 4, 2026", { exact: true }).waitFor();
     });
   } catch (error) {
     await page.screenshot({ path: "/tmp/auction-layout-failure.png", fullPage: false }).catch(() => {});

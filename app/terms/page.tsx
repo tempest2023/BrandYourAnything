@@ -54,7 +54,7 @@ const sections: LegalSection[] = [
     content: (
       <>
         <p>Each auction page states its opening prices, minimum increments, closing time, placement duration, and any additional rules. A bid is an offer to purchase the selected advertising space for the bid amount. Once submitted, a valid bid may not be withdrawn unless the law or the auction page expressly allows it.</p>
-        <p>A bid counts only after it passes the Service’s validation and any required payment authorization or creative review. At the stated closing time, the <strong>highest valid bid for each advertising space wins</strong>. The winner enters a binding agreement with the creator to purchase that placement, subject to successful payment and content approval.</p>
+        <p>In the current flow, a bid is recorded only after Stripe confirms payment of its 20% deposit and the Service validates and accepts the bid. A leading logo can appear on the public auction page before final creative approval for the physical placement. At the stated closing time, the <strong>highest valid bid for each advertising space wins</strong>. The winner enters a binding agreement with the creator to purchase that placement, subject to successful payment and content approval.</p>
         <p>We may reject or invalidate bids affected by fraud, sanctions, payment failure, technical error, collusion, unlawful content, or an obvious pricing mistake. If an outage materially prevents fair bidding, we may extend, rerun, or cancel the affected auction and reverse related payments.</p>
       </>
     ),
@@ -65,8 +65,8 @@ const sections: LegalSection[] = [
     content: (
       <>
         <p>Payments and creator payouts are handled through Stripe Connect. By using a connected account or paying through Stripe, you also agree to the applicable <a href="https://stripe.com/legal" target="_blank" rel="noreferrer">Stripe terms</a>. Stripe may require identity, business, bank, tax, or other information before enabling charges or payouts.</p>
-        <p>The Service deducts the platform commission disclosed when the auction is created or at checkout—<strong>currently 10% unless a different rate is shown</strong>. Stripe processing, currency-conversion, dispute, refund, and payout fees may also apply. The creator receives the remaining amount after applicable platform commission, Stripe fees, refunds, reserves, chargebacks, and legally required deductions.</p>
-        <p>Payment may be authorized or collected when a bid is placed or when the auction closes, as shown in the applicable flow. Losing bids will not be captured, or will be released or refunded, according to the payment method presented for that auction. Bank and card processing times are outside our control.</p>
+        <p>The current platform commission is <strong>10% of the full bid amount, deducted from the 20% deposit</strong>. For a USD 100 bid, Stripe collects a USD 20 deposit and the platform commission is USD 10. Stripe processing, currency-conversion, dispute, refund, and payout fees may also apply. The creator receives the collected deposit after applicable commission, Stripe fees, refunds, reserves, chargebacks, and legally required deductions—not the full bid amount.</p>
+        <p>The current flow collects the deposit when bidding, not just a card authorization. It does not automatically collect the remaining 80% when the auction closes. Confirm any remaining payment and fulfillment arrangements with the creator before bidding. If a paid bid is outbid or cannot be accepted, the Service initiates a deposit refund and returns the platform fee. A refund can remain pending; bank and card processing times are outside our control.</p>
         <p>Creators are responsible for their own taxes, invoices, reporting, and connected-account obligations. We or Stripe may delay a payout while investigating fraud, a dispute, a refund request, sanctions risk, or a legal requirement.</p>
       </>
     ),
@@ -154,6 +154,7 @@ export default function TermsOfServicePage() {
   return (
     <LegalPage
       documentLabel="TERMS"
+      lastUpdated="September 13, 2026"
       title="Terms of Service"
       summary="Creators offer real advertising space. Bidders compete for it. The highest valid bid wins at closing, Stripe Connect moves the money, and the platform keeps the commission disclosed in the auction flow."
       sections={sections}
