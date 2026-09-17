@@ -3,6 +3,7 @@ import { isStripeConfigured } from "@/lib/stripe";
 import { isSupabaseConfigured } from "@/lib/supabase-admin";
 import { getPublishingOwnerCredential, PublishingAuthenticationError } from "@/lib/publishing-auth";
 import { getRequestOrigin } from "@/lib/request-origin";
+import { normalizeConnectCountry } from "@/lib/stripe-countries";
 import { readOwnedStripeStatus, startOwnedStripeOnboarding } from "@/lib/stripe-connect";
 import { StripeConnectError } from "@/lib/stripe-connect-repository";
 
@@ -24,10 +25,10 @@ async function handle(request: Request, context: { params: Promise<{ slug: strin
         let value;
         try { value = JSON.parse(body); } catch { throw new StripeConnectError(400, "Invalid Stripe setup request."); }
         if (!value || typeof value !== "object" || Array.isArray(value)
-          || (value.country !== undefined && (typeof value.country !== "string" || !/^[A-Z]{2}$/.test(value.country)))) {
+          || (value.country !== undefined && (typeof value.country !== "string" || !normalizeConnectCountry(value.country)))) {
           throw new StripeConnectError(400, "Choose a two-letter country code for your business.");
         }
-        country = value.country;
+        country = value.country === undefined ? undefined : normalizeConnectCountry(value.country)!;
       }
     }
     return json(start
@@ -35,6 +36,9 @@ async function handle(request: Request, context: { params: Promise<{ slug: strin
       : await readOwnedStripeStatus(slug, owner));
   } catch (error) {
     if (error instanceof PublishingAuthenticationError || error instanceof StripeConnectError) return json({ error: error.message }, error.status);
+    if (error instanceof Stripe.errors.StripeInvalidRequestError && error.param === "identity.country") {
+      return json({ error: "Stripe does not support onboarding in that country yet. Choose another country." }, 400);
+    }
     if (error instanceof Stripe.errors.StripePermissionError) return json({ error: "The Stripe key needs Core: Read/Write permission for Accounts v2." }, 503);
     console.error("Stripe Connect request failed", error instanceof Stripe.errors.StripeError
       ? { type: error.type, code: error.code, parameter: error.param, requestId: error.requestId } : error);

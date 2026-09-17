@@ -77,10 +77,21 @@ Run browser suites serially: they share the `.next` build directory.
 
 ## Creator Connect setup
 
-From `/manage`, choose **Connect Stripe**, select the country where your business
-is legally based, and continue to Stripe's hosted form. The country choices are
-loaded from Stripe Country Specs; a restricted key needs read access to that
-resource as well as Core Accounts/Account Links read/write access.
+From `/manage`, choose **Connect Stripe** once. The dashboard posts the business
+country (pre-filled from `STRIPE_CONNECT_DEFAULT_COUNTRY`, default `US`) and the
+API immediately returns Stripe's hosted onboarding link. Everything else —
+business details, bank account, capabilities and requirements — is collected by
+Stripe's hosted onboarding, which is the rich form sellers already expect. A
+restricted key needs Core Accounts/Account Links read/write access; no Country
+Specs read is required.
+
+The country is the one field Stripe will not accept later: `configuration.merchant`
+requires `identity.country` at account creation (verified against the live test
+API, `identity_country_required`), and an account's country cannot be changed
+afterwards. That is why a single country is sent up front instead of the previous
+two-step "fetch the Country Specs list, then pick" prompt. Stripe validates the
+code: an unsupported country is rejected during hosted onboarding and surfaced as
+a 400 rather than silently creating an account in the wrong market.
 
 New merchant accounts use the **full Stripe Dashboard**, with Stripe collecting
 its payment fees from the merchant and retaining the configured merchant loss
@@ -163,10 +174,15 @@ requests must not carry the connected-account header.
 [Direct-charge fees and refunds](https://docs.stripe.com/connect/direct-charges#issue-refunds),
 [fee refund API](https://docs.stripe.com/api/fee_refunds/create).
 
-This recovery handles already-owed refunds (for example, Outbid or rejected
-settlement). It does not define withdrawal of a still-current winning bid after
-a seller manually refunds it in Stripe. That business rule remains a release
-gate; do not treat a successful fee-recovery test as coverage of that workflow.
+This recovery only handles refunds the auction already owes (Outbid or rejected
+settlement). Manual/operator refunds are not a supported product flow: this is an
+auction, the platform charges a 20% deposit, and the remaining 80% is never
+collected automatically. A winner who does not pay the balance forfeits the
+deposit to the auctioneer; a bidder who paid a deposit is never refunded for
+having "paid in full", because the platform never charges the full amount. If an
+operator still issues a refund out of band, recovery adopts it only to keep the
+customer refund and the Stripe application fee consistent — it never creates a
+new customer refund on its own.
 
 The authenticated GET/POST `/api/internal/stripe/reconcile` endpoint checks
 pending payments and refunds. Send `Authorization: Bearer <CRON_SECRET>` from

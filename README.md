@@ -112,11 +112,15 @@ In **Project Settings > Environment Variables**, configure:
 | `STRIPE_SECRET_KEY` | Live secret/restricted key | Production only |
 | `STRIPE_SECRET_KEY` | Test secret/restricted key | Preview and Development only |
 | `STRIPE_CONNECT_WEBHOOK_SECRET` | Connected-account snapshot endpoint signing secret | Separate value per endpoint/environment |
+| `STRIPE_CONNECT_DEFAULT_COUNTRY` | Country pre-filled when a seller starts Connect onboarding (default `US`) | Any; optional |
 | `CRON_SECRET` | Strong random server-only reconciliation bearer secret | Production; optional manual recovery elsewhere |
+| `PAYMENT_ALERT_WEBHOOK_URL` | Optional HTTPS endpoint that receives payment recovery alert JSON | Production; optional |
 
 See [Stripe setup, local tests and recovery operations](docs/local-stripe-sandbox-testing.md).
 Database namespace and Stripe mode mismatches fail closed. Publishing an auction
 does not enable bidding until its owner completes Stripe Connect from `/manage`.
+Connecting is one click: the platform sends the seller's country and hands the
+rest of the setup to Stripe's hosted onboarding.
 
 X sign-in is never inferred from the Vercel environment name. `/sell` asks `/api/auth/x-status`, which reads the optional X provider status from Supabase Auth without blocking Email/Password sign-in. The X OAuth client ID and client secret belong only in **Supabase Dashboard > Authentication > Sign In / Providers**, never in the app's environment variables. The browser caches an availability result for ten minutes.
 

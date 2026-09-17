@@ -92,11 +92,9 @@ test("published account-owned auction → real Stripe Connect → dashboard read
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await page.waitForURL(`${app.baseUrl}/manage`);
     await page.getByRole("heading", { name: "Stripe onboarding regression" }).waitFor();
-    const countryResponse = page.waitForResponse((r) => r.url().endsWith(`/${slug}/stripe/connect`) && r.request().method() === "POST");
-    await page.getByRole("button", { name: "Connect Stripe", exact: true }).click();
-    const countryPrompt = await countryResponse;
-    assert.equal(countryPrompt.status(), 200, await countryPrompt.text());
-    await page.getByLabel("Business country").selectOption("US");
+    // One click reaches Stripe's hosted onboarding. The dashboard pre-fills the
+    // country; Stripe collects the business, bank and capability details.
+    assert.equal(await page.getByLabel("Business country").inputValue(), "US");
     const response = page.waitForResponse((r) => r.url().endsWith(`/${slug}/stripe/connect`) && r.request().method() === "POST");
     await page.getByRole("button", { name: "Connect Stripe", exact: true }).click();
     const started = await response;

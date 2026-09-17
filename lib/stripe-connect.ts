@@ -5,6 +5,13 @@ import { auctionUrl, auctionPath } from "@/lib/site";
 import { getStripe, getStripeMerchantAccountState, stripeIsLive } from "@/lib/stripe";
 import { stripeEnvironment } from "@/lib/stripe-bid-repository";
 import { ownedStripeAccount, StripeConnectError, type OwnedStripeAccount } from "@/lib/stripe-connect-repository";
+import { DEFAULT_CONNECT_COUNTRY, normalizeConnectCountry } from "@/lib/stripe-countries";
+
+// Stripe only needs the country up front; the hosted onboarding collects the
+// rest. A deployment can point the default at its own market.
+function defaultConnectCountry() {
+  return normalizeConnectCountry(process.env.STRIPE_CONNECT_DEFAULT_COUNTRY) ?? DEFAULT_CONNECT_COUNTRY;
+}
 
 function accountParameters(auction: OwnedStripeAccount, owner: AuctionOwnerCredential, country: string): Stripe.V2.Core.AccountCreateParams {
   const publicUrl = new URL(auctionUrl(auction.slug));
@@ -78,16 +85,13 @@ export async function startOwnedStripeOnboarding(slug: string, owner: AuctionOwn
       if (previous) auction = await ownedStripeAccount(slug, owner, "bind", { accountId: previous.id });
     }
     if (!auction.accountId) {
-      if (!auction.parameters) {
-        const countries: string[] = [];
-        for await (const specification of getStripe().countrySpecs.list({ limit: 100 })) countries.push(specification.id);
-        if (!country) return { connected: false, ready: false, requiresCountry: true, countries: countries.sort() };
-        if (!countries.includes(country)) throw new StripeConnectError(400, "Choose a country supported by Stripe for your business.");
-      }
-      auction = await ownedStripeAccount(slug, owner, "reserve", { parameters: auction.parameters ?? accountParameters(auction, owner, country!) });
+      const requested = country ?? defaultConnectCountry();
+      auction = await ownedStripeAccount(slug, owner, "reserve", {
+        parameters: auction.parameters ?? accountParameters(auction, owner, requested),
+      });
       if (!auction.accountId) {
         if (!auction.parameters || !auction.requestedAt) throw new Error("Connect reservation is missing its request identity.");
-        if (country && auction.parameters.identity?.country !== country) throw new StripeConnectError(409, "The country for this Stripe setup is already saved. Continue with that country or contact support.");
+        if (auction.parameters.identity?.country !== requested) throw new StripeConnectError(409, "The country for this Stripe setup is already saved. Continue with that country or contact support.");
         const old = Date.now() - Date.parse(auction.requestedAt) >= 29 * 86_400_000;
         const account = old ? await recoverAccount(auction) : await getStripe().v2.core.accounts.create(auction.parameters, {
           idempotencyKey: `ba-${stripeEnvironment()}-connect-v2-${auction.id}`,

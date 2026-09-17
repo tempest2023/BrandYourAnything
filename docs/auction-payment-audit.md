@@ -296,3 +296,43 @@ Remaining release gates (the resolved payment findings above do not close these)
 - New `npm run test:recovery-alerts`: 5/5 unit tests for alert thresholds,
   severity and webhook delivery/rejection/failure handling.
 - Typecheck, full lint and `git diff --check` passed.
+
+2026-09-17 product decisions and Connect simplification (local; not yet pushed):
+
+- **Minimum bid: `$10` confirmed.** The payable floor stays at
+  `MIN_BID_AMOUNT_CENTS`. No further pricing work is required.
+- **Manual refunds are not supported.** This is an auction: the platform charges
+  a 20% deposit, the remaining 80% is never collected automatically, and a winner
+  who does not pay the balance forfeits the deposit to the auctioneer. There is
+  no "paid in full, then refunded" case, so the open `withdraw/reopen` vs `pause`
+  decision is closed as out of scope. Automated Outbid/rejected-settlement
+  refunds are unchanged, and the defensive adoption of an out-of-band operator
+  refund (customer refund plus application fee kept consistent) is retained.
+- **Connect onboarding simplified to one click.** `countrySpecs` enumeration and
+  the `requiresCountry` two-step protocol are gone. `POST
+  /api/auctions/[slug]/stripe/connect` now creates the reserved account and
+  returns Stripe's hosted onboarding link in the same request; the dashboard
+  pre-fills the country (`STRIPE_CONNECT_DEFAULT_COUNTRY`, default `US`) from a
+  suggestion list and Stripe's hosted form collects business, bank, capability
+  and requirement details.
+  - Verified against the live test API: `configuration.merchant` requires
+    `identity.country` (`identity_country_required`) and an account's country is
+    immutable, so one country must be sent up front. Sending only that country
+    still succeeds and returns a hosted onboarding link (`acct_…` create →
+    `accountLinks` → onboarding URL, then closed).
+  - A bare account cannot be onboarded through a link (`configs_must_match_to_use_account_links`),
+    so the country is genuinely required rather than self-imposed.
+  - Stripe remains the source of truth for the country value; an unsupported code
+    is surfaced as a 400 instead of silently creating an account in the wrong
+    market.
+- `npm run test:connect-core`: 29/29 passing against real local dev/prod SQL with
+  the new single-call flow (default country, explicit country, reserved-country
+  conflict). `test:connect-e2e` now asserts the pre-filled country and a single
+  click before Stripe's hosted step.
+- `test:management-e2e` and `test:layout-e2e` re-run after the dashboard change;
+  typecheck, full lint and `git diff --check` passed.
+
+Still open: hosted Connect completion is a human step (Stripe CAPTCHA), deployed
+`CRON_SECRET`/`PAYMENT_ALERT_WEBHOOK_URL`/`STRIPE_CONNECT_DEFAULT_COUNTRY`
+configuration, remote migration application, final real Stripe E2E on a Preview,
+and PR description/head sync.

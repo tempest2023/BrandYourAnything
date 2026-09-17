@@ -12,12 +12,13 @@ test("Connect retries and ownership use the real local database in both namespac
   Object.assign(process.env, { SUPABASE_URL: local.apiUrl, VERCEL_ENV: "development", ALLOW_LOCAL_PRODUCTION_NAMESPACE: "1" });
   const accounts = new Map(); const keys = new Map();
   let creates = 0; let links = 0; let lostResponse = false; let onCreate; let onLink; let onRead;
-  const stripe = { countrySpecs: { async *list() { yield { id: "US" }; yield { id: "CA" }; } }, v2: { core: {
+  const createdCountries = [];
+  const stripe = { v2: { core: {
     accounts: {
       async create(parameters, options) {
         assert.equal(parameters.dashboard, "full");
-        assert.equal(parameters.identity.country, "US");
         assert.deepEqual(parameters.defaults.responsibilities, { fees_collector: "stripe", losses_collector: "stripe" });
+        createdCountries.push(parameters.identity.country);
         const existing = keys.get(options.idempotencyKey);
         if (existing) { assert.deepEqual(parameters, existing.parameters); return structuredClone(existing.account); }
         const account = { id: "acct_" + randomUUID().replaceAll("-", ""), livemode: false, metadata: parameters.metadata,
@@ -62,15 +63,24 @@ test("Connect retries and ownership use the real local database in both namespac
         method: "POST", headers: { "X-Auction-Manager-Key": key, "Content-Type": "application/json" }, body: JSON.stringify({ country: "US" }),
       });
       try {
-        await t.test("country is explicit and is not silently changed on a reserved attempt", async () => {
-          const f = await fixture(); const count = creates;
-          const prompt = await service.startOwnedStripeOnboarding(f.slug, f.owner, "https://preview.example");
-          assert.equal(prompt.requiresCountry, true); assert.deepEqual(prompt.countries, ["CA", "US"]);
-          assert.equal(creates, count);
-          await assert.rejects(service.startOwnedStripeOnboarding(f.slug, f.owner, "https://preview.example", "ZZ"), (error) => error.status === 400);
-          lostResponse = true; await assert.rejects(start(f));
-          await assert.rejects(service.startOwnedStripeOnboarding(f.slug, f.owner, "https://preview.example", "CA"), (error) => error.status === 409);
+        await t.test("one start reaches Stripe onboarding and never changes a reserved country", async () => {
+          // Omitting the country uses the deployment default, and the first call
+          // already returns a hosted onboarding link: no separate country step.
+          const plain = await fixture(); const count = creates;
+          const started = await service.startOwnedStripeOnboarding(plain.slug, plain.owner, "https://preview.example");
+          assert.ok(started.onboardingUrl);
+          assert.equal(createdCountries.at(-1), "US");
           assert.equal(creates, count + 1);
+
+          // An explicit country is honored for a fresh reservation.
+          const canadian = await fixture();
+          await service.startOwnedStripeOnboarding(canadian.slug, canadian.owner, "https://preview.example", "CA");
+          assert.equal(createdCountries.at(-1), "CA");
+
+          // Once reserved, a different country is refused instead of silently
+          // creating an account in the wrong market.
+          const f = await fixture(); lostResponse = true; await assert.rejects(start(f));
+          await assert.rejects(service.startOwnedStripeOnboarding(f.slug, f.owner, "https://preview.example", "CA"), (error) => error.status === 409);
           const continuation = await service.startOwnedStripeOnboarding(f.slug, f.owner, "https://preview.example");
           assert.ok(continuation.onboardingUrl);
         });
