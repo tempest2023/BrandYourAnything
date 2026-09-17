@@ -16,6 +16,7 @@ import styles from "./auth.module.css";
 type AuthPageProps = {
   initialMode: AuthMode;
   emailConfirmed: boolean;
+  nextPath?: "/manage" | null;
 };
 
 function accountLabel(user: User, fallback = "B") {
@@ -39,13 +40,17 @@ function providerLabel(user: User, emailLabel: string) {
   return emailLabel;
 }
 
-export function AuthPage({ initialMode, emailConfirmed }: AuthPageProps) {
+export function AuthPage({ initialMode, emailConfirmed, nextPath }: AuthPageProps) {
   const { t } = useI18n();
   const configured = isSupabaseBrowserConfigured();
   const [ready, setReady] = useState(!configured);
   const [user, setUser] = useState<User | null>(null);
   const [sessionError, setSessionError] = useState<TranslationKey | null>(null);
   const [signingOut, setSigningOut] = useState(false);
+
+  useEffect(() => {
+    if (user && nextPath) window.location.replace(nextPath);
+  }, [user, nextPath]);
 
   useEffect(() => {
     if (!configured) return;
@@ -154,6 +159,7 @@ export function AuthPage({ initialMode, emailConfirmed }: AuthPageProps) {
               {sessionError && <p className={styles.sessionError} role="alert">{t(sessionError)}</p>}
               <div className={styles.accountActions}>
                 <Link href="/sell">{t("auth.createAuction")} <span aria-hidden="true">↗</span></Link>
+                <Link href="/manage">{t("common.manageAuctions")}</Link>
                 <Link href="/">{t("auth.explore")}</Link>
               </div>
               <button className={styles.signOut} type="button" disabled={signingOut} onClick={() => void handleSignOut()}>
@@ -170,6 +176,8 @@ export function AuthPage({ initialMode, emailConfirmed }: AuthPageProps) {
               <AuthForm
                 initialMode={initialMode}
                 ready={ready}
+                oauthRedirectPath={nextPath ? "/auth?next=/manage" : "/auth"}
+                emailRedirectPath={nextPath ? "/auth?next=/manage" : "/auth"}
                 onAuthenticated={handleAuthenticated}
               />
               <p className={styles.legalLine}>

@@ -36,12 +36,13 @@ if (!["ba_dev", "ba_prod"].includes(databasePrefix)) {
 const genericRpcNames = [
   `${databasePrefix}_create_auction`,
   `${databasePrefix}_configure_auction_spots`,
-  `${databasePrefix}_place_auction_bid`,
 ];
 const legacyRpcNames = [
   `${databasePrefix}_create_laptop`,
   `${databasePrefix}_configure_laptop_spots`,
   `${databasePrefix}_place_laptop_bid`,
+  `${databasePrefix}_place_bid`,
+  `${databasePrefix}_place_auction_bid`,
 ];
 
 function assertLocalAppUrl(value) {
@@ -176,18 +177,6 @@ function auctionForm({ slug, idempotencyKey, auctionClosesAt }) {
   return form;
 }
 
-function bidForm({ idempotencyKey, amountCents = 7_998_100 }) {
-  const form = new FormData();
-  form.set("spotId", "1");
-  form.set("amountCents", String(amountCents));
-  form.set("brandName", "API E2E Brand");
-  form.set("email", "api-e2e@example.com");
-  form.set("website", "https://example.com/e2e");
-  form.set("xHandle", "api_e2e");
-  form.set("idempotencyKey", idempotencyKey);
-  return form;
-}
-
 async function fetchOpenApi() {
   const response = await fetch(`${supabaseUrl}/rest/v1/`, {
     headers: {
@@ -228,6 +217,17 @@ test("auction HTTP API", { timeout: 120_000 }, async (t) => {
         fetch(`${app.baseUrl}/api/laptops/${slug}/bids`, { method: "POST", body: new FormData() }),
       ];
       for (const response of await Promise.all(checks)) {
+        assert.equal(response.status, 404);
+        await response.body?.cancel();
+      }
+    });
+
+    await t.test("does not expose unpaid bid HTTP routes", async () => {
+      const responses = await Promise.all([
+        fetch(`${app.baseUrl}/api/bids`, { method: "POST", body: new FormData() }),
+        fetch(`${auctionUrl}/bids`, { method: "POST", body: new FormData() }),
+      ]);
+      for (const response of responses) {
         assert.equal(response.status, 404);
         await response.body?.cancel();
       }
@@ -297,47 +297,6 @@ test("auction HTTP API", { timeout: 120_000 }, async (t) => {
       });
       const collisionBody = await assertApiError(collision, 409, "slug_taken");
       assert.equal(collisionBody.result.reason, "slug_taken");
-    });
-
-    await t.test("validates, accepts, retries, and rejects bids through HTTP", async () => {
-      const invalid = await fetch(`${auctionUrl}/bids`, { method: "POST", body: new FormData() });
-      await assertApiError(invalid, 400, "invalid_bid");
-
-      const bidKey = randomUUID();
-      const accepted = await fetch(`${auctionUrl}/bids`, {
-        method: "POST",
-        body: bidForm({ idempotencyKey: bidKey }),
-      });
-      const acceptedBody = await readJson(accepted);
-      assert.equal(accepted.status, 201, `Bid failed: ${JSON.stringify(acceptedBody)}\n${app.logs()}`);
-      assert.equal(acceptedBody.result.accepted, true);
-      assert.equal(acceptedBody.result.reason, "accepted");
-      assert.equal(acceptedBody.result.currentBid, 79_981);
-      assert.equal(acceptedBody.result.minimumNextBid, 79_991);
-      assert.equal(acceptedBody.snapshot.spots[0].holder, "API E2E Brand");
-
-      const retry = await fetch(`${auctionUrl}/bids`, {
-        method: "POST",
-        body: bidForm({ idempotencyKey: bidKey }),
-      });
-      const retryBody = await readJson(retry);
-      assert.equal(retry.status, 200);
-      assert.equal(retryBody.result.reason, "already_processed");
-      assert.equal(retryBody.result.bidId, acceptedBody.result.bidId);
-
-      const tooLow = await fetch(`${auctionUrl}/bids`, {
-        method: "POST",
-        body: bidForm({ idempotencyKey: randomUUID() }),
-      });
-      const tooLowBody = await assertApiError(tooLow, 409, "bid_too_low");
-      assert.equal(tooLowBody.result.minimumNextBid, 79_991);
-
-      const refreshed = await fetch(auctionUrl);
-      const snapshot = await readJson(refreshed);
-      assert.equal(refreshed.status, 200);
-      assert.equal(snapshot.spots[0].bids, 1);
-      assert.equal(snapshot.history[0].brand, "API E2E Brand");
-      assert.equal(snapshot.history[0].amount, 79_981);
     });
 
     await t.test("returns a coded 404 for an unknown auction", async () => {

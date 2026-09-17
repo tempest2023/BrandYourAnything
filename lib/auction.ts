@@ -30,16 +30,6 @@ export type AuctionSnapshot = {
   history: BidHistoryItem[];
 };
 
-export type PlaceBidResult = {
-  accepted: boolean;
-  reason: "accepted" | "already_processed" | "bid_too_low" | "auction_closed" | "idempotency_conflict";
-  currentBid: number;
-  minimumNextBid: number;
-  currentBidderName: string;
-  bidCount: number;
-  bidId: string | null;
-};
-
 export const STARTER_SPOTS: Spot[] = [
   { id: 1, name: "Top left banner", size: "L", dimensions: "9.5 × 5.5 cm", holder: "", bid: 400, minBid: 400, bids: 0 },
   { id: 2, name: "Marquee — above the logo", size: "L", dimensions: "9.5 × 5.5 cm", holder: "", bid: 400, minBid: 400, bids: 0 },

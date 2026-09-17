@@ -12,6 +12,9 @@ import {
   isAuctionPublishErrorCode,
   type AuctionPublishErrorCode,
 } from "@/lib/auction-api-errors";
+import { MAX_BID_AMOUNT_USD } from "@/lib/bid-limits";
+import { rememberManagedAuction as saveManagedAuction } from "@/lib/managed-auctions";
+import { preparePublishAttempt, type PublishAttempt } from "@/lib/publish-attempt";
 import type { BrandModelPreview, UploadedBrandModel } from "@/lib/brand-model";
 import { LOCALES, type Locale, type TranslationKey } from "@/lib/i18n";
 import {
@@ -50,6 +53,7 @@ const STEPS = ["Object", "Ownership", "Showcase", "Layout", "Prices", "Listing",
 const DRAFT_STORAGE_KEY = "brand-anything-sell-draft";
 const LEGACY_DRAFT_STORAGE_KEY = "brandmylaptop-sell-draft";
 const PUBLISH_AFTER_AUTH_KEY = "brand-anything-publish-after-auth";
+const PUBLISH_ATTEMPT_STORAGE_KEY = "brand-anything-publish-attempt";
 const MANAGER_KEY_STORAGE_KEY = "brand-anything-auction-manager-key";
 const MANAGED_AUCTION_STORAGE_KEY = "brand-anything-managed-auction";
 const X_COMPOSE_URL = "https://x.com/compose/post";
@@ -209,7 +213,7 @@ function normalizeSurfaceSpotPricing(
 
 function validSurfacePrice(value: string) {
   const amount = Number(value);
-  return Number.isFinite(amount) && amount >= 1;
+  return Number.isFinite(amount) && amount >= 1 && amount <= MAX_BID_AMOUNT_USD;
 }
 
 function defaultTitleFor(machine: Machine, teslaModel: TeslaModel) {
@@ -380,7 +384,7 @@ function SiteFooter() {
             <h2>Marketplace</h2>
             <Link href="/">All auctions</Link>
             <Link href="/sell">Brand your anything</Link>
-            <Link href="/">Your dashboard</Link>
+            <Link href="/manage">Your dashboard</Link>
           </div>
           <div>
             <h2>About</h2>
@@ -405,6 +409,7 @@ function SiteFooter() {
 export function CreateAuctionForm() {
   const { locale, t } = useI18n();
   const formRef = useRef<HTMLFormElement>(null);
+  const publishAttempt = useRef<PublishAttempt | null>(null);
   const surfaceSpotsRef = useRef<SurfaceSpotPlacement[]>([]);
   const [step, setStep] = useState(0);
   const [furthestStep, setFurthestStep] = useState(0);
@@ -415,6 +420,9 @@ export function CreateAuctionForm() {
   const [anythingSource, setAnythingSource] = useState<AnythingSource>("model");
   const [brandModel, setBrandModel] = useState<UploadedBrandModel | null>(null);
   const [brandModelPreview, setBrandModelPreview] = useState<BrandModelPreview | null>(null);
+  const [modelPreviewError, setModelPreviewError] = useState("");
+  const [previewAttempt, setPreviewAttempt] = useState(0);
+  const [unsavedRecoveryCode, setUnsavedRecoveryCode] = useState<string | null>(null);
   const [screenSize, setScreenSize] = useState<13 | 14 | 16>(14);
   const [ownership, setOwnership] = useState<Ownership>("own");
   const [machineCost, setMachineCost] = useState("");
@@ -448,7 +456,6 @@ export function CreateAuctionForm() {
   const [managedAuction, setManagedAuction] = useState<ManagedAuction | null>(null);
   const [shareLocale, setShareLocale] = useState<Locale>(locale);
   const [copyFeedback, setCopyFeedback] = useState<"idle" | "copied">("idle");
-  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const placementProfile = placementProfileFor(machine);
   const resolvedSurfaceSpotPricing = useMemo(() => normalizeSurfaceSpotPricing(
     surfaceSpotPricing,
@@ -597,6 +604,29 @@ export function CreateAuctionForm() {
       slug,
     }));
   }, [anythingSource, assetName, brandModel, customShowcase, customShowcaseEnabled, draftReady, extraNote, furthestStep, largePrice, layoutCount, listingDays, machine, machineCost, mediumPrice, modelMode, ownership, resolvedSurfaceSpotPricing, screenSize, showcase, slug, smallPrice, specialPrice, specialSpot, step, stickerMonths, surfaceSpots, teslaModel, title]);
+
+  useEffect(() => {
+    if (!draftReady || !brandModel || brandModelPreview) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setModelPreviewError("");
+      try {
+        const response = await fetch("/api/models/preview-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: brandModel.storagePath, fileName: brandModel.fileName, size: brandModel.size, uploadClaim: brandModel.uploadClaim }),
+          signal: controller.signal,
+          cache: "no-store",
+        });
+        const payload = await response.json() as Partial<BrandModelPreview> & { error?: string };
+        if (!response.ok || !payload.sourceUrl || !payload.format) throw new Error(payload.error || "The model preview could not be restored.");
+        if (!controller.signal.aborted) setBrandModelPreview({ sourceUrl: payload.sourceUrl, format: payload.format });
+      } catch (error) {
+        if (!controller.signal.aborted) setModelPreviewError(error instanceof Error ? error.message : "The model preview could not be restored.");
+      }
+    }, 0);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [brandModel, brandModelPreview, draftReady, previewAttempt]);
 
   useEffect(() => {
     let active = true;
@@ -866,11 +896,20 @@ export function CreateAuctionForm() {
       : [...current, option]);
   };
 
-  const rememberManagedAuction = (location: string) => {
+  const rememberPublishedAuction = (location: string, recoveryCode?: string) => {
     const entry = { slug, title };
-    window.localStorage.setItem(MANAGED_AUCTION_STORAGE_KEY, JSON.stringify(entry));
     setManagedAuction(entry);
     setPublishedLocation(location);
+    // A successful publication must not become a failed/repeated request just
+    // because the browser denied storage. Keep the active recovery code visible.
+    try {
+      if (recoveryCode) saveManagedAuction({ ...entry, recoveryCode });
+      window.localStorage.setItem(MANAGED_AUCTION_STORAGE_KEY, JSON.stringify(entry));
+      window.sessionStorage.removeItem(DRAFT_STORAGE_KEY);
+      window.sessionStorage.removeItem(LEGACY_DRAFT_STORAGE_KEY);
+    } catch {
+      if (recoveryCode) setUnsavedRecoveryCode(recoveryCode);
+    }
   };
 
   const publishAuction = async (form: HTMLFormElement, mode: "auth" | "browser") => {
@@ -920,14 +959,20 @@ export function CreateAuctionForm() {
     formData.set("mediumOpeningBidCents", String(Math.round(payloadPrices.medium * 100)));
     formData.set("largeOpeningBidCents", String(Math.round(payloadPrices.large * 100)));
     formData.set("minIncrementCents", "1000");
-    formData.set("auctionClosesAt", new Date(Date.now() + listingDays * 86_400_000).toISOString());
-    formData.set("idempotencyKey", idempotencyKey);
-
-    const headers: Record<string, string> = mode === "auth" && accessToken
-      ? { Authorization: `Bearer ${accessToken}` }
-      : { "X-Auction-Manager-Key": getOrCreateManagerKey() };
-
     try {
+      const headers: Record<string, string> = mode === "auth" && accessToken
+        ? { Authorization: `Bearer ${accessToken}` }
+        : { "X-Auction-Manager-Key": getOrCreateManagerKey() };
+      if (!publishAttempt.current) {
+        try { publishAttempt.current = JSON.parse(window.sessionStorage.getItem(PUBLISH_ATTEMPT_STORAGE_KEY) || "null"); }
+        catch { /* The in-memory attempt also survives ordinary network retries. */ }
+      }
+      const attempt = await preparePublishAttempt(formData, JSON.stringify(headers), listingDays, publishAttempt.current);
+      publishAttempt.current = attempt;
+      try { window.sessionStorage.setItem(PUBLISH_ATTEMPT_STORAGE_KEY, JSON.stringify(attempt)); }
+      catch { /* No credentials or draft contents are stored in the attempt. */ }
+      formData.set("auctionClosesAt", attempt.closesAt);
+      formData.set("idempotencyKey", attempt.idempotencyKey);
       const response = await fetch("/api/auctions", { method: "POST", headers, body: formData });
       const payload = await response.json() as CreateResponse;
       if (!response.ok || !payload.location) {
@@ -935,7 +980,6 @@ export function CreateAuctionForm() {
           ? payload.errorCode
           : "publish_failed";
         setErrorMessage(t(PUBLISH_ERROR_KEYS[errorCode]));
-        if (payload.result?.reason === "idempotency_conflict") setIdempotencyKey(crypto.randomUUID());
         if (response.status === 401 && mode === "auth" && isSupabaseBrowserConfigured()) {
           await getSupabaseBrowser().auth.signOut({ scope: "local" });
           setAccessToken(null);
@@ -943,9 +987,7 @@ export function CreateAuctionForm() {
         }
         return null;
       }
-      window.sessionStorage.removeItem(DRAFT_STORAGE_KEY);
-      window.sessionStorage.removeItem(LEGACY_DRAFT_STORAGE_KEY);
-      rememberManagedAuction(payload.location);
+      rememberPublishedAuction(payload.location, headers["X-Auction-Manager-Key"]);
       return payload.location;
     } catch {
       setErrorMessage(t("sell.error.network"));
@@ -1398,7 +1440,7 @@ export function CreateAuctionForm() {
                   <label className={specialSpot ? styles.checkedSpecial : styles.specialSpot}>
                     <input type="checkbox" checked={specialSpot} onChange={(event) => setSpecialSpot(event.target.checked)} />
                     <span><strong>Add a special spot over the logo</strong><small>6 × 6 cm, covering the Apple mark in the middle of the lid. Name your own price — it is the one placement size says nothing about.</small></span>
-                    {specialSpot && <span className={styles.specialPrice}><small>Starts at</small><span><input type="number" min="1" value={specialPrice} onChange={(event) => setSpecialPrice(event.target.value)} /><b>€</b></span></span>}
+                    {specialSpot && <span className={styles.specialPrice}><small>Starts at</small><span><input type="number" min="1" max={MAX_BID_AMOUNT_USD} step="0.01" value={specialPrice} onChange={(event) => setSpecialPrice(event.target.value)} /><b>€</b></span></span>}
                   </label>
                 )}
                 <p className={styles.totalCopy}>{surfacePricingIsValid
@@ -1441,6 +1483,13 @@ export function CreateAuctionForm() {
                   <div><dt>Stickers stay</dt><dd>{stickerMonths} months</dd></div>
                 </dl>
                 <p className={styles.publishCopy}>Buyers pay you directly — the money lands in your own Stripe account, minus the 10% platform fee and Stripe&apos;s processing fees. You produce each placement to the agreed spec and approve every logo before it appears.</p>
+                {publishedLocation && (
+                  <section className={styles.authPanel} aria-label="Published auction">
+                    <p>Your auction is published. Connect Stripe before brands can place paid bids.</p>
+                    <Link className={styles.publishButton} href="/manage">Connect Stripe and manage auction →</Link>
+                    {unsavedRecoveryCode && <p role="alert">This browser could not save your recovery code. Keep it somewhere safe before leaving: <code>{unsavedRecoveryCode}</code></p>}
+                  </section>
+                )}
                 {!isSupabaseBrowserConfigured() ? (
                   sharePanel
                 ) : accessToken ? (
@@ -1478,6 +1527,7 @@ export function CreateAuctionForm() {
           </section>
 
           <aside className={styles.previewColumn} aria-label={`${objectName} auction preview`}>
+            {brandModel && modelPreviewError && <p role="alert">{modelPreviewError} <button type="button" onClick={() => setPreviewAttempt((value) => value + 1)}>Retry preview</button></p>}
             {isAnything ? (
               previewModel ? (
                 <div className={styles.presetPreview}>
@@ -1540,7 +1590,7 @@ function PriceField({ label, dimensions, value, onChange }: { label: string; dim
   return (
     <label className={styles.priceField}>
       <span><strong>{label}</strong><small>{dimensions}</small></span>
-      <span className={styles.priceInput}><input type="number" min="1" value={value} onChange={(event) => onChange(event.target.value)} /><b>€</b></span>
+      <span className={styles.priceInput}><input type="number" min="1" max={MAX_BID_AMOUNT_USD} step="0.01" value={value} onChange={(event) => onChange(event.target.value)} /><b>€</b></span>
     </label>
   );
 }
@@ -1633,7 +1683,8 @@ function SurfacePriceEditor({
               type="number"
               inputMode="decimal"
               min="1"
-              step="1"
+              max={MAX_BID_AMOUNT_USD}
+              step="0.01"
               value={selectedSpot.price}
               aria-invalid={!validSurfacePrice(selectedSpot.price)}
               aria-describedby="surface-price-hint"
