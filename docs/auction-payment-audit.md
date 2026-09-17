@@ -267,3 +267,32 @@ Remaining release gates (the resolved payment findings above do not close these)
   hosted Connect human completion, legacy test migration, operational recovery
   configuration and remote migration/deployment/PR release. These tests do not
   establish a current-winner withdrawal policy or complete the overall audit.
+
+2026-09-14 payable-floor and recovery-alerting follow-up (local; not yet pushed):
+
+- Closed the low-price rule by unifying upward onto the floor the payment layer
+  already enforced. `MIN_BID_AMOUNT_CENTS` (`$10`, confirmed by the product owner)
+  is now the single source in `lib/bid-limits.ts`; `parseAuctionForm` refuses
+  lower per-size opening bids and per-spot layout prices, and a new migration
+  adds matching `opening_bid_cents >= 1000` constraints to both namespaces.
+  Previously a creator could publish a `$1` opening price that the bid API always
+  rejected as below the deposit floor. `canPlaceBid` now requires the payable
+  range, so UI eligibility matches Checkout instead of only the cap.
+- Added operator alerting for payment recovery. A service-only
+  `ba_<env>_payment_recovery_backlog()` RPC reports due, leased, blocked and
+  outstanding work plus the oldest outstanding timestamp. `lib/payment-alerts.ts`
+  turns a reconciliation report into critical failure alerts and warnings for
+  backlog size, stalled work, repeatedly blocked items, unfinished batches and an
+  unreadable backlog. `runPaymentReconciliation` logs every alert and POSTs the
+  payload to `PAYMENT_ALERT_WEBHOOK_URL` when configured; delivery runs outside
+  the recovery time budget and never throws. The protected cron endpoint returns
+  the alerts with its summary.
+- `npm run test:payment-core`: 53/53 passing (was 47/47), now including real
+  local SQL backlog accuracy, service-only access and cross-namespace isolation.
+- Publication core: 23/23 passing (was 21/21), now including a real database
+  rejection of sub-floor opening prices in both namespaces.
+- New `npm run test:bid-core`: 5/5 unit tests for the payable floor, exact
+  `$10`/`$999,999.99` bounds, display-currency rounding and creation validation.
+- New `npm run test:recovery-alerts`: 5/5 unit tests for alert thresholds,
+  severity and webhook delivery/rejection/failure handling.
+- Typecheck, full lint and `git diff --check` passed.

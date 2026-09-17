@@ -144,6 +144,7 @@ The repository intentionally starts before the first bid:
 - bid history and amount raised both start at zero;
 - bids are stored and settled in US dollars, with optional indicative EUR and RMB displays;
 - opening bids are $125 for Small, $200 for Medium, and $400 for Large spots;
+- every advertised opening bid must clear the $10 minimum the paid Checkout path accepts;
 - Final Look preloads the device image and every active sponsor image, then reveals the composition as one complete view.
 
 The migration `20260828225000_reset_auction_to_empty_usd_state.sql` removes the original sold-out demo bids from databases that applied an earlier version of the initial migration. Review that reset before applying migrations to any environment containing data you intend to keep.
@@ -251,7 +252,7 @@ npm run test:api-e2e
 npm run test:stripe-e2e
 ```
 
-The platform test verifies atomic campaign creation, ten-spot isolation, RLS, equal concurrent bids, simultaneous retries, and cross-tenant idempotency-key reuse. Run it once with `SUPABASE_DATABASE_PREFIX=ba_dev` and once with `ba_prod` when validating both namespaces.
+The platform test verifies atomic campaign creation, ten-spot isolation, RLS, equal concurrent bids, simultaneous retries, and cross-tenant idempotency-key reuse. Run it once with `SUPABASE_DATABASE_PREFIX=ba_dev` and once with `ba_prod` when validating both namespaces. `test:bid-core` and `test:recovery-alerts` are pure unit suites for the payable bid floor and recovery alerting; they need no database or network.
 
 The API E2E test builds and starts the production Next.js server on a free local port. It verifies the generic auction RPC surface, removed laptop routes, coded error responses, and the complete publish/read/bid flow for a non-laptop object. It creates uniquely named test auctions, so run `supabase db reset` first and use a local Supabase project unless you deliberately set `ALLOW_REMOTE_API_E2E=1`.
 

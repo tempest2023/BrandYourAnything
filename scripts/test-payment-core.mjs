@@ -443,7 +443,10 @@ test("payment service and real local PostgreSQL preserve payment invariants", { 
         ...repository, claimPaymentWork: (kind, scope = {}) => repository.claimPaymentWork(kind, { ...scope, laptopId: f.id }),
       } });
       const count = fake.state.creates;
-      assert.deepEqual((await reconciler.reconcileStripePayments()).failed, []);
+      const summary = await reconciler.reconcileStripePayments();
+      assert.deepEqual(summary.failed, []);
+      assert.equal(summary.backlogError, null);
+      assert.ok(summary.backlog && Number.isFinite(summary.backlog.paymentDue), "reconciliation reports a readable backlog");
       assert.equal(fake.state.creates, count);
       assert.equal((await repository.getBidPaymentById(payment.id)).status, "accepted");
     });
@@ -540,17 +543,39 @@ test("payment service and real local PostgreSQL preserve payment invariants", { 
       assert.deepEqual(remaining.failed, [], "The failed oldest payment must back off instead of blocking the next batch");
     });
 
+    await t.test("recovery backlog is accurate, service-only and namespace-isolated", async () => {
+      const other = prefix === "ba_dev" ? "ba_prod" : "ba_dev";
+      const namespaceOf = (target, key) => {
+        const previous = process.env.SUPABASE_DATABASE_PREFIX;
+        process.env.SUPABASE_DATABASE_PREFIX = target;
+        process.env.ALLOW_LOCAL_PRODUCTION_NAMESPACE = "1";
+        return key().finally(() => { process.env.SUPABASE_DATABASE_PREFIX = previous; });
+      };
+      const before = await namespaceOf(other, () => repository.getPaymentRecoveryBacklog());
+      const f = await fixture();
+      await Promise.all([checkout(f, input()), checkout(f, input())]);
+      const backlog = await repository.getPaymentRecoveryBacklog();
+      assert.ok(backlog.paymentDue >= 2, "reserved Checkouts are due recovery work");
+      assert.ok(Number.isFinite(Date.parse(backlog.oldestDueAt)), "due work reports its oldest timestamp");
+      const otherAfter = await namespaceOf(other, () => repository.getPaymentRecoveryBacklog());
+      assert.equal(otherAfter.paymentDue, before.paymentDue, "the other namespace must not see this backlog");
+      const anonymous = createClient(local.apiUrl, local.publishableKey, { auth: { persistSession: false } });
+      assert.ok((await anonymous.rpc(prefix + "_payment_recovery_backlog")).error, "browsers must not read the backlog");
+    });
+
     await t.test("reconciliation endpoint requires its secret and reports retryable failures", async () => {
       let calls = 0;
       const route = loadTypeScript("app/api/internal/stripe/reconcile/route.ts", { ...overrides, "@/lib/stripe-bids": {
-        reconcileStripePayments: async () => { calls++; return { failed: ["payment-needs-retry"] }; },
+        runPaymentReconciliation: async () => { calls++; return { failed: ["payment-needs-retry"], alerts: [{ code: "recovery_failures" }] }; },
       } });
       delete process.env.CRON_SECRET;
       assert.equal((await route.GET(new Request("http://localhost/reconcile"))).status, 503);
       process.env.CRON_SECRET = "local-test-secret-not-deployed";
       assert.equal((await route.GET(new Request("http://localhost/reconcile"))).status, 401);
       assert.equal(calls, 0);
-      assert.equal((await route.POST(new Request("http://localhost/reconcile", { headers: { authorization: "Bearer local-test-secret-not-deployed" } }))).status, 503);
+      const response = await route.POST(new Request("http://localhost/reconcile", { headers: { authorization: "Bearer local-test-secret-not-deployed" } }));
+      assert.equal(response.status, 503);
+      assert.equal((await response.json()).alerts[0].code, "recovery_failures");
       assert.equal(calls, 1);
     });
   } finally {

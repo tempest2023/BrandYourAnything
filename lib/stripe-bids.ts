@@ -6,6 +6,7 @@ import { getLaptopSnapshot } from "@/lib/laptop-repository";
 import {
   assertPaymentMatches, attachCheckoutSession, createOrGetBidPayment, expirePendingPayment,
   getBidPaymentById, getBidPaymentByIdempotencyKey, getBidPaymentBySessionId,
+  getPaymentRecoveryBacklog,
   getStripeAuctionBySlug, getStripeAuctionForPayment, getStripeBidContext,
   markBidPaymentPaid, recordRefund, saveCheckoutParameters,
   settleLaptopBidPayment, stripeEnvironment, type LaptopBidPayment, type StripeBidContext,
@@ -14,6 +15,9 @@ import {
 import { getStripe, stripeIsLive } from "@/lib/stripe";
 import { validateCheckoutIdentity, validatePaidCheckout } from "@/lib/stripe-payment-contract";
 import { paymentStripeOptions, paymentWorkRemaining, withPaymentWorkBudget } from "@/lib/payment-work-budget";
+import {
+  deliverPaymentAlerts, evaluatePaymentAlerts, type PaymentRecoveryBacklog, type ReconciliationReport,
+} from "@/lib/payment-alerts";
 import { reconcileApplicationFee } from "@/lib/stripe-fee-refunds";
 
 export type StripeBidErrorCode = "campaign_not_found" | "spot_not_found" | "auction_closed"
@@ -246,7 +250,7 @@ async function recoverPayment(payment: LaptopBidPayment) {
   }
 }
 
-export async function reconcileStripePayments() {
+export async function reconcileStripePayments(): Promise<ReconciliationReport> {
   return withPaymentWorkBudget(async () => {
     const failed: string[] = [];
     let paymentsChecked = 0; let refundsChecked = 0; let refundsPending = 0; let empty = 0;
@@ -267,8 +271,25 @@ export async function reconcileStripePayments() {
         console.error("Payment recovery failed", { paymentId: payment.id, kind, code: recoveryErrorCode(error) });
       }
     }
+    // Backlog visibility is best effort: a failed read must alert, not fail the run.
+    let backlog: PaymentRecoveryBacklog | null = null; let backlogError: string | null = null;
+    try { backlog = await getPaymentRecoveryBacklog(); }
+    catch (error) {
+      backlogError = recoveryErrorCode(error);
+      console.warn("Payment recovery backlog could not be read", { code: backlogError });
+    }
     return { paymentsChecked, refundsChecked, refundsPending, failed,
       budgetExhausted: paymentWorkRemaining() < 5_000,
-      batchLimitReached: paymentsChecked + refundsChecked >= 30 };
+      batchLimitReached: paymentsChecked + refundsChecked >= 30,
+      backlog, backlogError };
   }, 45_000);
+}
+
+export async function runPaymentReconciliation() {
+  const report = await reconcileStripePayments();
+  const alerts = evaluatePaymentAlerts(report);
+  // Delivery runs outside the payment work budget so a slow alert sink can never
+  // extend (or abort) the recovery deadline.
+  const alertDelivery = await deliverPaymentAlerts(alerts, report, { environment: stripeEnvironment() });
+  return { ...report, alerts, alertDelivery };
 }

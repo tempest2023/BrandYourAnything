@@ -192,8 +192,29 @@ its batch cap, not that the queue is empty: schedule another protected run.
 Successful responses can also leave deferred or actively leased work, so monitor
 the age/count of pending obligations, not only HTTP status. Lease-finalization
 errors are reported as failures; a crash or lost response retains the obligation
-for another worker. The scheduler/alerts and deployed secret still require
+for another worker. The deployed `CRON_SECRET` and scheduler still require
 deployment verification; the code does not establish a continuous refund SLA.
+
+Every run also reads the service-only `ba_dev_payment_recovery_backlog` /
+`ba_prod_payment_recovery_backlog` RPCs for due, leased, repeatedly failing and
+outstanding work. `runPaymentReconciliation` turns that report into operator
+alerts: failed items are critical, and due work above 50 items, work outstanding
+for more than an hour, repeatedly blocked items, an unfinished batch or an
+unreadable backlog are warnings. Alerts are always logged, and are POSTed as a
+JSON payload to `PAYMENT_ALERT_WEBHOOK_URL` when that variable is set. Delivery
+runs outside the recovery time budget, so a slow alert sink can never extend or
+abort a recovery run, and a failing sink is reported rather than thrown.
+
+## Payable opening prices
+
+The paid Checkout path never accepts a bid below the minimum deposit floor, so
+auction creation, the bid API and the database share one floor
+(`MIN_BID_AMOUNT_CENTS`, currently `$10`). `parseAuctionForm` and both
+`laptop_spots.opening_bid_cents` constraints refuse a lower opening price, so a
+published spot can never advertise a price that Checkout would reject. Change
+the floor in one place (`lib/bid-limits.ts`) and re-run the publication core
+suite when the business decides on a different minimum. `test:bid-core` covers
+the boundaries without touching the network.
 
 `vercel.json` schedules a daily production reconciliation run. Configure a
 strong `CRON_SECRET` for that deployment. Vercel cron does **not** run on Preview;

@@ -12,7 +12,7 @@ import {
   isAuctionPublishErrorCode,
   type AuctionPublishErrorCode,
 } from "@/lib/auction-api-errors";
-import { MAX_BID_AMOUNT_USD } from "@/lib/bid-limits";
+import { MAX_BID_AMOUNT_USD, MIN_BID_AMOUNT_USD } from "@/lib/bid-limits";
 import { rememberManagedAuction as saveManagedAuction } from "@/lib/managed-auctions";
 import { preparePublishAttempt, type PublishAttempt } from "@/lib/publish-attempt";
 import { appendLogoCoverSpot } from "@/lib/laptop-layout";
@@ -214,7 +214,7 @@ function normalizeSurfaceSpotPricing(
 
 function validSurfacePrice(value: string) {
   const amount = Number(value);
-  return Number.isFinite(amount) && amount >= 1 && amount <= MAX_BID_AMOUNT_USD;
+  return Number.isFinite(amount) && amount >= MIN_BID_AMOUNT_USD && amount <= MAX_BID_AMOUNT_USD;
 }
 
 function defaultTitleFor(machine: Machine, teslaModel: TeslaModel) {
@@ -737,7 +737,7 @@ export function CreateAuctionForm() {
     && surfaceSpots.every((spot) => spot.position.length === 3 && spot.normal.length === 3));
   const surfacePricingIsValid = (isAnything ? resolvedSurfaceSpotPricing.every((spot) => validSurfacePrice(spot.price))
     : [smallPrice, mediumPrice, largePrice, ...(hasSpecialSpot ? [specialPrice] : [])].every(validSurfacePrice))
-    && previewSpots.every((spot) => spot.amount >= 1 && spot.amount <= MAX_BID_AMOUNT_USD);
+    && previewSpots.every((spot) => spot.amount >= MIN_BID_AMOUNT_USD && spot.amount <= MAX_BID_AMOUNT_USD);
   const showcaseGroups = SHOWCASE_GROUPS_BY_MACHINE[machine];
   const normalizedCustomShowcase = normalizeCustomShowcase(customShowcase);
   const customShowcaseIsValid = !customShowcaseEnabled || normalizedCustomShowcase.length >= 2;
@@ -1442,14 +1442,14 @@ export function CreateAuctionForm() {
                   <label className={specialSpot ? styles.checkedSpecial : styles.specialSpot}>
                     <input type="checkbox" checked={specialSpot} onChange={(event) => setSpecialSpot(event.target.checked)} />
                     <span><strong>Add a special spot over the logo</strong><small>6 × 6 cm, covering the Apple mark in the middle of the lid. Name your own price — it is the one placement size says nothing about.</small></span>
-                    {specialSpot && <span className={styles.specialPrice}><small>Starts at</small><span><input type="number" min="1" max={MAX_BID_AMOUNT_USD} step="0.01" value={specialPrice} onChange={(event) => setSpecialPrice(event.target.value)} /><b>USD</b></span></span>}
+                    {specialSpot && <span className={styles.specialPrice}><small>Starts at</small><span><input type="number" min={MIN_BID_AMOUNT_USD} max={MAX_BID_AMOUNT_USD} step="0.01" value={specialPrice} onChange={(event) => setSpecialPrice(event.target.value)} /><b>USD</b></span></span>}
                   </label>
                 )}
                 <p className={styles.totalCopy}>{surfacePricingIsValid
                   ? <>Every spot sold at its floor: <strong>{formatMoney(totalFloor)}</strong>, before the platform&apos;s 10% and Stripe&apos;s fees.{ownership === "fund" && machineIsValid ? ` Your funding goal is ${formatMoney(fundingCost)}; each spot's price remains yours to set.` : ""}</>
                   : "Complete every spot to see the full floor total."}</p>
                 {!surfacePricingIsValid && (
-                  <p className={styles.validation} role="alert">Every spot, including placement premiums, must start between $1 and $999,999.99 USD.</p>
+                  <p className={styles.validation} role="alert">Every spot, including placement premiums, must start between ${MIN_BID_AMOUNT_USD} and $999,999.99 USD.</p>
                 )}
               </fieldset>
             )}
@@ -1592,7 +1592,7 @@ function PriceField({ label, dimensions, value, onChange }: { label: string; dim
   return (
     <label className={styles.priceField}>
       <span><strong>{label}</strong><small>{dimensions}</small></span>
-      <span className={styles.priceInput}><input type="number" min="1" max={MAX_BID_AMOUNT_USD} step="0.01" value={value} onChange={(event) => onChange(event.target.value)} /><b>USD</b></span>
+      <span className={styles.priceInput}><input type="number" min={MIN_BID_AMOUNT_USD} max={MAX_BID_AMOUNT_USD} step="0.01" value={value} onChange={(event) => onChange(event.target.value)} /><b>USD</b></span>
     </label>
   );
 }
@@ -1684,7 +1684,7 @@ function SurfacePriceEditor({
             <input
               type="number"
               inputMode="decimal"
-              min="1"
+              min={MIN_BID_AMOUNT_USD}
               max={MAX_BID_AMOUNT_USD}
               step="0.01"
               value={selectedSpot.price}

@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
-import { reconcileStripePayments } from "@/lib/stripe-bids";
+import { runPaymentReconciliation } from "@/lib/stripe-bids";
 import { isStripeConfigured } from "@/lib/stripe";
 
 export const runtime = "nodejs";
@@ -12,7 +12,7 @@ export async function GET(request: Request) {
   const provided = Buffer.from(request.headers.get("authorization") || "");
   if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) return Response.json({ error: "Unauthorized." }, { status: 401 });
   try {
-    const result = await reconcileStripePayments();
+    const result = await runPaymentReconciliation();
     return Response.json(result, { status: result.failed.length || result.budgetExhausted ? 503 : 200, headers: { "Cache-Control": "no-store" } });
   } catch {
     return Response.json({ error: "Payment reconciliation could not finish. Retry is safe." }, { status: 503 });

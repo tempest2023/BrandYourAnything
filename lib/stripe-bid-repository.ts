@@ -9,6 +9,7 @@ import {
   getSettleLaptopBidPaymentFunction,
 } from "@/lib/database-names";
 import type { LaptopBidPaymentStatus } from "@/lib/laptop";
+import type { PaymentRecoveryBacklog } from "@/lib/payment-alerts";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 type LaptopPaymentRow = {
@@ -436,6 +437,24 @@ export async function listRefundPendingPayments(laptopId?: string, limit = 50) {
   const { data, error } = await query;
   if (error) throw error;
   return (data as LaptopBidPaymentRow[]).map(mapPayment);
+}
+
+export async function getPaymentRecoveryBacklog(): Promise<PaymentRecoveryBacklog> {
+  const { data, error } = await getSupabaseAdmin().rpc(`${getDatabasePrefix()}_payment_recovery_backlog`);
+  if (error) throw error;
+  const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+  const count = (key: string) => {
+    const value = Number(row?.[key] ?? 0);
+    return Number.isFinite(value) ? value : 0;
+  };
+  return {
+    paymentDue: count("paymentDue"),
+    refundDue: count("refundDue"),
+    refundOutstanding: count("refundOutstanding"),
+    leased: count("leased"),
+    blocked: count("blocked"),
+    oldestDueAt: typeof row?.oldestDueAt === "string" ? row.oldestDueAt : null,
+  };
 }
 
 export async function settleLaptopBidPayment(paymentId: string) {

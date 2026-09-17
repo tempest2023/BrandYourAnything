@@ -59,6 +59,24 @@ test("atomic publication against real local SQL and Storage", { timeout: 90_000 
           assert.equal(new Set(results.map((r) => r.auctionId)).size, 1);
           assert.equal((await row(f)).spot_layout.length, 6);
         });
+        await t.test("opening prices below the payable bid floor are refused", async () => {
+          // The paid Checkout path never accepts a bid under $10, so a published
+          // opening price below that floor would advertise a spot nobody can buy.
+          const tooCheap = fixture();
+          tooCheap.smallOpeningBidCents = 999;
+          await assert.rejects(publish(tooCheap));
+          assert.equal(await row(tooCheap), null);
+
+          const published = await publish(fixture());
+          const spotInsert = await admin.from(prefix + "_laptop_spots").insert({ laptop_id: published.auctionId,
+            position: 7, name: "Too cheap", size: "S", dimensions: "9 × 5 cm", opening_bid_cents: 999, min_increment_cents: 1000 });
+          assert.equal(spotInsert.error?.code, "23514");
+
+          const accepted = fixture();
+          accepted.smallOpeningBidCents = 1000;
+          accepted.spotLayout = accepted.spotLayout.map((spot) => ({ ...spot, openingBidCents: 1000 }));
+          assert.equal((await publish(accepted)).reason, "created");
+        });
         await t.test("parallel distinct publications cannot bypass the owner rate limit", async () => {
           const owner = fixture();
           const attempts = Array.from({ length: 8 }, () => ({ ...fixture(), ownerName: owner.ownerName,
