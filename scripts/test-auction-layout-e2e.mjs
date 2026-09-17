@@ -26,7 +26,9 @@ async function assertPaymentCopy(page, model = false) {
       await form.getByText(expected, { exact: true }).waitFor();
       await form.locator(".dialog-close").click();
       const question = { en: "How does payment work?", zh: "如何付款？", es: "¿Cómo funciona el pago?" }[locale];
-      const faq = page.locator("details").filter({ has: page.getByText(question, { exact: true }) });
+      // The summary appends a decorative "+" span, so an exact text match finds
+      // no element. Match the question as part of the disclosure's text instead.
+      const faq = page.locator("details").filter({ hasText: question });
       await faq.locator("summary").click();
       const answer = await faq.locator(".faq-answer").innerText();
       assert.match(answer, /Stripe/); assert.match(answer, /20/); assert.match(answer, /80/);
