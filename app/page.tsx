@@ -19,6 +19,7 @@ import {
   type AuctionSnapshot,
   type Spot,
 } from "@/lib/auction";
+import { createSpotLogoCache, stabilizeSpotLogoUrls, type SpotLogoCache } from "@/lib/spot-logo-url";
 import { formatRelativeTime } from "@/lib/i18n";
 import { laptopBaseSpotCount, laptopSpotNameKey } from "@/lib/laptop-layout";
 import type { Locale } from "@/lib/i18n";
@@ -108,7 +109,9 @@ function Logo({ spot, compact = false }: { spot: Spot; compact?: boolean }) {
   if (!spot.logo) return <span>{spot.holder || t("common.available")}</span>;
   return (
     <span className={`brand-logo ${compact ? "brand-logo--compact" : ""}`}>
-      <Image src={spot.logo} alt={spot.holder} width={180} height={100} sizes="180px" />
+      {/* The signed Storage URL is per-request, so the Image Optimization API
+          cannot cache it and would spend the plan's transformation quota. */}
+      <Image src={spot.logo} alt={spot.holder} width={180} height={100} unoptimized />
     </span>
   );
 }
@@ -331,6 +334,13 @@ export function AuctionLandingPage({ campaign: initialCampaign, initialSnapshot 
   const [selectedSpotId, setSelectedSpotId] = useState<number | null>(null);
   const [loadedFinalAssets, setLoadedFinalAssets] = useState<Set<string>>(() => new Set());
   const [failedFinalAssets, setFailedFinalAssets] = useState<Set<string>>(() => new Set());
+  const spotLogoCache = useRef<SpotLogoCache | null>(null);
+  if (spotLogoCache.current === null) {
+    const cache = createSpotLogoCache();
+    // Hold the server-rendered URLs so the first poll keeps them.
+    stabilizeSpotLogoUrls(initialSnapshot?.spots ?? [], cache);
+    spotLogoCache.current = cache;
+  }
   const countdown = useCountdown(campaign?.closesAt);
   const selectedSpot = canBid ? spots.find((spot) => spot.id === selectedSpotId && canPlaceBid(spot)) ?? null : null;
   const totalRaised = useMemo(() => spots.reduce((sum, spot) => sum + (spot.bids > 0 ? spot.bid : 0), 0), [spots]);
@@ -374,7 +384,7 @@ export function AuctionLandingPage({ campaign: initialCampaign, initialSnapshot 
 
   const applySnapshot = useCallback((snapshot: AuctionCampaignSnapshot) => {
     setCampaign(snapshot.campaign);
-    setSpots(snapshot.spots);
+    setSpots(stabilizeSpotLogoUrls(snapshot.spots, spotLogoCache.current!));
     setHistory(snapshot.history);
     setBackendStatus("live");
   }, []);
@@ -481,8 +491,8 @@ export function AuctionLandingPage({ campaign: initialCampaign, initialSnapshot 
                         alt=""
                         width={180}
                         height={100}
+                        unoptimized
                         loading="eager"
-                        sizes="120px"
                         onLoad={() => markFinalAssetReady(`logo:${spot.id}:${spot.logo}`)}
                         onError={() => markFinalAssetFailed(`logo:${spot.id}:${spot.logo}`)}
                       />

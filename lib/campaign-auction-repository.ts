@@ -157,6 +157,8 @@ export async function getAuctionSnapshot(slug: string): Promise<AuctionCampaignS
       ...(assetType === "laptop" && campaign.spot_layout?.find((entry) => entry.id === spot.position)?.logoCover
         ? { logoCover: true as const } : {}),
       ...(logoUrls[index] ? { logo: logoUrls[index] } : {}),
+      ...(logoUrls[index] && spot.current_logo_storage_path
+        ? { logoKey: spot.current_logo_storage_path } : {}),
       ...(hasBid && spot.current_website ? { website: spot.current_website } : {}),
       ...(spot.surface_position ? { surfacePosition: spot.surface_position } : {}),
       ...(spot.surface_normal ? { surfaceNormal: spot.surface_normal } : {}),
