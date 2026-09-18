@@ -109,6 +109,21 @@ In **Project Settings > Environment Variables**, configure:
 | `NEXT_PUBLIC_SITE_URL` | `https://brand-anything.vercel.app` | Production, Preview, Development |
 | `SUPABASE_DATABASE_PREFIX` | `ba_prod` | Production only |
 | `SUPABASE_DATABASE_PREFIX` | `ba_dev` | Preview and Development only |
+| `STRIPE_SECRET_KEY` | Live secret/restricted key | Production only |
+| `STRIPE_SECRET_KEY` | Test secret/restricted key | Preview and Development only |
+| `STRIPE_CONNECT_WEBHOOK_SECRET` | Connected-account snapshot endpoint signing secret | Separate value per endpoint/environment |
+| `STRIPE_CONNECT_DEFAULT_COUNTRY` | Country pre-filled when a seller starts Connect onboarding (default `US`) | Any; optional |
+| `ENABLE_AUTOMATIC_REFUNDS` | Set to `1` to re-enable the automated refund/application-fee engine; refunds are manual by default | Optional |
+| `CRON_SECRET` | Strong random server-only reconciliation bearer secret | Production; optional manual recovery elsewhere |
+| `PAYMENT_ALERT_WEBHOOK_URL` | Optional HTTPS endpoint that receives payment recovery alert JSON | Production; optional |
+
+See [Stripe setup, local tests and recovery operations](docs/local-stripe-sandbox-testing.md).
+Database namespace mismatches fail closed; the Stripe mode follows the deployment
+(production domain = live, Preview/local = sandbox) rather than the key string.
+Publishing an auction
+does not enable bidding until its owner completes Stripe Connect from `/manage`.
+Connecting is one click: the platform sends the seller's country and hands the
+rest of the setup to Stripe's hosted onboarding.
 
 X sign-in is never inferred from the Vercel environment name. `/sell` asks `/api/auth/x-status`, which reads the optional X provider status from Supabase Auth without blocking Email/Password sign-in. The X OAuth client ID and client secret belong only in **Supabase Dashboard > Authentication > Sign In / Providers**, never in the app's environment variables. The browser caches an availability result for ten minutes.
 
@@ -136,6 +151,7 @@ The repository intentionally starts before the first bid:
 - bid history and amount raised both start at zero;
 - bids are stored and settled in US dollars, with optional indicative EUR and RMB displays;
 - opening bids are $125 for Small, $200 for Medium, and $400 for Large spots;
+- every advertised opening bid must clear the $10 minimum the paid Checkout path accepts;
 - Final Look preloads the device image and every active sponsor image, then reveals the composition as one complete view.
 
 The migration `20260828225000_reset_auction_to_empty_usd_state.sql` removes the original sold-out demo bids from databases that applied an earlier version of the initial migration. Review that reset before applying migrations to any environment containing data you intend to keep.
@@ -234,7 +250,7 @@ Reset the local database and replay all migrations:
 supabase db reset
 ```
 
-Run the real concurrency test against local Postgres:
+Run the local PostgreSQL integration and HTTP tests (no database reset required):
 
 ```bash
 npm run test:concurrency
@@ -243,11 +259,11 @@ npm run test:api-e2e
 npm run test:stripe-e2e
 ```
 
-The platform test verifies atomic campaign creation, ten-spot isolation, RLS, equal concurrent bids, simultaneous retries, and cross-tenant idempotency-key reuse. Run it once with `SUPABASE_DATABASE_PREFIX=ba_dev` and once with `ba_prod` when validating both namespaces.
+`test:concurrency` is an alias for `test:payment-core`. `test:laptop-platform` runs the current publication, payment and bid-boundary suites. The obsolete unpaid-RPC scripts have been removed. Both commands discover the local Supabase stack and cover both namespaces automatically; they create and clean only their own fixtures, never modify fixed auction spots, and cannot opt into a remote target. Payment tests use a Stripe double with real PostgreSQL, not real card processing. Coverage includes equal paid bids, concurrent Checkout retries, cross-position/cross-auction key conflicts, exact minimum and maximum prices, atomic ten-spot premiums, slug conflicts, recovery backlog accuracy, alert thresholds and private-table/RPC access by anonymous and authenticated clients. `test:bid-core` and `test:recovery-alerts` are pure unit suites that need no database or network.
 
-The API E2E test builds and starts the production Next.js server on a free local port. It verifies the generic auction RPC surface, removed laptop routes, coded error responses, and the complete publish/read/bid flow for a non-laptop object. It creates uniquely named test auctions, so run `supabase db reset` first and use a local Supabase project unless you deliberately set `ALLOW_REMOTE_API_E2E=1`.
+The API E2E test builds with local server/browser credentials and starts production-mode Next.js servers against both local namespaces. It verifies current publication/settlement RPC exposure, removed laptop and unpaid-bid routes, coded publication errors, non-laptop publication/read/retry, environment isolation, and failure without a bid when Stripe is unavailable. It deliberately makes no Stripe calls. The previous remote-target and externally managed-server overrides are no longer supported; each fixture is cleaned after the test.
 
-The Stripe E2E test requires the local Supabase stack, the Stripe CLI, Google Chrome, and a test-mode `STRIPE_SECRET_KEY` whose platform owns the connected account seeded into `ba_dev`. It runs two real test-mode Checkout payments against spot 2, verifies the winner, public bid history, Outbid state, and first-deposit refund, then removes its isolated auction fixture and restores the homepage account. Set `PLAYWRIGHT_CHROME_PATH` when Chrome is installed somewhere other than the standard macOS location.
+The Stripe E2E test requires the local Supabase stack, the Stripe CLI, Google Chrome, and a test-mode `STRIPE_SECRET_KEY` whose platform owns a ready connected account associated with a local `ba_dev` auction. It runs normal Outbid, manual-customer-refund recovery, and rendered 3D auction scenarios, each with two real test-mode Checkout payments against spot 2. It verifies winner/history, loaded logos, distinct Outbid color, customer refunds and platform-fee refunds. It also reopens the losing bidder's original return link and checks the verified refund notice. The 3D variant verifies its form, claimed marker and history; logo availability is checked through the snapshot URL, not a mesh decal. It never changes the original auction's account association. Cleanup verifies fixture refunds before deleting fixture data. Set `PLAYWRIGHT_CHROME_PATH` when Chrome is installed somewhere other than the standard macOS location. See [local Stripe testing and deployment](docs/local-stripe-sandbox-testing.md) for setup and release gates.
 
 ## Follow and support
 

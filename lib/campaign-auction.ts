@@ -19,6 +19,7 @@ export type AuctionCampaign = {
   photoUrl?: string;
   modelUrl?: string;
   modelFileName?: string;
+  assetVersion?: string;
 };
 
 export type AuctionCampaignSnapshot = AuctionSnapshot & {
@@ -41,6 +42,10 @@ export type CreateAuctionInput = {
   largeOpeningBidCents: number;
   minIncrementCents: number;
   spotLayout: SpotLayoutItem[];
+  assetType: CampaignAssetType;
+  assetName: string;
+  modelStoragePath: string | null;
+  modelFileName: string | null;
   idempotencyKey: string;
   ownerUserId?: string | null;
   managerKeyHash?: string | null;

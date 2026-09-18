@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { createClient } from "@supabase/supabase-js";
 import { chromium } from "playwright-core";
 import { buildLocalApp, localAppEnvironment, localStack, startLocalApp } from "./lib/local-stack.mjs";
+import { paymentNoticeChecks } from "./lib/payment-notice-checks.mjs";
 
 const local = localStack();
 const admin = createClient(local.apiUrl, local.secretKey, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -78,6 +79,9 @@ test("auction ownership and public lifecycle on isolated local dev/prod namespac
           assert.equal(new URL(page.url()).searchParams.has("payment"), false);
         });
 
+        await t.test("laptop payment-return UI handles every confirmation outcome", (t) =>
+          paymentNoticeChecks(t, { page, baseUrl: app.baseUrl, slug, endpoint, model: false, prefix }));
+
         await t.test("signed model draft previews survive refresh and reject forged claims", async () => {
           const bytes = new TextEncoder().encode("o Preview\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
           const fileName = "preview-regression.obj";
@@ -107,6 +111,56 @@ test("auction ownership and public lifecycle on isolated local dev/prod namespac
           await refreshed;
           await page.evaluate(() => sessionStorage.removeItem("brand-anything-sell-draft"));
         });
+
+        await t.test("public view switches to a repaired model and reloads same-name replacements, not renewed signatures", async () => {
+          await page.goto(`${app.baseUrl}/${slug}`);
+          const initial = await json(await fetch(endpoint));
+          let version = initial.campaign.assetVersion;
+          const fileName = "same-name.obj";
+          const requestedModels = [];
+          const track = (request) => { if (request.url().includes("/brand_models/") || request.url().includes("_brand_models/")) requestedModels.push(request.url().split("?", 1)[0]); };
+          page.on("request", track);
+          try {
+            for (let i = 0; i < 2; i++) {
+              const bytes = new TextEncoder().encode(`o Model${i}\nv 0 0 0\nv ${1 + i} 0 0\nv 0 1 0\nv 0 0 1\nf 1 2 3\nf 1 4 2\nf 1 3 4\nf 2 4 3\n`);
+              const ticket = await json(await fetch(`${app.baseUrl}/api/models/upload-ticket`, {
+                method: "POST", headers: { ...manager, "Content-Type": "application/json" }, body: JSON.stringify({ fileName, size: bytes.length }),
+              }));
+              uploadedPaths.push(ticket.path);
+              const client = createClient(local.apiUrl, local.publishableKey, { auth: { persistSession: false } });
+              assert.ifError((await client.storage.from(ticket.bucket).uploadToSignedUrl(ticket.path, ticket.token, bytes, { contentType: ticket.contentType })).error);
+              const nextModel = page.waitForResponse((response) => response.url().includes(ticket.path) && response.status() === 200, { timeout: 20_000 });
+              const repaired = await json(await fetch(`${endpoint}/model`, {
+                method: "PUT", headers: { ...manager, "Content-Type": "application/json" },
+                body: JSON.stringify({ assetName: "Repaired object", expectedAssetVersion: version, path: ticket.path, fileName, size: bytes.length, uploadClaim: ticket.uploadClaim }),
+              }));
+              version = repaired.snapshot.campaign.assetVersion;
+              assert.deepEqual(new Uint8Array(await (await nextModel).body()), bytes);
+              await page.getByText("Drag to orbit · scroll to zoom", { exact: true }).waitFor();
+              assert.equal(await page.locator("canvas").count(), 1);
+              const before = requestedModels.length;
+              await page.waitForResponse((response) => response.url() === endpoint && response.status() === 200, { timeout: 10_000 });
+              assert.equal(requestedModels.length, before, "Renewing a signed URL must not reload the model");
+            }
+            assert.equal(new Set(requestedModels).size, 2, "Both same-name model revisions were actually fetched");
+            assert.equal(await page.locator(".mac-lid").count(), 0, "A generic object must not fall back to a MacBook lid");
+            const modelPath = uploadedPaths.at(-1);
+            const matcher = (url) => url.pathname.includes(modelPath);
+            let abortOnce = true;
+            await page.route(matcher, (route) => {
+              if (abortOnce) { abortOnce = false; return route.abort("failed"); }
+              return route.continue();
+            });
+            await page.reload();
+            await page.getByRole("button", { name: "Retry loading model", exact: true }).click();
+            await page.getByText("Drag to orbit · scroll to zoom", { exact: true }).waitFor();
+            await page.unroute(matcher);
+            await page.locator("canvas").screenshot({ path: `/tmp/model-repair-${prefix}.png` });
+          } finally { page.off("request", track); }
+        });
+
+        await t.test("rendered 3D payment-return UI handles every confirmation outcome", (t) =>
+          paymentNoticeChecks(t, { page, baseUrl: app.baseUrl, slug, endpoint, model: true, prefix }));
 
         const users = [];
         for (let index = 0; index < 2; index++) {

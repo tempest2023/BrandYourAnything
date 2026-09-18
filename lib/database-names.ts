@@ -1,21 +1,10 @@
 import "server-only";
+import { resolveDatabasePrefix } from "@/lib/environment-policy";
 
-const DATABASE_PREFIXES = ["ba_dev", "ba_prod"] as const;
-
-export type DatabasePrefix = (typeof DATABASE_PREFIXES)[number];
+export type DatabasePrefix = "ba_dev" | "ba_prod";
 
 export function getDatabasePrefix(): DatabasePrefix {
-  const configured = process.env.SUPABASE_DATABASE_PREFIX;
-  const fallback = process.env.VERCEL_ENV === "production" ? "ba_prod" : "ba_dev";
-  const prefix = configured || fallback;
-
-  if (!DATABASE_PREFIXES.includes(prefix as DatabasePrefix)) {
-    throw new Error(
-      `SUPABASE_DATABASE_PREFIX must be one of: ${DATABASE_PREFIXES.join(", ")}.`,
-    );
-  }
-
-  return prefix as DatabasePrefix;
+  return resolveDatabasePrefix(process.env);
 }
 
 export function getLogoBucket() {
@@ -31,19 +20,8 @@ export function getCampaignTable(name: "campaigns" | "campaign_spots" | "campaig
   return `${getDatabasePrefix()}_${legacyTable}`;
 }
 
-export function getCreateAuctionFunction() {
-  return `${getDatabasePrefix()}_create_auction`;
-}
-
-// The physical Supabase schema still uses the historical laptop table names.
-// This alias keeps ownership creation on the auction API without duplicating
-// the environment-specific database functions.
-export function getCreateOwnedAuctionFunction() {
-  return `${getDatabasePrefix()}_create_owned_auction`;
-}
-
-export function getConfigureAuctionSpotsFunction() {
-  return `${getDatabasePrefix()}_configure_auction_spots`;
+export function getPublishOwnedAuctionFunction() {
+  return `${getDatabasePrefix()}_publish_owned_auction`;
 }
 
 export function getAuctionMediaBucket() {

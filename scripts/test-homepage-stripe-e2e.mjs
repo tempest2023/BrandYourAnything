@@ -8,9 +8,11 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import nextEnv from "@next/env";
+import { createClient } from "@supabase/supabase-js";
 import { chromium } from "playwright-core";
 import Stripe from "stripe";
 import test from "node:test";
+import { buildLocalApp, localAppEnvironment, localStack } from "./lib/local-stack.mjs";
 
 const projectRoot = process.cwd();
 const { loadEnvConfig } = nextEnv;
@@ -28,7 +30,6 @@ if (!stripeKey || !/^[sr]k_test_/.test(stripeKey)) {
 
 const chromePath = process.env.PLAYWRIGHT_CHROME_PATH
   || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const fixtureSlug = `stripe-e2e-${randomUUID().slice(0, 8)}`;
 const stripe = new Stripe(stripeKey);
 
 function run(command, args, options = {}) {
@@ -44,20 +45,7 @@ function run(command, args, options = {}) {
 }
 
 function localSupabaseEnvironment() {
-  const output = run("npx", ["--no-install", "supabase", "status", "-o", "env"]);
-  const values = Object.fromEntries(output.split("\n").flatMap((line) => {
-    const match = line.match(/^([A-Z_]+)=(?:"(.*)"|(.*))$/);
-    return match ? [[match[1], match[2] ?? match[3]]] : [];
-  }));
-  const apiUrl = values.API_URL;
-  const secretKey = values.SECRET_KEY || values.SERVICE_ROLE_KEY;
-  const publishableKey = values.PUBLISHABLE_KEY || values.ANON_KEY;
-  if (!apiUrl || !secretKey || !publishableKey) {
-    throw new Error("Local Supabase is not ready. Run `npx supabase start` first.");
-  }
-  const hostname = new URL(apiUrl).hostname;
-  assert.ok(["127.0.0.1", "localhost"].includes(hostname), "Stripe E2E must use local Supabase.");
-  return { apiUrl, secretKey, publishableKey };
+  return localStack();
 }
 
 function databaseContainer() {
@@ -88,7 +76,7 @@ function sqlString(value) {
   return `'${value.replaceAll("'", "''")}'`;
 }
 
-function createFixture(container) {
+function createFixture(container, fixtureSlug, model = false) {
   const accountRow = sql(
     container,
     "select stripe_account_id || '|' || slug from public.ba_dev_laptops where stripe_account_id is not null limit 1;",
@@ -119,6 +107,10 @@ function createFixture(container) {
     )
     select id, 2, 'Marquee — above the logo', 'L', '9.5 × 5.5 cm', 40000, 1000
       from public.ba_dev_laptops where slug = ${sqlString(fixtureSlug)};
+    ${model ? `insert into public.ba_dev_campaign_assets
+      (laptop_id, asset_type, asset_name, model_storage_path, model_file_name, idempotency_key)
+      select id, 'anything', 'Tesla Cybertruck', 'preset:tesla-cybertruck', 'tesla-cybertruck.glb', ${sqlString(randomUUID())}
+      from public.ba_dev_laptops where slug = ${sqlString(fixtureSlug)};` : ""}
     commit;
   `);
   const laptopId = sql(
@@ -126,10 +118,10 @@ function createFixture(container) {
     `select id from public.ba_dev_laptops where slug = ${sqlString(fixtureSlug)};`,
     true,
   );
-  return { accountId, accountOwnerSlug, laptopId };
+  return { accountId, accountOwnerSlug, laptopId, slug: fixtureSlug };
 }
 
-function removeFixture(container) {
+function removeFixture(container, fixtureSlug) {
   sql(container, `
     begin;
     delete from public.ba_dev_laptops where slug = ${sqlString(fixtureSlug)};
@@ -194,22 +186,19 @@ async function waitForListener(listener) {
   throw new Error(`Stripe listener did not become ready:\n${listener.logs()}`);
 }
 
-async function startApp(baseUrl, webhookSecret, local) {
+async function startApp(baseUrl, webhookSecret, local, fixtureSlug) {
   const nextBin = fileURLToPath(new URL("../node_modules/next/dist/bin/next", import.meta.url));
   const child = spawn(process.execPath, [
     nextBin, "start", ".", "-H", "127.0.0.1", "-p", new URL(baseUrl).port,
   ], {
     cwd: projectRoot,
     env: {
-      ...process.env,
-      NEXT_TELEMETRY_DISABLED: "1",
+      ...localAppEnvironment(local),
       NEXT_PUBLIC_SITE_URL: baseUrl,
-      SUPABASE_URL: local.apiUrl,
-      NEXT_PUBLIC_SUPABASE_URL: local.apiUrl,
-      SUPABASE_SECRET_KEY: local.secretKey,
-      SUPABASE_SERVICE_ROLE_KEY: local.secretKey,
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: local.publishableKey,
-      SUPABASE_DATABASE_PREFIX: "ba_dev",
+      STRIPE_SECRET_KEY: stripeKey,
+      // The shipped default is manual refunds; this suite exists to keep covering
+      // the automated refund engine itself, so it opts the engine back in.
+      ENABLE_AUTOMATIC_REFUNDS: "1",
       STRIPE_WEBHOOK_SECRET: webhookSecret,
       STRIPE_CONNECT_WEBHOOK_SECRET: webhookSecret,
     },
@@ -304,10 +293,11 @@ async function completeStripeCheckout(page, accountId) {
   await page.goto(returnUrl, { waitUntil: "commit" });
 }
 
-async function placeBid(page, accountId, { amount, brand, email, logo }) {
-  await page.locator(".lid-spot--2").click();
-  const dialog = page.locator("dialog[open]");
-  await dialog.locator("#bid").fill(String(amount));
+async function placeBid(page, accountId, { amount, brand, email, logo }, model = false) {
+  if (model) await page.getByRole("button", { name: /^Spot 2, / }).click();
+  else await page.locator(".lid-spot--2").click();
+  const dialog = model ? page.locator('form:has(input[name="brandName"])') : page.locator("dialog[open]");
+  await dialog.locator('input[type="number"]').fill(String(amount));
   await dialog.locator('input[name="brandName"]').fill(brand);
   await dialog.locator('input[name="email"]').fill(email);
   await dialog.locator('input[name="website"]').fill(`https://${brand.toLowerCase().replaceAll(" ", "-")}.example.com`);
@@ -316,7 +306,7 @@ async function placeBid(page, accountId, { amount, brand, email, logo }) {
   try {
     await completeStripeCheckout(page, accountId);
   } catch (error) {
-    const formError = await dialog.locator(".bid-error").textContent().catch(() => null);
+    const formError = await dialog.locator('[role="alert"], .bid-error').textContent().catch(() => null);
     throw new Error(
       `Checkout navigation failed at ${page.url()}${formError ? `: ${formError}` : ""}. ${error instanceof Error ? error.message : error}`,
       { cause: error },
@@ -342,7 +332,7 @@ async function expectEventually(message, assertion, timeout = 30_000) {
 async function paymentRows(local, laptopId) {
   const url = new URL("/rest/v1/ba_dev_laptop_bid_payments", local.apiUrl);
   url.searchParams.set("laptop_id", `eq.${laptopId}`);
-  url.searchParams.set("select", "bidder_name,status,stripe_checkout_session_id,stripe_payment_intent_id");
+  url.searchParams.set("select", "id,bidder_name,status,logo_storage_path,stripe_checkout_session_id,stripe_payment_intent_id,application_fee_id,application_fee_refunded");
   url.searchParams.set("order", "created_at.asc");
   const response = await fetch(url, {
     headers: { apikey: local.secretKey, Authorization: `Bearer ${local.secretKey}` },
@@ -351,10 +341,57 @@ async function paymentRows(local, laptopId) {
   return response.json();
 }
 
-test("homepage Stripe Bid → Outbid flow", { timeout: 180_000 }, async () => {
+async function cleanupFixture(local, container, fixture) {
+  const fixtureSlug = fixture.slug;
+  const rows = await paymentRows(local, fixture.laptopId);
+  // Only this fixture's test payments/assets are in scope. Preserve its database
+  // records if network cleanup fails so the exact leftovers can be reconciled.
+  for (const row of rows) {
+    if (!row.stripe_checkout_session_id) continue;
+    const options = { stripeAccount: fixture.accountId };
+    const session = await stripe.checkout.sessions.retrieve(row.stripe_checkout_session_id, {}, options);
+    if (session.status === "open") await stripe.checkout.sessions.expire(session.id, {}, options);
+    if (session.payment_status === "paid" && typeof session.payment_intent === "string") {
+      const refunds = await stripe.refunds.list({ payment_intent: session.payment_intent, limit: 100 }, options);
+      const refunded = refunds.data.filter((refund) => !["failed", "canceled"].includes(refund.status)).reduce((total, refund) => total + refund.amount, 0);
+      if (refunded < session.amount_total) await stripe.refunds.create({
+        payment_intent: session.payment_intent, amount: session.amount_total - refunded, refund_application_fee: true,
+        metadata: { test_fixture: fixtureSlug },
+      }, { ...options, idempotencyKey: `cleanup-${fixtureSlug}-${row.id}` });
+      const confirmed = await stripe.refunds.list({ payment_intent: session.payment_intent, limit: 100 }, options);
+      assert.equal(confirmed.data.filter((refund) => refund.status === "succeeded").reduce((sum, refund) => sum + refund.amount, 0), session.amount_total,
+        "Preserve this fixture until all customer refunds have actually succeeded");
+      const charge = confirmed.data[0].charge;
+      const fees = await stripe.applicationFees.list({ charge: typeof charge === "string" ? charge : charge.id, limit: 2 });
+      assert.equal(fees.data.length, 1, "Preserve the fixture until its application fee can be verified");
+      const fee = fees.data[0];
+      assert.equal(fee.account, fixture.accountId);
+      if (!fee.refunded) await stripe.applicationFees.createRefund(fee.id, { metadata: { test_fixture: fixtureSlug } },
+        { idempotencyKey: `cleanup-fee-${fixtureSlug}-${row.id}` });
+      const confirmedFee = await stripe.applicationFees.retrieve(fee.id);
+      assert.equal(confirmedFee.refunded, true); assert.equal(confirmedFee.amount_refunded, confirmedFee.amount);
+    }
+  }
+  const paths = rows.map((row) => row.logo_storage_path).filter(Boolean);
+  if (paths.length) {
+    const client = createClient(local.apiUrl, local.secretKey, { auth: { persistSession: false } });
+    const { error } = await client.storage.from("ba_dev_bid_logos").remove(paths);
+    assert.ifError(error);
+  }
+  removeFixture(container, fixtureSlug);
+}
+
+for (const { manualCustomerRefund, model } of [
+  { manualCustomerRefund: false, model: false },
+  { manualCustomerRefund: true, model: false },
+  { manualCustomerRefund: false, model: true },
+]) test(`${model ? "3D" : "homepage"} Stripe Bid → Outbid flow (${manualCustomerRefund ? "adopt manual customer refund" : "automatic full refund"})`, { timeout: 300_000 }, async () => {
+  const fixtureSlug = `stripe-e2e-${randomUUID().slice(0, 8)}`;
   const local = localSupabaseEnvironment();
+  // NEXT_PUBLIC_* values are frozen during build, not at next start.
+  await buildLocalApp({ ...localAppEnvironment(local), STRIPE_SECRET_KEY: stripeKey });
   const container = databaseContainer();
-  const fixture = createFixture(container);
+  const fixture = createFixture(container, fixtureSlug, model);
   const port = await reservePort();
   const baseUrl = `http://127.0.0.1:${port}`;
   let listener;
@@ -365,13 +402,18 @@ test("homepage Stripe Bid → Outbid flow", { timeout: 180_000 }, async () => {
     const account = await stripe.accounts.retrieve(fixture.accountId);
     assert.equal(account.charges_enabled, true, "Connected account must accept test card charges.");
 
-    app = await startApp(baseUrl, stripeWebhookSecret(), local);
+    app = await startApp(baseUrl, stripeWebhookSecret(), local, fixtureSlug);
     browser = await chromium.launch({ executablePath: chromePath, headless: true });
     const context = await browser.newContext({ locale: "en-US" });
     const page = await context.newPage();
     await page.goto(`${baseUrl}/${fixtureSlug}`, { waitUntil: "domcontentloaded" });
     const actionButton = page.locator(".spots-table .outbid-button");
-    const bidButtonBackground = await actionButton.evaluate((button) => getComputedStyle(button).backgroundColor);
+    if (model) {
+      await page.getByText("Drag to orbit · scroll to zoom", { exact: true }).waitFor();
+      assert.equal(await page.locator("canvas").count(), 1);
+      assert.equal(await page.locator(".mac-lid").count(), 0);
+    }
+    const bidButtonBackground = model ? null : await actionButton.evaluate((button) => getComputedStyle(button).backgroundColor);
 
     await placeBid(page, fixture.accountId, {
       amount: 400,
@@ -382,14 +424,21 @@ test("homepage Stripe Bid → Outbid flow", { timeout: 180_000 }, async () => {
         mimeType: "image/png",
         buffer: readFileSync(`${projectRoot}/public/logo-small.png`),
       },
-    });
+    }, model);
+    await page.locator(".payment-notice--accepted").waitFor();
+    assert.equal(new URL(page.url()).searchParams.has("session_id"), false);
     await expectEventually("first paid bid should render on spot 2", async () => {
+      if (model) {
+        assert.equal(await page.getByRole("button", { name: "Spot 2, held by Alpha Brand", exact: true }).count(), 1);
+        assert.match(await page.locator('form:has(input[name="brandName"])').innerText(), /Alpha Brand.*\$400/);
+        return;
+      }
       const text = await page.locator(".lid-spot--2").innerText();
       assert.match(text, /Alpha Brand/);
       assert.match(text, /Outbid/);
       assert.match(text, /\$400/);
     });
-    await expectEventually("Outbid should use a distinct action color", async () => {
+    if (!model) await expectEventually("Outbid should use a distinct action color", async () => {
       assert.equal(await actionButton.textContent(), "Outbid");
       assert.equal(await actionButton.evaluate((button) => button.classList.contains("outbid-button--outbid")), true);
       assert.notEqual(
@@ -397,7 +446,13 @@ test("homepage Stripe Bid → Outbid flow", { timeout: 180_000 }, async () => {
         bidButtonBackground,
       );
     });
-    await expectEventually("the winning logo should load through Next.js image optimization", async () => {
+    await expectEventually("the winning logo should remain accessible after payment", async () => {
+      if (model) {
+        const snapshot = await (await page.request.get(`${baseUrl}/api/auctions/${fixtureSlug}`)).json();
+        assert.ok(snapshot.spots[0].logo);
+        assert.equal((await page.request.get(snapshot.spots[0].logo)).status(), 200);
+        return;
+      }
       const logo = page.locator('.lid-spot--2 img[alt="Alpha Brand"]');
       assert.equal(await logo.count(), 1);
       const state = await logo.evaluate((image) => ({
@@ -419,6 +474,21 @@ test("homepage Stripe Bid → Outbid flow", { timeout: 180_000 }, async () => {
       { stripeAccount: fixture.accountId },
     );
     assert.ok(firstSession.success_url.startsWith(`${baseUrl}/${fixtureSlug}?payment=success`));
+    assert.equal(firstSession.amount_total, 8000, "A $400 bid collects only the $80 deposit");
+    assert.match(firstSession.custom_text.submit.message, /remaining 80% is not collected automatically/);
+
+    if (manualCustomerRefund) {
+      // Simulate a seller refunding only the customer's deposit before the
+      // outbid obligation is processed. Do not attach our application metadata.
+      const manual = await stripe.refunds.create({ payment_intent: firstRows[0].stripe_payment_intent_id,
+        refund_application_fee: false }, { stripeAccount: fixture.accountId });
+      assert.equal(manual.status, "succeeded");
+      const chargeId = typeof manual.charge === "string" ? manual.charge : manual.charge.id;
+      await expectEventually("manual customer refund must leave the fee unrefunded for this regression", async () => {
+        const fees = await stripe.applicationFees.list({ charge: chargeId, limit: 2 });
+        assert.equal(fees.data.length, 1); assert.equal(fees.data[0].amount_refunded, 0);
+      });
+    }
 
     listener = startStripeListener(baseUrl);
     await waitForListener(listener);
@@ -426,17 +496,23 @@ test("homepage Stripe Bid → Outbid flow", { timeout: 180_000 }, async () => {
       amount: 410,
       brand: "Beta Brand",
       email: "beta-stripe-e2e@example.com",
-    });
+    }, model);
     await expectEventually("outbid winner should replace the spot holder", async () => {
+      if (model) {
+        assert.equal(await page.getByRole("button", { name: "Spot 2, held by Beta Brand", exact: true }).count(), 1);
+        assert.match(await page.locator('form:has(input[name="brandName"])').innerText(), /Beta Brand.*\$410/);
+        return;
+      }
       const text = await page.locator(".lid-spot--2").innerText();
       assert.match(text, /Beta Brand/);
       assert.match(text, /Outbid/);
       assert.match(text, /\$410/);
     });
 
-    const historyTab = page.getByRole("tab", { name: /History \(2\)/ });
-    await historyTab.click();
-    const history = await page.locator(".history-list").innerText();
+    if (!model) await page.getByRole("tab", { name: /History \(2\)/ }).click();
+    const history = await (model
+      ? page.locator("section").filter({ has: page.getByRole("heading", { name: "Bid history", exact: true }) })
+      : page.locator(".history-list")).innerText();
     assert.match(history, /Alpha Brand/);
     assert.match(history, /Beta Brand/);
     assert.match(history, /\$400/);
@@ -450,6 +526,28 @@ test("homepage Stripe Bid → Outbid flow", { timeout: 180_000 }, async () => {
       { stripeAccount: fixture.accountId },
     );
     assert.equal(refunds.data[0]?.status, "succeeded");
+    await expectEventually("the platform fee must also be fully refunded and verified in the database", async () => {
+      const current = (await paymentRows(local, fixture.laptopId))[0];
+      assert.equal(current.application_fee_refunded, true); assert.ok(current.application_fee_id);
+      const fee = await stripe.applicationFees.retrieve(current.application_fee_id);
+      assert.equal(fee.account, fixture.accountId); assert.equal(fee.refunded, true);
+      assert.equal(fee.amount_refunded, fee.amount);
+      assert.equal(fee.charge, typeof refunds.data[0].charge === "string" ? refunds.data[0].charge : refunds.data[0].charge.id);
+    });
+    const storage = createClient(local.apiUrl, local.secretKey, { auth: { persistSession: false } }).storage;
+    const retainedLogo = await storage.from("ba_dev_bid_logos").download(rows[0].logo_storage_path);
+    assert.ifError(retainedLogo.error);
+    assert.ok(retainedLogo.data.size > 0, "Outbid must not delete an accepted bid's historical logo.");
+    // The first bidder's real return link now reflects a verified refund, not
+    // stale success. This exercises both public renderers without HTTP mocks.
+    await page.goto(firstSession.success_url.replace("{CHECKOUT_SESSION_ID}", firstSession.id), { waitUntil: "domcontentloaded" });
+    await page.locator(".payment-notice--refunded").waitFor();
+    assert.equal(new URL(page.url()).searchParams.has("session_id"), false);
+    if (model) {
+      await page.getByText("Drag to orbit · scroll to zoom", { exact: true }).waitFor();
+      assert.equal(await page.getByRole("button", { name: "Spot 2, held by Beta Brand", exact: true }).count(), 1);
+      await page.screenshot({ path: "/tmp/stripe-3d-outbid-refunded.png" });
+    } else assert.match(await page.locator(".lid-spot--2").innerText(), /Beta Brand/);
   } catch (error) {
     const diagnostics = [app?.logs(), listener?.logs()].filter(Boolean).join("\n\n");
     if (diagnostics) console.error(diagnostics);
@@ -458,6 +556,6 @@ test("homepage Stripe Bid → Outbid flow", { timeout: 180_000 }, async () => {
     await browser?.close();
     await stopChild(app?.child);
     await stopChild(listener?.child);
-    removeFixture(container, fixture);
+    await cleanupFixture(local, container, fixture);
   }
 });
