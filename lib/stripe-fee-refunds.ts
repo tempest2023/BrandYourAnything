@@ -1,6 +1,6 @@
 import "server-only";
 import type Stripe from "stripe";
-import { getStripe, stripeIsLive } from "@/lib/stripe";
+import { getStripe } from "@/lib/stripe";
 import { paymentStripeOptions } from "@/lib/payment-work-budget";
 import { recordApplicationFee, stripeEnvironment, type LaptopBidPayment } from "@/lib/stripe-bid-repository";
 
@@ -8,7 +8,7 @@ function id(value: string | { id: string } | null) { return typeof value === "st
 
 function verifyFee(fee: Stripe.ApplicationFee, charge: Stripe.Charge, payment: LaptopBidPayment) {
   if (id(fee.account) !== payment.stripeAccountId || id(fee.charge) !== charge.id
-    || fee.livemode !== stripeIsLive() || (id(charge.application_fee) && fee.id !== id(charge.application_fee))
+    || (id(charge.application_fee) && fee.id !== id(charge.application_fee))
     || (payment.applicationFeeId && fee.id !== payment.applicationFeeId)
     || !Number.isSafeInteger(fee.amount) || fee.amount <= 0
     || !Number.isSafeInteger(fee.amount_refunded) || fee.amount_refunded < 0 || fee.amount_refunded > fee.amount
@@ -28,7 +28,7 @@ export async function reconcileApplicationFee(payment: LaptopBidPayment, refund:
   const charge = await stripe.charges.retrieve(chargeId, {}, { ...paymentStripeOptions(), stripeAccount: payment.stripeAccountId });
   const expectedFee = Math.min(payment.depositAmountCents, Math.round(payment.bidAmountCents * 0.1));
   if (id(charge.payment_intent) !== payment.paymentIntentId || charge.id !== chargeId || !charge.paid
-    || charge.livemode !== stripeIsLive() || charge.currency !== "usd" || charge.amount !== payment.depositAmountCents
+    || charge.currency !== "usd" || charge.amount !== payment.depositAmountCents
     || charge.amount_captured !== payment.depositAmountCents || charge.amount_refunded !== payment.depositAmountCents
     || charge.application_fee_amount !== expectedFee) throw new Error("Fee refund charge does not match the deposit.");
 

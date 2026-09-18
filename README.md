@@ -113,11 +113,14 @@ In **Project Settings > Environment Variables**, configure:
 | `STRIPE_SECRET_KEY` | Test secret/restricted key | Preview and Development only |
 | `STRIPE_CONNECT_WEBHOOK_SECRET` | Connected-account snapshot endpoint signing secret | Separate value per endpoint/environment |
 | `STRIPE_CONNECT_DEFAULT_COUNTRY` | Country pre-filled when a seller starts Connect onboarding (default `US`) | Any; optional |
+| `ENABLE_AUTOMATIC_REFUNDS` | Set to `1` to re-enable the automated refund/application-fee engine; refunds are manual by default | Optional |
 | `CRON_SECRET` | Strong random server-only reconciliation bearer secret | Production; optional manual recovery elsewhere |
 | `PAYMENT_ALERT_WEBHOOK_URL` | Optional HTTPS endpoint that receives payment recovery alert JSON | Production; optional |
 
 See [Stripe setup, local tests and recovery operations](docs/local-stripe-sandbox-testing.md).
-Database namespace and Stripe mode mismatches fail closed. Publishing an auction
+Database namespace mismatches fail closed; the Stripe mode follows the deployment
+(production domain = live, Preview/local = sandbox) rather than the key string.
+Publishing an auction
 does not enable bidding until its owner completes Stripe Connect from `/manage`.
 Connecting is one click: the platform sends the seller's country and hands the
 rest of the setup to Stripe's hosted onboarding.

@@ -1,15 +1,27 @@
 type Environment = Record<string, string | undefined>;
 
+export type DeploymentKind = "local" | "preview" | "production";
+export type StripeMode = "live" | "test";
+
 function localNamespaceTest(env: Environment) {
   if (env.ALLOW_LOCAL_PRODUCTION_NAMESPACE !== "1" || env.VERCEL) return false;
   try { return ["localhost", "127.0.0.1", "[::1]"].includes(new URL(env.SUPABASE_URL || "").hostname); }
   catch { return false; }
 }
 
+// Vercel sets VERCEL_ENV for every deployment: production for the production
+// domain, preview for branch/PR URLs, development for `vercel dev`. Outside
+// Vercel, APP_ENV plays the same role.
+export function resolveDeployment(env: Environment): DeploymentKind {
+  const value = (env.VERCEL_ENV || env.APP_ENV || "development").trim().toLowerCase();
+  if (value === "production") return "production";
+  if (value === "preview") return "preview";
+  if (value === "development" || value === "local") return "local";
+  throw new Error("Unknown deployment environment.");
+}
+
 export function resolveDatabasePrefix(env: Environment): "ba_dev" | "ba_prod" {
-  const deployment = env.VERCEL_ENV || env.APP_ENV || "development";
-  if (!["production", "preview", "development"].includes(deployment)) throw new Error("Unknown deployment environment.");
-  const expected = deployment === "production" ? "ba_prod" : "ba_dev";
+  const expected = resolveDeployment(env) === "production" ? "ba_prod" : "ba_dev";
   const prefix = env.SUPABASE_DATABASE_PREFIX || expected;
   if (prefix !== "ba_dev" && prefix !== "ba_prod") throw new Error("Invalid database namespace.");
   if (prefix !== expected && !(prefix === "ba_prod" && localNamespaceTest(env))) {
@@ -18,12 +30,11 @@ export function resolveDatabasePrefix(env: Environment): "ba_dev" | "ba_prod" {
   return prefix;
 }
 
-export function resolveStripeMode(env: Environment): "live" | "test" {
-  const mode = env.STRIPE_SECRET_KEY?.trim().match(/^[sr]k_(live|test)_[A-Za-z0-9]+$/)?.[1];
-  if (mode !== "live" && mode !== "test") throw new Error("A valid Stripe secret or restricted key is required.");
-  const prefix = resolveDatabasePrefix(env);
-  if ((prefix === "ba_dev" && mode !== "test") || (prefix === "ba_prod" && mode !== "live" && !localNamespaceTest(env))) {
-    throw new Error("Stripe mode does not match the database namespace.");
-  }
-  return mode;
+// The Stripe mode is a property of the deployment, not of the key string: the
+// production domain talks to live Stripe, while local and preview deployments
+// talk to sandbox Stripe whatever key is configured. The configured key is used
+// as-is — if it does not belong to the deployment's Stripe mode, Stripe rejects
+// the call instead of this module refusing to start.
+export function resolveStripeMode(env: Environment): StripeMode {
+  return resolveDeployment(env) === "production" ? "live" : "test";
 }

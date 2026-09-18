@@ -2,7 +2,7 @@ import "server-only";
 import type Stripe from "stripe";
 import type { AuctionOwnerCredential } from "@/lib/publishing-auth";
 import { auctionUrl, auctionPath } from "@/lib/site";
-import { getStripe, getStripeMerchantAccountState, stripeIsLive } from "@/lib/stripe";
+import { getStripe, getStripeMerchantAccountState } from "@/lib/stripe";
 import { stripeEnvironment } from "@/lib/stripe-bid-repository";
 import { ownedStripeAccount, StripeConnectError, type OwnedStripeAccount } from "@/lib/stripe-connect-repository";
 import { DEFAULT_CONNECT_COUNTRY, normalizeConnectCountry } from "@/lib/stripe-countries";
@@ -38,8 +38,9 @@ function accountParameters(auction: OwnedStripeAccount, owner: AuctionOwnerCrede
 }
 
 function matchesAuction(account: Stripe.V2.Core.Account, auction: OwnedStripeAccount) {
-  return account.livemode === stripeIsLive()
-    && account.metadata?.brand_anything_auction_id === auction.id
+  // Ownership, not Stripe mode: the same auction may legitimately be onboarded
+  // from a sandbox account while the deployment is the production domain.
+  return account.metadata?.brand_anything_auction_id === auction.id
     && account.metadata?.brand_anything_slug === auction.slug;
 }
 

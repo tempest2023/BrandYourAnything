@@ -410,3 +410,34 @@ Still open: hosted Connect completion is a human step (Stripe CAPTCHA), deployed
 `CRON_SECRET`/`PAYMENT_ALERT_WEBHOOK_URL`/`STRIPE_CONNECT_DEFAULT_COUNTRY`
 configuration, remote migration application, final real Stripe E2E on a Preview,
 and PR description/head sync.
+
+2026-09-17 deployment-scoped Stripe mode and manual refunds (local; not yet pushed):
+
+- **Stripe mode now follows the deployment, not the key string.**
+  `resolveStripeMode` returns `live` for the production domain and `test` for
+  local/Preview whatever key is configured; `resolveDeployment` centralizes the
+  `VERCEL_ENV`/`APP_ENV` mapping and `isStripeConfigured` only requires a key to
+  be present. The key is used as-is, so a wrong-mode key is rejected by Stripe
+  rather than by this module. Deliberate consequence: pasting a live key into a
+  Preview deployment is no longer detected by the app.
+  - Removing the key-derived mode made the `livemode` equality checks wrong, so
+    they are gone from `validateCheckoutIdentity`, `validatePaidCheckout`,
+    `stripe-fee-refunds`, the Connect legacy-account match and the webhook
+    handler. Sessions are still scoped by reserved account, auction, deposit,
+    currency, metadata and the `dev`/`prod` environment namespace.
+- **Refunds are manual.** `lib/refund-policy.ts` ships `AUTOMATIC_REFUNDS_ENABLED`
+  false (`ENABLE_AUTOMATIC_REFUNDS=1` opts a deployment back in). The app no
+  longer creates or completes customer refunds or application-fee refunds:
+  obligations stay in `refund_pending` for an operator to settle in the Stripe
+  Dashboard, and the backlog RPC/alerts show how many are waiting.
+  `reconcilePendingRefunds` reports a drained queue and `reconcileStripePayments`
+  works the payment queue only.
+  - The automated engine keeps full coverage: `test-payment-core` loads it
+    enabled, one new subtest pins the shipped manual default (no Stripe refund,
+    obligation retained, winner still settles), and the paid-flow E2E runs with
+    `ENABLE_AUTOMATIC_REFUNDS=1`.
+  - Still to reconcile with this decision: the localized copy still promises an
+    automatic refund when a bid is outbid.
+- Validation on this change: `test:payment-core` 54/54, publication core 23/23,
+  connect core 29/29, model core 19/19, bid core 5/5, recovery alerts 5/5,
+  layout rules 3/3, typecheck, lint and `git diff --check`.

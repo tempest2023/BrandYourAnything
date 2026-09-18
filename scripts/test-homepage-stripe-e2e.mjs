@@ -196,6 +196,9 @@ async function startApp(baseUrl, webhookSecret, local, fixtureSlug) {
       ...localAppEnvironment(local),
       NEXT_PUBLIC_SITE_URL: baseUrl,
       STRIPE_SECRET_KEY: stripeKey,
+      // The shipped default is manual refunds; this suite exists to keep covering
+      // the automated refund engine itself, so it opts the engine back in.
+      ENABLE_AUTOMATIC_REFUNDS: "1",
       STRIPE_WEBHOOK_SECRET: webhookSecret,
       STRIPE_CONNECT_WEBHOOK_SECRET: webhookSecret,
     },

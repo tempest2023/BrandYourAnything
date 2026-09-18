@@ -12,7 +12,8 @@ import {
   settleLaptopBidPayment, stripeEnvironment, type LaptopBidPayment, type StripeBidContext,
   compensateLatePayment, claimPaymentWork, finishPaymentWork, type PaymentRecoveryWork,
 } from "@/lib/stripe-bid-repository";
-import { getStripe, stripeIsLive } from "@/lib/stripe";
+import { getStripe } from "@/lib/stripe";
+import { AUTOMATIC_REFUNDS_ENABLED } from "@/lib/refund-policy";
 import { validateCheckoutIdentity, validatePaidCheckout } from "@/lib/stripe-payment-contract";
 import { paymentStripeOptions, paymentWorkRemaining, withPaymentWorkBudget } from "@/lib/payment-work-budget";
 import {
@@ -152,6 +153,11 @@ async function finishRecovery(work: PaymentRecoveryWork, errorCode: string | nul
 }
 
 export async function reconcilePendingRefunds(laptopId?: string, paymentId?: string) {
+  // Refunds are manual: report the queue as drained and leave every payment in
+  // `refund_pending` for an operator to settle in the Stripe Dashboard.
+  if (!AUTOMATIC_REFUNDS_ENABLED) {
+    return { processed: 0, pending: 0, failed: [] as string[], budgetExhausted: false };
+  }
   return withPaymentWorkBudget(async () => {
     let processed = 0; let pending = 0;
     const failed: string[] = [];
@@ -200,9 +206,9 @@ async function fulfillVerifiedCheckout(sessionId: string, eventAccountId: string
     || (eventAccountId && eventAccountId !== payment.stripeAccountId)) throw new StripeBidError("checkout_unavailable", "This Checkout Session does not belong to this auction account.");
   // Always retrieve through the reserved account, never the seller's current one.
   const session = await getStripe().checkout.sessions.retrieve(sessionId, { expand: ["payment_intent"] }, { ...paymentStripeOptions(), stripeAccount: payment.stripeAccountId });
-  validateCheckoutIdentity(session, payment, auction.slug, stripeEnvironment(), stripeIsLive());
+  validateCheckoutIdentity(session, payment, auction.slug, stripeEnvironment());
   const verifiedIntent = session.payment_status === "paid"
-    ? validatePaidCheckout(session, { ...payment, checkoutSessionId: session.id }, auction.slug, stripeEnvironment(), stripeIsLive())
+    ? validatePaidCheckout(session, { ...payment, checkoutSessionId: session.id }, auction.slug, stripeEnvironment())
     : null;
   if (!payment.checkoutSessionId) payment = await attachCheckoutSession(payment.id, session.id);
   if (payment.checkoutSessionId !== session.id) throw new Error("Checkout attachment mismatch.");
@@ -256,7 +262,8 @@ export async function reconcileStripePayments(): Promise<ReconciliationReport> {
     let paymentsChecked = 0; let refundsChecked = 0; let refundsPending = 0; let empty = 0;
     // Alternate queues so a payment backlog cannot starve refunds (or vice versa).
     for (let index = 0; paymentsChecked + refundsChecked < 30 && empty < 2 && paymentWorkRemaining() >= 5_000; index++) {
-      const kind = index % 2 === 0 ? "refund" : "payment";
+      // Manual refunds leave only the payment queue to recover.
+      const kind = AUTOMATIC_REFUNDS_ENABLED && index % 2 === 0 ? "refund" : "payment";
       const payment = await claimPaymentWork(kind);
       if (!payment) { empty++; continue; }
       empty = 0;

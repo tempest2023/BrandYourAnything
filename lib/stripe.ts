@@ -10,6 +10,7 @@ let stripeClient: Stripe | null = null;
 let stripeClientKey: string | undefined;
 
 export function isStripeConfigured() {
+  if (!process.env.STRIPE_SECRET_KEY?.trim()) return false;
   try { resolveStripeMode(process.env); return true; } catch { return false; }
 }
 

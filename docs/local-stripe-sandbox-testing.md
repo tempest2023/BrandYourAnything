@@ -6,14 +6,24 @@ USD currency, deposit amount, PaymentIntent, metadata and platform fee.
 
 ## Environment boundaries
 
-| Deployment | Database/Storage prefix | Stripe key |
+| Deployment | Database/Storage prefix | Stripe mode |
 | --- | --- | --- |
-| Local development | `ba_dev` | `sk_test_…` or permitted `rk_test_…` |
-| Vercel Preview | `ba_dev` | Test mode only |
-| Production | `ba_prod` | Live mode only |
+| Local development | `ba_dev` | Sandbox (`test`) |
+| Vercel Preview | `ba_dev` | Sandbox (`test`) |
+| Production | `ba_prod` | Live |
 
 Set `APP_ENV=production` on non-Vercel production hosts. Vercel supplies
 `VERCEL_ENV`. A contradictory explicit `SUPABASE_DATABASE_PREFIX` fails closed.
+
+The Stripe mode is derived from the **deployment**, not from the key string: the
+production domain runs live Stripe, while local and Preview URLs run sandbox
+Stripe whatever key is configured. The key is used as-is, so a sandbox key on the
+production domain is accepted by the app and then rejected by Stripe itself when
+it is used. Nothing inspects the key's `live`/`test` segment, and the payment
+contract no longer compares `livemode` with the deployment — a session is scoped
+by its reserved connected account, the auction, the deposit amount and the
+`environment` metadata (`dev`/`prod`). The webhook handler likewise no longer
+drops events based on `livemode`.
 The management/payment test suites may exercise `ba_prod` locally using
 `ALLOW_LOCAL_PRODUCTION_NAMESPACE=1`; this exception requires a loopback
 `SUPABASE_URL` and is rejected on Vercel. Do not set it on deployed environments.
@@ -202,15 +212,18 @@ requests must not carry the connected-account header.
 [Direct-charge fees and refunds](https://docs.stripe.com/connect/direct-charges#issue-refunds),
 [fee refund API](https://docs.stripe.com/api/fee_refunds/create).
 
-This recovery only handles refunds the auction already owes (Outbid or rejected
-settlement). Manual/operator refunds are not a supported product flow: this is an
-auction, the platform charges a 20% deposit, and the remaining 80% is never
-collected automatically. A winner who does not pay the balance forfeits the
-deposit to the auctioneer; a bidder who paid a deposit is never refunded for
-having "paid in full", because the platform never charges the full amount. If an
-operator still issues a refund out of band, recovery adopts it only to keep the
-customer refund and the Stripe application fee consistent — it never creates a
-new customer refund on its own.
+**Refunds are manual.** `lib/refund-policy.ts` ships with the automated engine
+off, so the application never creates or completes a Stripe refund (and never
+refunds the platform application fee). The obligation is still recorded: a bid
+that should be returned moves to `refund_pending` and stays there, and the
+amount waiting for an operator shows up in the backlog RPC and its alerts. An
+operator settles those deposits in the Stripe Dashboard. Set
+`ENABLE_AUTOMATIC_REFUNDS=1` to switch the engine back on — the recovery queue,
+the Stripe contract checks, the release-gate E2E and the payment-core fixtures
+still cover it.
+
+This is an auction: the platform charges a 20% deposit and never collects the
+remaining 80% automatically, so there is no "paid in full, then refunded" case.
 
 The authenticated GET/POST `/api/internal/stripe/reconcile` endpoint checks
 pending payments and refunds. Send `Authorization: Bearer <CRON_SECRET>` from

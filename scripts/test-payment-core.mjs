@@ -28,20 +28,30 @@ test("return origins preserve deployment aliases and local browser storage witho
   assert.equal(getRequestOrigin(request("http://localhost:3000/api", "attacker.example"), preview), "https://preview.example");
   assert.throws(() => getRequestOrigin(request("https://attacker.example/api", "attacker.example"), {}));
 });
-test("deployment/database/key modes fail closed, with an explicit local-only namespace test exception", () => {
+test("Stripe mode and database namespace follow the deployment, not the key format", () => {
+  assert.equal(policy.resolveDeployment({}), "local");
+  assert.equal(policy.resolveDeployment({ VERCEL_ENV: "preview" }), "preview");
+  assert.equal(policy.resolveDeployment({ VERCEL_ENV: "production" }), "production");
+  assert.throws(() => policy.resolveDeployment({ VERCEL_ENV: "staging" }));
+
   assert.equal(policy.resolveDatabasePrefix({}), "ba_dev");
   assert.equal(policy.resolveDatabasePrefix({ VERCEL_ENV: "production" }), "ba_prod");
   assert.throws(() => policy.resolveDatabasePrefix({ VERCEL_ENV: "preview", SUPABASE_DATABASE_PREFIX: "ba_prod" }));
   assert.throws(() => policy.resolveDatabasePrefix({ VERCEL_ENV: "production", SUPABASE_DATABASE_PREFIX: "ba_dev" }));
-  assert.throws(() => policy.resolveStripeMode({ STRIPE_SECRET_KEY: "sk_live_example" }));
-  assert.throws(() => policy.resolveStripeMode({ VERCEL_ENV: "production", STRIPE_SECRET_KEY: "sk_test_example" }));
-  assert.equal(policy.resolveStripeMode({ VERCEL_ENV: "production", STRIPE_SECRET_KEY: "rk_live_example" }), "live");
-  assert.equal(policy.resolveStripeMode({ STRIPE_SECRET_KEY: "sk_test_example" }), "test");
-  assert.throws(() => policy.resolveStripeMode({ STRIPE_SECRET_KEY: "not-a-key" }));
-  const local = { SUPABASE_URL: "http://127.0.0.1:54321", SUPABASE_DATABASE_PREFIX: "ba_prod", ALLOW_LOCAL_PRODUCTION_NAMESPACE: "1", STRIPE_SECRET_KEY: "sk_test_example" };
-  assert.equal(policy.resolveStripeMode(local), "test");
-  assert.throws(() => policy.resolveStripeMode({ ...local, VERCEL: "1", VERCEL_ENV: "preview" }));
-  assert.throws(() => policy.resolveStripeMode({ ...local, SUPABASE_URL: "https://example.supabase.co" }));
+
+  // The production domain is live Stripe and every preview/local URL is sandbox,
+  // whatever key is configured: Stripe itself rejects a key from the wrong mode.
+  assert.equal(policy.resolveStripeMode({ VERCEL_ENV: "production" }), "live");
+  assert.equal(policy.resolveStripeMode({ VERCEL_ENV: "production", STRIPE_SECRET_KEY: "sk_test_example" }), "live");
+  assert.equal(policy.resolveStripeMode({ VERCEL_ENV: "preview", STRIPE_SECRET_KEY: "sk_live_example" }), "test");
+  assert.equal(policy.resolveStripeMode({}), "test");
+  assert.throws(() => policy.resolveStripeMode({ VERCEL_ENV: "staging" }));
+
+  // The local-only escape hatch still lets local tests exercise the prod tables.
+  const local = { SUPABASE_URL: "http://127.0.0.1:54321", SUPABASE_DATABASE_PREFIX: "ba_prod", ALLOW_LOCAL_PRODUCTION_NAMESPACE: "1" };
+  assert.equal(policy.resolveDatabasePrefix(local), "ba_prod");
+  assert.throws(() => policy.resolveDatabasePrefix({ ...local, VERCEL: "1", VERCEL_ENV: "preview" }));
+  assert.throws(() => policy.resolveDatabasePrefix({ ...local, SUPABASE_URL: "https://example.supabase.co" }));
 });
 
 function stripeDouble() {
@@ -155,6 +165,10 @@ test("payment service and real local PostgreSQL preserve payment invariants", { 
   let accountReads = 0;
   let currentAccountState = { closed: false, chargesEnabled: true, payoutsEnabled: true };
   const overrides = { "@/lib/supabase-admin": { getSupabaseAdmin: () => admin, isSupabaseConfigured: () => true },
+    // The automated refund engine is off in production (refunds are manual);
+    // these tests load it enabled so the engine itself stays covered, and one
+    // dedicated test pins the shipped default.
+    "@/lib/refund-policy": { AUTOMATIC_REFUNDS_ENABLED: true },
     "@/lib/stripe": { getStripe: () => fake.api, isStripeConfigured: () => true, stripeIsLive: () => false, getStripeWebhookSecrets: () => ["whsec_local"],
       getStripeMerchantAccountState: async () => { accountReads++; return currentAccountState; } } };
   const repository = loadTypeScript("lib/stripe-bid-repository.ts", overrides);
@@ -343,10 +357,10 @@ test("payment service and real local PostgreSQL preserve payment invariants", { 
       } finally { process.env.SUPABASE_DATABASE_PREFIX = prefix; }
     });
 
-    await t.test("amount, currency, metadata, mode and account mismatches never enter the ledger", async () => {
+    await t.test("amount, currency, metadata and account mismatches never enter the ledger", async () => {
       const f = await fixture();
       for (const mutate of [(s) => s.amount_total++, (s) => { s.currency = "eur"; }, (s) => { s.payment_intent.amount_received--; },
-        (s) => { s.payment_intent.application_fee_amount = 0; }, (s) => { s.metadata.environment = "prod"; }, (s) => { s.livemode = true; }]) {
+        (s) => { s.payment_intent.application_fee_amount = 0; }, (s) => { s.metadata.environment = "prod"; }]) {
         const result = await checkout(f, input()); const session = fake.pay(result.sessionId);
         mutate(session);
         await assert.rejects(service.fulfillCheckoutSession(session.id, f.accountId));
@@ -420,7 +434,8 @@ test("payment service and real local PostgreSQL preserve payment invariants", { 
       const entry = [...fake.state.sessions.values()].find((e) => e.session.metadata.bid_payment_id === payment.id);
       const session = fake.pay(entry.session.id);
       const event = { id: "evt_local", object: "event", type: "checkout.session.completed", account: f.accountId, livemode: false, data: { object: session } };
-      assert.equal((await deliver({ ...event, livemode: true })).status, 200);
+      // A sandbox event is valid on a production deployment now that the Stripe
+      // mode follows the deployment; the environment metadata is the real scope.
       assert.equal((await deliver({ ...event, data: { object: { ...session, metadata: {} } } })).status, 200);
       assert.equal((await bids(f)).length, 0);
       assert.equal((await deliver(event)).status, 200);
@@ -491,8 +506,8 @@ test("payment service and real local PostgreSQL preserve payment invariants", { 
       }
     });
 
-    await t.test("fee account, mode, charge and amount mismatches cannot trigger a platform refund", async () => {
-      for (const mutate of [(fee) => { fee.account = "acct_wrong"; }, (fee) => { fee.livemode = true; },
+    await t.test("fee account, charge and amount mismatches cannot trigger a platform refund", async () => {
+      for (const mutate of [(fee) => { fee.account = "acct_wrong"; },
         (fee) => { fee.charge = "ch_wrong"; }, (fee) => { fee.amount = 0; }, (_fee, charge) => { charge.payment_intent = "pi_wrong"; },
         (_fee, charge) => { charge.application_fee_amount++; }]) {
         const f = await fixture(); const first = await checkout(f, input()); fake.pay(first.sessionId); await service.fulfillCheckoutSession(first.sessionId);
@@ -554,6 +569,25 @@ test("payment service and real local PostgreSQL preserve payment invariants", { 
       assert.ok(summary.backlog && Number.isFinite(summary.backlog.paymentDue), "reconciliation reports a readable backlog");
       assert.equal(fake.state.creates, count);
       assert.equal((await repository.getBidPaymentById(payment.id)).status, "accepted");
+    });
+
+    await t.test("refunds stay manual by default: the outbid loser keeps a pending obligation and Stripe is never called", async () => {
+      const manual = loadTypeScript("lib/stripe-bids.ts", { ...overrides,
+        "@/lib/refund-policy": { AUTOMATIC_REFUNDS_ENABLED: false },
+        "@/lib/stripe-bid-repository": repository });
+      const f = await fixture();
+      const first = await checkout(f, input()); fake.pay(first.sessionId);
+      await service.fulfillCheckoutSession(first.sessionId);
+      const refundsBefore = fake.state.refundCreates;
+      const second = await checkout(f, input(41000)); fake.pay(second.sessionId);
+      await manual.fulfillCheckoutSession(second.sessionId);
+      const loser = await repository.getBidPaymentBySessionId(first.sessionId);
+      assert.equal(loser.status, "refund_pending", "the obligation is still recorded");
+      assert.equal(fake.state.refundCreates, refundsBefore, "manual refunds must not call Stripe");
+      assert.deepEqual(await manual.reconcilePendingRefunds(f.id, loser.id),
+        { processed: 0, pending: 0, failed: [], budgetExhausted: false });
+      assert.equal(fake.state.refundCreates, refundsBefore);
+      assert.equal((await repository.getBidPaymentBySessionId(second.sessionId)).status, "accepted", "the winner still settles");
     });
 
     await t.test("a verified paid legacy-expired attempt is refunded, never silently lost or accepted", async () => {

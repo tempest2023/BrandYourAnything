@@ -2,7 +2,7 @@ import Stripe from "stripe";
 
 import { getBidPaymentById, hasCampaignForStripeAccount, stripeEnvironment, updateCampaignsForStripeAccount } from "@/lib/stripe-bid-repository";
 import { expireCheckoutSession, fulfillCheckoutSession, reconcilePendingRefunds, StripeBidError } from "@/lib/stripe-bids";
-import { getStripe, getStripeMerchantAccountState, getStripeWebhookSecrets, isStripeConfigured, stripeIsLive } from "@/lib/stripe";
+import { getStripe, getStripeMerchantAccountState, getStripeWebhookSecrets, isStripeConfigured } from "@/lib/stripe";
 
 export const runtime = "nodejs";
 
@@ -34,7 +34,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    if (event.livemode !== stripeIsLive()) return Response.json({ received: true, ignored: true });
+    // Events are scoped by the reserved account and the `environment` metadata,
+    // not by Stripe mode: a production deployment may run a sandbox account.
     if (event.type.startsWith("checkout.session.")) {
       const session = event.data.object as Stripe.Checkout.Session;
       if (!event.account || session.metadata?.environment !== stripeEnvironment()
