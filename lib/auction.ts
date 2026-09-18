@@ -13,6 +13,10 @@ export type Spot = {
   bids: number;
   logoCover?: true;
   logo?: string;
+  // Stable identity of the uploaded logo object. The signed `logo` URL is
+  // re-minted on every render, so clients use this key to tell a re-signed URL
+  // apart from a genuinely replaced logo.
+  logoKey?: string;
   website?: string;
   surfacePosition?: SurfaceVector;
   surfaceNormal?: SurfaceVector;

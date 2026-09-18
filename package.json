@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "auth:confirm-email": "bun scripts/confirm-supabase-email.ts",
     "test:concurrency": "npm run test:payment-core",
-    "test:laptop-platform": "node --test scripts/test-publication-core.mjs scripts/test-payment-core.mjs scripts/test-bid-boundaries-core.mjs",
+    "test:laptop-platform": "node --test scripts/test-publication-core.mjs scripts/test-payment-core.mjs scripts/test-bid-boundaries-core.mjs scripts/test-spot-logo-url.mjs",
     "test:bid-core": "node --test scripts/test-bid-boundaries-core.mjs",
     "test:api-e2e": "node --test scripts/test-auction-api-e2e.mjs",
     "test:stripe-e2e": "node --test scripts/test-homepage-stripe-e2e.mjs",

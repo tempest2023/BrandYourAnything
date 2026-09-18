@@ -3,7 +3,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "@/app/i18n-provider";
 import { ModelStage } from "@/app/model-stage";
@@ -18,6 +18,7 @@ import { getBrandModelFormat } from "@/lib/brand-model";
 import { formatRelativeTime, SPOT_NAME_KEYS } from "@/lib/i18n";
 import type { Locale } from "@/lib/i18n";
 import type { AuctionCampaignSnapshot } from "@/lib/campaign-auction";
+import { createSpotLogoCache, stabilizeSpotLogoUrls, type SpotLogoCache } from "@/lib/spot-logo-url";
 import {
   amountFromUsd,
   amountToUsdCents,
@@ -197,6 +198,13 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: AuctionCam
   const { closed, canBid } = useAuctionAvailability(snapshot.campaign);
   const [selectedSpotId, setSelectedSpotId] = useState(initialSnapshot.spots[0]?.id ?? 1);
   const [backendStatus, setBackendStatus] = useState<"live" | "offline">("live");
+  const spotLogoCache = useRef<SpotLogoCache | null>(null);
+  if (spotLogoCache.current === null) {
+    const cache = createSpotLogoCache();
+    // Hold the server-rendered URLs so the first poll keeps them.
+    stabilizeSpotLogoUrls(initialSnapshot.spots, cache);
+    spotLogoCache.current = cache;
+  }
   const countdown = useCountdown(snapshot.campaign.closesAt);
   const selectedSpot = snapshot.spots.find((spot) => spot.id === selectedSpotId) ?? snapshot.spots[0];
   const totalRaised = useMemo(
@@ -208,7 +216,7 @@ export function LaptopAuction({ initialSnapshot }: { initialSnapshot: AuctionCam
   const isAnything = snapshot.campaign.assetType === "anything";
 
   const applySnapshot = useCallback((nextSnapshot: AuctionCampaignSnapshot) => {
-    setSnapshot(nextSnapshot);
+    setSnapshot({ ...nextSnapshot, spots: stabilizeSpotLogoUrls(nextSnapshot.spots, spotLogoCache.current!) });
     setBackendStatus("live");
   }, []);
   const paymentState = useCheckoutReturn(applySnapshot, snapshot.campaign.slug);
