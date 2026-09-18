@@ -10,6 +10,7 @@ import { useI18n } from "@/app/i18n-provider";
 import { PreferenceControls } from "@/app/preference-controls";
 import { useCheckoutReturn } from "@/app/use-checkout-return";
 import { useAuctionAvailability } from "@/app/use-auction-availability";
+import { useHasManagedAuctions } from "@/app/use-has-managed-auctions";
 import { AuctionStatus } from "@/app/auction-status";
 import { PaymentNotice } from "@/app/payment-notice";
 import {
@@ -306,6 +307,7 @@ export function AuctionLandingPage({ campaign: initialCampaign, initialSnapshot 
   const [campaign, setCampaign] = useState(initialCampaign);
   const { closed, canBid } = useAuctionAvailability(campaign);
   const { currency, locale, t, formatDate } = useI18n();
+  const hasManagedAuctions = useHasManagedAuctions();
   const money = (amount: number) => formatCurrency(amount, currency, locale);
   const campaignGoal = campaign?.goal ?? CAMPAIGN_GOAL_USD;
   const auctionEndpoint = campaign
@@ -735,6 +737,7 @@ export function AuctionLandingPage({ campaign: initialCampaign, initialSnapshot 
             <p>{t("home.footerOpenSource")} <a href={SOURCE_URL} target="_blank" rel="noreferrer">Brand Anything ↗</a></p>
             <p>{t("home.footerContribute")} <a href={`${SOURCE_URL}/issues`} target="_blank" rel="noreferrer">GitHub ↗</a></p>
             <div className="footer-meta">
+              {hasManagedAuctions && <Link href="/manage">{t("common.manageAuctions")}</Link>}
               <Link href="/privacy">{t("common.privacy")}</Link>
               <Link href="/terms">{t("common.terms")}</Link>
               <a href={SOURCE_URL} target="_blank" rel="noreferrer">{t("home.sourceGithub")}</a>
