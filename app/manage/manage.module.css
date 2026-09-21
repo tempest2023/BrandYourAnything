@@ -1,337 +1,157 @@
 .page {
   min-height: 100vh;
-  padding-bottom: max(5rem, env(safe-area-inset-bottom));
-  background:
-    radial-gradient(circle at 8% 7rem, color-mix(in oklch, var(--green-soft) 24%, transparent), transparent 22rem),
-    var(--paper);
+  padding-bottom: max(4rem, env(safe-area-inset-bottom));
+  background: var(--paper);
   color: var(--ink);
 }
 
-.page :global(.nav-actions) > :global(.dark-button) {
-  display: inline-flex;
+.manageHero {
+  padding-bottom: clamp(4rem, 9vw, 6rem);
 }
 
-.navContext {
-  display: none;
-  color: var(--ink-3);
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+.manageHero :global(.funding) {
+  margin-bottom: 2rem;
 }
 
-.marketplaceLink {
-  display: none;
-  min-height: 2.4rem;
-  padding: 0 0.75rem;
-  align-items: center;
-  border-radius: 999px;
-  color: var(--ink-2);
-  font-size: 0.78rem;
-  font-weight: 600;
-  transition: background-color 160ms ease-out, color 160ms ease-out;
-}
-
-.main {
-  width: min(100% - 1.5rem, 70rem);
-  margin: 0 auto;
-}
-
-.hero {
+.accountNotice {
   display: grid;
-  padding: clamp(3.5rem, 10vw, 5.5rem) 0 clamp(2.75rem, 8vw, 4.5rem);
-  gap: 2.5rem;
-}
-
-.eyebrow,
-.sectionKicker,
-.settingsLabel {
-  margin: 0;
-  color: var(--ink-3);
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  line-height: 1.25;
-  text-transform: uppercase;
-}
-
-.hero h1 {
-  max-width: 42rem;
-  margin: 0.85rem 0 0;
-  font-size: clamp(2.75rem, 10vw, 4.85rem);
-  font-weight: 560;
-  letter-spacing: -0.065em;
-  line-height: 0.98;
-}
-
-.hero h1 span {
-  color: var(--ink-3);
-  font-weight: 440;
-}
-
-.heroCopy {
-  max-width: 38rem;
-  margin: 1.25rem 0 0;
-  color: var(--ink-2);
-  font-size: 1rem;
-  line-height: 1.65;
-}
-
-.heroSummary {
-  display: grid;
-  padding-top: 1.25rem;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: end;
-  gap: 1rem;
-  border-top: 1px solid var(--ink);
-}
-
-.summaryNumber {
-  color: var(--ink);
-  font-size: clamp(2.75rem, 13vw, 4.25rem);
-  font-weight: 500;
-  letter-spacing: -0.065em;
-  line-height: 0.85;
-  font-variant-numeric: tabular-nums;
-}
-
-.heroSummary div {
-  display: grid;
-  gap: 0.2rem;
-}
-
-.heroSummary strong {
-  font-size: 0.95rem;
-  font-weight: 650;
-}
-
-.heroSummary div span {
-  max-width: 18rem;
-  color: var(--ink-2);
-  font-size: 0.8rem;
-  line-height: 1.45;
-}
-
-.identityBar {
-  display: grid;
-  padding: 1.25rem;
+  margin-top: 1.75rem;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 1rem;
-  border: 1px solid color-mix(in oklch, var(--blue) 18%, var(--hairline));
-  border-radius: 1.25rem;
-  background: color-mix(in oklch, var(--surface-raised) 95%, var(--blue) 5%);
+  gap: 0.85rem;
+  text-align: left;
 }
 
-.identityIcon {
-  display: grid;
-  width: 2.75rem;
-  height: 2.75rem;
-  place-items: center;
+.accountIndicator {
+  width: 0.5rem;
+  height: 0.5rem;
   border-radius: 50%;
-  background: var(--surface);
-  color: var(--ink-2);
-  font-size: 1rem;
-  font-weight: 700;
+  background: var(--ink-3);
+  box-shadow: 0 0 0 0.22rem color-mix(in oklch, var(--ink-3) 13%, transparent);
 }
 
-.identityIcon[data-active="true"] {
-  background: var(--green-soft);
-  color: color-mix(in oklch, var(--green) 72%, var(--ink));
+.accountIndicator[data-active="true"] {
+  background: var(--green);
+  box-shadow: 0 0 0 0.22rem color-mix(in oklch, var(--green) 16%, transparent);
 }
 
-.identityCopy {
+.accountNotice > div {
   min-width: 0;
 }
 
-.identityCopy h2 {
-  margin: 0.35rem 0 0;
-  font-size: 1.2rem;
-  font-weight: 620;
-  letter-spacing: -0.03em;
-  line-height: 1.2;
+.accountNotice strong {
+  display: block;
+  font-size: 0.88rem;
+  font-weight: 600;
 }
 
-.identityCopy > p:last-child {
-  max-width: 42rem;
-  margin: 0.45rem 0 0;
+.accountNotice p {
+  margin: 0.15rem 0 0;
   color: var(--ink-2);
-  font-size: 0.9rem;
-  line-height: 1.55;
+  font-size: 0.75rem;
+  line-height: 1.5;
 }
 
-.primaryAction,
-.secondaryAction,
-.importSection form > button {
-  display: inline-flex;
-  width: fit-content;
-  min-height: 2.75rem;
-  padding: 0.65rem 1.1rem;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
+.accountNotice > button,
+.accountNotice > .xUnavailable {
+  grid-column: 2;
+  justify-self: start;
+}
+
+.noticeTextAction {
+  min-height: 2.35rem;
+  padding: 0.4rem 0;
+  border: 0;
+  background: transparent;
+  color: var(--blue-dark);
   cursor: pointer;
   font: inherit;
-  font-size: 0.82rem;
-  font-weight: 650;
-  white-space: nowrap;
-  transition: background-color 160ms ease-out, border-color 160ms ease-out, color 160ms ease-out, transform 160ms ease-out;
-}
-
-.primaryAction,
-.importSection form > button {
-  border: 1px solid var(--ink);
-  background: var(--ink);
-  color: var(--paper);
-}
-
-.secondaryAction {
-  border: 1px solid var(--hairline);
-  background: var(--surface-raised);
-  color: var(--ink);
+  font-size: 0.75rem;
+  font-weight: 550;
 }
 
 .xUnavailable {
   color: var(--ink-3);
-  font-size: 0.82rem;
-}
-
-.identityBar > button,
-.identityBar > .xUnavailable {
-  grid-column: 2;
-}
-
-.feedback,
-.errorMessage {
-  margin-top: 1rem;
-  padding: 0.9rem 1rem;
-  border: 1px solid transparent;
-  border-radius: 0.9rem;
-  font-size: 0.875rem;
-  line-height: 1.5;
+  font-size: 0.75rem;
 }
 
 .feedback {
-  border-color: color-mix(in oklch, var(--green) 20%, var(--hairline));
-  background: color-mix(in oklch, var(--green-soft) 48%, var(--paper));
-  color: color-mix(in oklch, var(--green) 68%, var(--ink));
+  display: block;
+  text-align: left;
+  font-size: 0.78rem;
 }
 
 .errorMessage {
-  border-color: color-mix(in oklch, var(--danger) 20%, var(--hairline));
-  background: color-mix(in oklch, var(--danger) 7%, var(--paper));
+  background: color-mix(in oklch, var(--danger) 8%, var(--surface-raised));
   color: var(--danger);
 }
 
 .unsavedRecovery {
   display: grid;
-  margin-top: 1rem;
-  padding: 1.25rem;
-  gap: 1rem;
+  max-width: 42rem;
+  margin: 1rem auto 0;
+  padding: 1rem;
+  gap: 0.85rem;
   border: 1px solid oklch(78% 0.075 78);
-  border-radius: 1rem;
+  border-radius: 0.75rem;
   background: oklch(98% 0.025 78);
+  text-align: left;
 }
 
 .unsavedRecovery h2 {
-  margin: 0.35rem 0 0;
-  font-size: 1.15rem;
-  font-weight: 620;
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
   letter-spacing: -0.025em;
 }
 
 .unsavedRecovery div > p:last-child {
-  margin: 0.4rem 0 0;
+  margin: 0.3rem 0 0;
   color: var(--ink-2);
-  font-size: 0.875rem;
+  font-size: 0.75rem;
   line-height: 1.5;
 }
 
 .unsavedRecovery code,
 .recoveryDetails code {
   display: block;
-  padding: 0.75rem;
+  padding: 0.7rem;
   overflow-wrap: anywhere;
   border: 1px solid var(--hairline);
   border-radius: 0.65rem;
   background: var(--surface-raised);
   font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   line-height: 1.5;
   user-select: all;
 }
 
-.unsavedRecovery button {
-  min-height: 2.5rem;
-  padding: 0.55rem 0.9rem;
-  border: 1px solid var(--ink);
-  border-radius: 999px;
-  background: var(--ink);
-  color: var(--paper);
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.78rem;
-  font-weight: 650;
+.unsavedRecovery > button {
+  width: fit-content;
 }
 
 .auctionSection {
-  padding-top: clamp(4rem, 10vw, 6.5rem);
-}
-
-.sectionHeading {
-  display: flex;
-  margin-bottom: 1.25rem;
-  align-items: end;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.sectionHeading h2,
-.importSection h2,
-.invalidSection h2 {
-  margin: 0.35rem 0 0;
-  font-size: clamp(1.8rem, 7vw, 2.5rem);
-  font-weight: 560;
-  letter-spacing: -0.05em;
-  line-height: 1.08;
-}
-
-.sectionHeading > div > p:last-child {
-  margin: 0.45rem 0 0;
-  color: var(--ink-2);
-  font-size: 0.9rem;
-}
-
-.sectionHeading > a {
-  display: inline-flex;
-  min-height: 2.6rem;
-  padding: 0.55rem 0.85rem;
-  align-items: center;
-  gap: 0.55rem;
-  border: 1px solid var(--hairline);
-  border-radius: 999px;
-  background: var(--surface-raised);
-  color: var(--ink);
-  font-size: 0.8rem;
-  font-weight: 650;
-  white-space: nowrap;
-  transition: border-color 160ms ease-out, transform 160ms ease-out;
-}
-
-.sectionHeading > a span {
-  font-size: 1rem;
-  font-weight: 400;
-  line-height: 1;
+  padding-bottom: clamp(5rem, 10vw, 7rem);
 }
 
 .auctionList {
   overflow: hidden;
-  border: 1px solid var(--hairline);
-  border-radius: 1.25rem;
+  border: 1px solid color-mix(in oklch, var(--hairline) 82%, transparent);
+  border-radius: 1rem;
   background: var(--surface-raised);
+  box-shadow: 0 0.8rem 2rem oklch(25% 0.01 255 / 0.04);
+}
+
+.auctionListHeader {
+  display: none;
 }
 
 .auctionRow {
-  padding: 1.25rem;
+  display: grid;
+  padding: 1rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
   border-bottom: 1px solid var(--hairline);
 }
 
@@ -339,197 +159,142 @@
   border-bottom: 0;
 }
 
-.auctionTopline {
-  display: grid;
-  grid-template-columns: 1.65rem minmax(0, 1fr);
-  gap: 0.75rem;
-}
-
-.auctionIndex {
-  padding-top: 0.2rem;
-  color: var(--ink-3);
-  font-size: 0.75rem;
-  font-variant-numeric: tabular-nums;
-}
-
 .auctionIdentity {
-  min-width: 0;
-}
-
-.statusLine {
   display: flex;
-  margin-bottom: 0.55rem;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem;
+  min-width: 0;
+  grid-column: 1 / -1;
+  align-items: flex-start;
+  gap: 0.15rem;
 }
 
-.statusLine span {
-  display: inline-flex;
-  min-height: 1.5rem;
-  padding: 0.15rem 0.5rem;
-  align-items: center;
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--ink-2);
-  font-size: 0.72rem;
-  font-weight: 650;
-  line-height: 1;
+.auctionIdentity :global(.spot-number) {
+  flex: 0 0 auto;
 }
 
-.statusLine .liveStatus {
-  background: var(--green-soft);
-  color: color-mix(in oklch, var(--green) 74%, var(--ink));
-}
-
-.statusLine .closedStatus {
-  background: color-mix(in oklch, var(--ink) 8%, var(--paper));
-  color: var(--ink-2);
+.auctionIdentity > div {
+  min-width: 0;
 }
 
 .auctionIdentity h3 {
   margin: 0;
   overflow-wrap: anywhere;
-  font-size: clamp(1.25rem, 5vw, 1.55rem);
-  font-weight: 590;
-  letter-spacing: -0.04em;
-  line-height: 1.15;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
 }
 
-.auctionIdentity > p {
-  margin: 0.45rem 0 0;
+.auctionIdentity > div > p {
+  margin: 0.15rem 0 0;
   overflow-wrap: anywhere;
-  color: var(--ink-2);
-  font-size: 0.82rem;
-  line-height: 1.45;
-}
-
-.auctionIdentity > p span {
-  margin-inline: 0.15rem;
   color: var(--ink-3);
+  font-size: 0.7rem;
 }
 
-.primaryRowActions {
+.ownershipLine {
   display: flex;
-  margin-top: 1rem;
-  grid-column: 2;
+  margin-top: 0.3rem;
   flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.primaryRowActions a,
-.primaryRowActions button,
-.settingsActions button,
-.textAction,
-.invalidSection button {
-  display: inline-flex;
-  min-height: 2.5rem;
-  padding: 0.55rem 0.85rem;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--hairline);
-  border-radius: 999px;
-  background: var(--surface-raised);
-  color: var(--ink);
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.78rem;
-  font-weight: 650;
-  line-height: 1.2;
-  transition: background-color 160ms ease-out, border-color 160ms ease-out, color 160ms ease-out, transform 160ms ease-out;
-}
-
-.primaryRowActions a {
-  gap: 0.45rem;
-  border-color: var(--ink);
-  background: var(--ink);
-  color: var(--paper);
-}
-
-.primaryRowActions button {
-  border-color: color-mix(in oklch, var(--blue) 36%, var(--hairline));
-  color: var(--blue-dark);
-}
-
-.paymentPanel {
-  display: grid;
-  margin: 1.25rem 0 0 2.4rem;
-  padding: 0.9rem 1rem;
-  align-items: center;
-  gap: 0.9rem;
-  border-radius: 0.9rem;
-  background: var(--surface);
-}
-
-.paymentPanel[data-ready="true"] {
-  background: color-mix(in oklch, var(--green-soft) 30%, var(--surface));
-}
-
-.paymentState {
-  display: grid;
-  grid-template-columns: 0.55rem minmax(0, 1fr);
-  align-items: center;
-  gap: 0.7rem;
-}
-
-.paymentState i {
-  display: block;
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 50%;
-  background: var(--ink-3);
-  box-shadow: 0 0 0 0.22rem color-mix(in oklch, var(--ink-3) 12%, transparent);
-}
-
-.paymentPanel[data-ready="true"] .paymentState i {
-  background: var(--green);
-  box-shadow: 0 0 0 0.22rem color-mix(in oklch, var(--green) 13%, transparent);
-}
-
-.paymentState div {
-  display: grid;
-  gap: 0.1rem;
-}
-
-.paymentState strong {
-  font-size: 0.85rem;
-  font-weight: 650;
-}
-
-.paymentState span {
-  color: var(--ink-2);
-  font-size: 0.78rem;
-  line-height: 1.4;
-}
-
-.countryField {
-  display: grid;
   gap: 0.35rem;
   color: var(--ink-2);
-  font-size: 0.72rem;
-  font-weight: 650;
+  font-size: 0.66rem;
 }
 
-.countryField input {
-  width: 100%;
-  min-height: 2.6rem;
-  padding: 0.5rem 0.7rem;
+.ownershipLine span + span::before {
+  margin-right: 0.35rem;
+  color: var(--ink-3);
+  content: "·";
+}
+
+.stateCell {
+  display: grid;
+  justify-items: start;
+  gap: 0.3rem;
+}
+
+.stateCell > span {
+  display: inline-flex;
+  min-height: 1.8rem;
+  padding: 0.3rem 0.65rem;
+  align-items: center;
+  gap: 0.4rem;
   border: 1px solid var(--hairline);
-  border-radius: 0.65rem;
-  background: var(--surface-raised);
-  color: var(--ink);
-  font-size: 0.85rem;
-  text-transform: uppercase;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 0.72rem;
+  font-weight: 600;
 }
 
-.textAction {
-  width: fit-content;
-  min-height: 2.25rem;
-  padding-block: 0.4rem;
+.stateCell > span i {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--ink-3);
+}
+
+.stateCell > .liveStatus {
+  border-color: color-mix(in oklch, var(--green) 34%, var(--hairline));
+  background: color-mix(in oklch, var(--green-soft) 64%, var(--surface-raised));
+  color: oklch(43% 0.12 145);
+}
+
+.stateCell > .liveStatus i {
+  background: var(--green);
+}
+
+.stateCell small,
+.paymentCell small {
+  color: var(--ink-3);
+  font-size: 0.67rem;
+  line-height: 1.35;
+}
+
+.paymentCell {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 0.45rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.paymentCell > i {
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 50%;
+  background: var(--ink-3);
+}
+
+.paymentCell[data-ready="true"] > i {
+  background: var(--green);
+  box-shadow: 0 0 0 0.18rem color-mix(in oklch, var(--green) 15%, transparent);
+}
+
+.paymentCell strong,
+.paymentCell small {
+  display: block;
+}
+
+.paymentCell strong {
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.rowActions {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.rowActions :global(.text-link) {
+  font-size: 0.76rem;
+  white-space: nowrap;
 }
 
 .managementDetails {
-  margin: 1rem 0 0 2.4rem;
+  grid-column: 1 / -1;
   border-top: 1px solid var(--hairline);
 }
 
@@ -541,8 +306,8 @@
   gap: 1rem;
   color: var(--ink-2);
   cursor: pointer;
-  font-size: 0.8rem;
-  font-weight: 600;
+  font-size: 0.76rem;
+  font-weight: 500;
   list-style: none;
 }
 
@@ -550,19 +315,20 @@
   display: none;
 }
 
-.managementDetails > summary span {
+.managementDetails > summary i {
   color: var(--ink-3);
-  font-size: 1.1rem;
+  font-size: 1rem;
+  font-style: normal;
   transition: transform 180ms ease-out;
 }
 
-.managementDetails[open] > summary span {
+.managementDetails[open] > summary i {
   transform: rotate(45deg);
 }
 
 .settingsGrid {
   display: grid;
-  padding: 0.5rem 0 0.25rem;
+  padding: 0.35rem 0 0.4rem;
   gap: 1.5rem;
 }
 
@@ -571,28 +337,42 @@
 }
 
 .settingsGrid h4 {
-  margin: 0.4rem 0 0;
-  font-size: 0.95rem;
-  font-weight: 650;
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
   letter-spacing: -0.02em;
 }
 
-.settingsGrid section > p:not(.settingsLabel) {
-  margin: 0.4rem 0 0;
+.settingsGrid section > p:not(:global(.eyebrow)) {
+  margin: 0.35rem 0 0;
   color: var(--ink-2);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   line-height: 1.5;
 }
 
 .settingsActions {
   display: flex;
-  margin-top: 0.8rem;
+  margin-top: 0.75rem;
   flex-wrap: wrap;
   gap: 0.45rem;
 }
 
-.recoveryDetails code {
-  margin-top: 0.75rem;
+.settingsActions button,
+.invalidSection button {
+  display: inline-flex;
+  min-height: 2.25rem;
+  padding: 0.45rem 0.75rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 550;
+  transition: border-color 160ms ease-out, background-color 160ms ease-out, transform 160ms ease-out;
 }
 
 .settingsActions .dangerAction {
@@ -600,205 +380,171 @@
   color: var(--danger);
 }
 
-.primaryRowActions button:disabled,
-.settingsActions button:disabled,
-.textAction:disabled,
-.primaryAction:disabled,
-.importSection form > button:disabled {
-  cursor: wait;
-  opacity: 0.48;
+.countryField {
+  display: grid;
+  margin-top: 0.75rem;
+  gap: 0.35rem;
+  color: var(--ink-2);
+  font-size: 0.7rem;
+  font-weight: 500;
 }
 
-.loadingState,
-.emptyState {
-  min-height: 13rem;
+.countryField input {
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.7rem;
   border: 1px solid var(--hairline);
-  border-radius: 1.25rem;
+  border-radius: 0.7rem;
   background: var(--surface-raised);
+  color: var(--ink);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+
+.recoveryDetails code {
+  margin-top: 0.7rem;
 }
 
 .loadingState {
   display: grid;
-  place-content: center;
-  justify-items: center;
-  gap: 0.8rem;
-  color: var(--ink-2);
-}
-
-.loadingState span {
-  width: 0.65rem;
-  height: 0.65rem;
-  border-radius: 50%;
-  background: var(--blue);
-  animation: loadingPulse 900ms ease-in-out infinite alternate;
-}
-
-.loadingState p {
-  margin: 0;
-  font-size: 0.875rem;
-}
-
-.emptyState {
-  display: grid;
-  padding: 1.5rem;
-  align-items: center;
-  gap: 1rem;
-}
-
-.emptyState > span {
-  display: grid;
-  width: 2.75rem;
-  height: 2.75rem;
+  min-height: 13rem;
+  overflow: hidden;
   place-items: center;
+  place-content: center;
+  gap: 0.35rem;
+  border: 1px solid color-mix(in oklch, var(--hairline) 82%, transparent);
+  border-radius: 1rem;
+  background: var(--surface-raised);
+  color: var(--ink-2);
+}
+
+.loadingState > span {
+  width: 1.8rem;
+  height: 1.8rem;
+  margin-bottom: 0.45rem;
+  border: 2px solid var(--hairline);
+  border-top-color: var(--ink-2);
   border-radius: 50%;
-  background: var(--surface);
-  color: var(--ink-2);
-  font-size: 1.25rem;
+  animation: loadingSpin 720ms linear infinite;
 }
 
-.emptyState h3 {
-  margin: 0;
-  font-size: 1.2rem;
-  font-weight: 620;
-  letter-spacing: -0.03em;
+.loadingState strong {
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 600;
 }
 
-.emptyState p {
-  max-width: 38rem;
-  margin: 0.4rem 0 0;
-  color: var(--ink-2);
-  font-size: 0.875rem;
-  line-height: 1.5;
+.loadingState small {
+  color: var(--ink-3);
+  font-size: 0.72rem;
 }
 
-.emptyState > a {
-  display: inline-flex;
-  width: fit-content;
-  min-height: 2.65rem;
+.emptyState > :global(.primary-button) {
+  min-height: 2.5rem;
+  margin-top: 1rem;
   padding: 0.6rem 1rem;
-  align-items: center;
-  border-radius: 999px;
-  background: var(--ink);
-  color: var(--paper);
-  font-size: 0.8rem;
-  font-weight: 650;
+  font-size: 0.76rem;
 }
 
 .invalidSection {
   margin-top: 1.5rem;
-  padding: 1.25rem;
+  padding: 1rem;
   border: 1px solid color-mix(in oklch, var(--danger) 22%, var(--hairline));
-  border-radius: 1rem;
-  background: color-mix(in oklch, var(--danger) 4%, var(--paper));
+  border-radius: 0.8rem;
+  background: color-mix(in oklch, var(--danger) 5%, var(--surface-raised));
 }
 
-.invalidSection h2 {
-  font-size: 1.1rem;
+.invalidSection h3 {
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+  font-weight: 600;
 }
 
 .invalidSection > div {
   display: grid;
-  padding: 0.9rem 0;
-  gap: 0.6rem;
+  padding: 0.75rem 0;
+  gap: 0.5rem;
   border-top: 1px solid color-mix(in oklch, var(--danger) 18%, var(--hairline));
 }
 
 .invalidSection span {
   overflow-wrap: anywhere;
-  font-size: 0.85rem;
+  font-size: 0.78rem;
   font-weight: 600;
 }
 
 .invalidSection p {
   margin: 0;
   color: var(--danger);
-  font-size: 0.8rem;
+  font-size: 0.72rem;
 }
 
 .invalidSection button {
   width: fit-content;
 }
 
-.importSection {
-  display: grid;
-  margin-top: clamp(4rem, 12vw, 7rem);
-  padding: clamp(1.5rem, 5vw, 2.5rem);
-  gap: 2rem;
-  border-radius: 1.25rem;
-  background: var(--surface);
+.recoverySection {
+  padding-bottom: clamp(6rem, 11vw, 8rem);
 }
 
-.importSection > div > p:last-child {
-  max-width: 34rem;
-  margin: 0.75rem 0 0;
-  color: var(--ink-2);
-  font-size: 0.9rem;
-  line-height: 1.6;
+.recoverySection h2 {
+  margin-bottom: 0.45rem;
+  font-size: clamp(2rem, 6vw, 2.35rem);
+  font-weight: 600;
+  letter-spacing: -0.045em;
+  line-height: 1.1;
 }
 
-.importSection form {
-  display: grid;
-  gap: 1rem;
-}
-
-.importSection label {
-  display: grid;
-  gap: 0.45rem;
-  color: var(--ink-2);
-  font-size: 0.78rem;
-  font-weight: 650;
-}
-
-.importSection input {
-  width: 100%;
-  min-height: 3rem;
-  padding: 0.65rem 0.8rem;
+.recoveryForm {
+  margin-top: 1.6rem;
+  padding: 1.25rem;
   border: 1px solid var(--hairline);
-  border-radius: 0.75rem;
+  border-radius: 1rem;
   background: var(--surface-raised);
-  color: var(--ink);
-  font-size: 0.9rem;
-  outline: none;
-  transition: border-color 160ms ease-out, box-shadow 160ms ease-out;
+  box-shadow: 0 0.8rem 2rem oklch(25% 0.01 255 / 0.04);
 }
 
-.importSection input:focus {
-  border-color: var(--blue);
-  box-shadow: 0 0 0 0.2rem color-mix(in oklch, var(--blue) 12%, transparent);
+.recoveryForm > button {
+  width: fit-content;
+  min-height: 2.75rem;
+  margin-top: 1rem;
+  font-size: 0.8rem;
 }
 
-.importSection input::placeholder {
-  color: var(--ink-3);
+.recoveryForm > button:disabled,
+.settingsActions button:disabled,
+.rowActions button:disabled,
+.accountNotice button:disabled {
+  cursor: wait;
+  opacity: 0.52;
 }
 
-@keyframes loadingPulse {
-  to { opacity: 0.35; transform: scale(0.78); }
+@keyframes loadingSpin {
+  to { transform: rotate(360deg); }
 }
 
-@media (min-width: 34rem) {
-  .marketplaceLink {
-    display: inline-flex;
-  }
-
-  .identityBar {
+@media (min-width: 40rem) {
+  .accountNotice {
     grid-template-columns: auto minmax(0, 1fr) auto;
   }
 
-  .identityBar > button,
-  .identityBar > .xUnavailable {
+  .accountNotice > button,
+  .accountNotice > .xUnavailable {
     grid-column: auto;
+    justify-self: end;
   }
 
   .unsavedRecovery {
     grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
   }
 
   .unsavedRecovery > div {
     grid-column: 1 / -1;
   }
 
-  .emptyState {
-    grid-template-columns: auto minmax(0, 1fr) auto;
+  .recoveryForm > button {
+    grid-column: 1 / -1;
   }
 
   .invalidSection > div {
@@ -808,68 +554,48 @@
   }
 }
 
-@media (min-width: 44rem) {
-  .main {
-    width: min(100% - 2.5rem, 70rem);
+@media (min-width: 48rem) {
+  .auctionListHeader {
+    display: grid;
+    min-height: 3.4rem;
+    padding: 0 1rem;
+    grid-template-columns: minmax(0, 1.55fr) minmax(7rem, 0.7fr) minmax(8.5rem, 0.85fr) minmax(7rem, auto);
+    align-items: center;
+    gap: 1rem;
+    border-bottom: 1px solid var(--hairline);
+    color: var(--ink-3);
+    font-size: 0.7rem;
+    font-weight: 500;
   }
 
-  .navContext {
-    display: inline;
-  }
-
-  .hero {
-    grid-template-columns: minmax(0, 1fr) minmax(15rem, 20rem);
-    align-items: end;
-    gap: clamp(3rem, 8vw, 7rem);
-  }
-
-  .heroCopy {
-    font-size: 1.05rem;
-  }
-
-  .identityBar {
-    padding: 1.4rem 1.5rem;
+  .auctionListHeader span:last-child {
+    text-align: right;
   }
 
   .auctionRow {
-    padding: 1.5rem;
+    grid-template-columns: minmax(0, 1.55fr) minmax(7rem, 0.7fr) minmax(8.5rem, 0.85fr) minmax(7rem, auto);
   }
 
-  .auctionTopline {
-    grid-template-columns: 2rem minmax(0, 1fr) auto;
-    gap: 1rem;
-  }
-
-  .primaryRowActions {
-    margin-top: 0;
+  .auctionIdentity,
+  .rowActions {
     grid-column: auto;
+  }
+
+  .rowActions {
     justify-content: flex-end;
   }
 
-  .paymentPanel,
   .managementDetails {
-    margin-left: 3rem;
-  }
-
-  .paymentPanel {
-    grid-template-columns: minmax(0, 1fr) minmax(7.5rem, 10rem) auto;
-  }
-
-  .paymentPanel[data-ready="true"] {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .paymentPanel[data-closed="true"] {
-    grid-template-columns: minmax(0, 1fr);
+    grid-column: 1 / -1;
   }
 
   .settingsGrid {
-    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
     gap: 0;
   }
 
   .settingsGrid section {
-    padding: 0 1.25rem;
+    padding: 0 1rem;
     border-left: 1px solid var(--hairline);
   }
 
@@ -883,76 +609,39 @@
   }
 }
 
-@media (min-width: 56rem) {
-  .importSection {
-    grid-template-columns: minmax(0, 0.82fr) minmax(24rem, 1fr);
-    align-items: start;
-    gap: clamp(3rem, 7vw, 6rem);
-  }
-}
-
 @media (hover: hover) and (pointer: fine) {
-  .marketplaceLink:hover {
-    background: var(--surface);
-    color: var(--ink);
-  }
-
-  .primaryAction:hover,
-  .importSection form > button:hover,
-  .primaryRowActions a:hover,
-  .emptyState > a:hover {
-    transform: translateY(-1px);
-  }
-
-  .secondaryAction:hover,
-  .sectionHeading > a:hover,
-  .primaryRowActions button:hover,
-  .settingsActions button:hover,
-  .textAction:hover,
-  .invalidSection button:hover {
-    border-color: var(--ink-2);
-    background: color-mix(in oklch, var(--surface) 72%, var(--paper));
-  }
-
-  .sectionHeading > a:hover {
-    transform: translateY(-1px);
-  }
-
+  .noticeTextAction:hover,
   .auctionIdentity h3 a:hover {
     color: var(--blue-dark);
+    text-decoration: underline;
+    text-underline-offset: 0.18rem;
+  }
+
+  .settingsActions button:hover,
+  .invalidSection button:hover {
+    border-color: color-mix(in oklch, var(--blue) 32%, var(--hairline));
+    background: color-mix(in oklch, var(--surface) 72%, var(--paper));
+    transform: translateY(-1px);
   }
 }
 
 @media (pointer: coarse) {
-  .marketplaceLink,
-  .primaryAction,
-  .secondaryAction,
-  .primaryRowActions a,
-  .primaryRowActions button,
+  .noticeTextAction,
   .settingsActions button,
-  .textAction,
-  .sectionHeading > a,
-  .invalidSection button,
-  .importSection form > button {
+  .invalidSection button {
     min-height: 2.75rem;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .loadingState span {
+  .loadingState > span {
     animation: none;
   }
 
-  .managementDetails > summary span,
-  .marketplaceLink,
-  .primaryAction,
-  .secondaryAction,
-  .sectionHeading > a,
-  .primaryRowActions a,
-  .primaryRowActions button,
+  .managementDetails > summary i,
+  .noticeTextAction,
   .settingsActions button,
-  .textAction,
-  .importSection input {
+  .invalidSection button {
     transition: none;
   }
 }

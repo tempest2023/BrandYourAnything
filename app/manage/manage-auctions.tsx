@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { AccountNav } from "@/app/auth/account-nav";
 import {
   forgetManagedAuction,
   generateManagerRecoveryCode,
@@ -451,6 +452,7 @@ export function ManageAuctions() {
   const invalidBrowserAuctions = browserAuctions.filter((entry) => !entry.auction);
   const loading = loadingBrowser || loadingAccount || !authReady;
   const liveAuctionCount = auctions.filter((view) => view.auction.status === "published").length;
+  const liveAuctionShare = auctions.length ? Math.round((liveAuctionCount / auctions.length) * 100) : 0;
 
   return (
     <div className={styles.page}>
@@ -461,146 +463,157 @@ export function ManageAuctions() {
             <Image src="/logo-small.png" alt="" width={41} height={41} priority />
             <span>Brand Anything</span>
           </Link>
-          <span className={styles.navContext}>Owner workspace</span>
+          <div className="nav-links">
+            <Link className="nav-link--how" href="/">Marketplace</Link>
+            <Link className="nav-link--faq" href="/sell">Create</Link>
+          </div>
           <div className="nav-actions">
-            <Link className={styles.marketplaceLink} href="/">Marketplace</Link>
             <Link className="dark-button" href="/sell">Create auction</Link>
+            <AccountNav />
           </div>
         </div>
       </nav>
 
-      <main className={styles.main} id="manage-content">
-        <header className={styles.hero}>
-          <div>
-            <p className={styles.eyebrow}>Auction management</p>
-            <h1>Your auctions.<br /><span>Ready when you are.</span></h1>
-            <p className={styles.heroCopy}>Review status, connect payouts, and keep recovery access safe from one focused workspace.</p>
-          </div>
-          <div className={styles.heroSummary} aria-label={`${auctions.length} auctions, ${liveAuctionCount} live`}>
-            <span className={styles.summaryNumber}>{auctions.length}</span>
-            <div>
-              <strong>{auctions.length === 1 ? "auction" : "auctions"}</strong>
-              <span>{liveAuctionCount} live · synced from this browser and your account</span>
+      <main id="manage-content">
+        <header className={`hero ${styles.manageHero}`} id="top">
+          <div className="live-visitors"><span />Owner workspace</div>
+          <p className="total-visits"><span>·</span>{auctions.length === 1 ? "1 auction available" : `${auctions.length} auctions available`}</p>
+          <h1>Manage your auctions.</h1>
+          <p className="hero-subtitle">Review activity, finish payout setup, and keep every recovery path in one place.</p>
+
+          <div className="funding" aria-label={`${auctions.length} auctions, ${liveAuctionCount} live`}>
+            <div className="funding-row">
+              <p><strong>{auctions.length}</strong><span>{auctions.length === 1 ? "auction" : "auctions"}</span></p>
+              <p>{liveAuctionCount} live · {liveAuctionShare}% active</p>
             </div>
+            <div className="progress-track"><span style={{ width: `${liveAuctionShare}%` }} /></div>
+            <p className="auction-time">{accessToken ? "Synced with your account" : "Saved on this browser until you sign in"}</p>
           </div>
+
+          <section className={`payment-notice ${accessToken ? "payment-notice--accepted" : ""} ${styles.accountNotice}`} aria-labelledby="identity-title">
+            <span className={styles.accountIndicator} data-active={Boolean(accessToken)} aria-hidden="true" />
+            <div>
+              <strong id="identity-title">{accessToken ? "Account connected" : "Take your auctions with you"}</strong>
+              <p>{accessToken
+                ? "Account-owned auctions are available anywhere you sign in. Recovery codes still work as a backup."
+                : "Sign in to attach browser auctions to your account, or continue with recovery codes only."}</p>
+            </div>
+            {authConfigured ? accessToken ? (
+              <button type="button" className={styles.noticeTextAction} onClick={() => void signOut()}>Sign out</button>
+            ) : (
+              <button type="button" className="dark-button" disabled={!authReady} onClick={() => signIn()}>Sign in</button>
+            ) : (
+              <span className={styles.xUnavailable}>Recovery access only</span>
+            )}
+          </section>
+
+          {(feedback || error) && (
+            <div className={`payment-notice ${error ? styles.errorMessage : "payment-notice--accepted"} ${styles.feedback}`} role={error ? "alert" : "status"}>
+              {error || feedback}
+            </div>
+          )}
+
+          {unsavedRecovery && (
+            <section className={styles.unsavedRecovery} aria-labelledby="unsaved-recovery-title">
+              <div>
+                <p className="eyebrow">Save before leaving</p>
+                <h2 id="unsaved-recovery-title">This browser blocked local saving.</h2>
+                <p>The new code is active for /{unsavedRecovery.slug}. Copy it now; older recovery codes no longer work.</p>
+              </div>
+              <code>{unsavedRecovery.code}</code>
+              <button type="button" className="dark-button" onClick={() => void copyText(unsavedRecovery.code).then(() => setFeedback("Recovery code copied."))}>Copy recovery code</button>
+            </section>
+          )}
         </header>
 
-        <section className={styles.identityBar} aria-labelledby="identity-title">
-          <div className={styles.identityIcon} data-active={Boolean(accessToken)} aria-hidden="true">
-            {accessToken ? "✓" : "↗"}
-          </div>
-          <div className={styles.identityCopy}>
-            <p className={styles.sectionKicker}>{accessToken ? "Account connected" : "Optional account"}</p>
-            <h2 id="identity-title">{accessToken ? "Your auctions travel with you" : "Access your auctions on every device"}</h2>
-            <p>{accessToken
-              ? "Account-owned auctions stay available wherever you sign in. Recovery codes continue to work as a backup."
-              : "Sign in to attach saved auctions to your account, or keep using recovery codes without an account."}</p>
-          </div>
-          {authConfigured ? accessToken ? (
-            <button type="button" className={styles.secondaryAction} onClick={() => void signOut()}>Sign out</button>
-          ) : (
-            <button type="button" className={styles.primaryAction} disabled={!authReady} onClick={() => signIn()}>
-              Sign in
-            </button>
-          ) : (
-            <span className={styles.xUnavailable}>Recovery access only</span>
-          )}
-        </section>
+        <section className={`auction-section ${styles.auctionSection}`} aria-labelledby="auctions-title">
+          <div className="section-inner auction-inner">
+            <p className="auction-status">{liveAuctionCount > 0 && <span />}{loading ? "Checking access…" : `${liveAuctionCount} live · ${auctions.length} total`}</p>
+            <h2 id="auctions-title">Your auctions.</h2>
+            <p className="section-lead">Everything you can operate from this browser or account.</p>
+            <p className="section-copy">Open a public auction, check payout readiness, or expand a row for access and lifecycle controls.</p>
 
-        {(feedback || error) && (
-          <div className={error ? styles.errorMessage : styles.feedback} role={error ? "alert" : "status"}>
-            {error || feedback}
-          </div>
-        )}
+            {/* Only the country is collected up front; Stripe's hosted onboarding
+                collects the business, bank and capability details. */}
+            <datalist id="stripe-connect-countries">
+              {STRIPE_CONNECT_COUNTRIES.map((code) => (
+                <option key={code} value={code} />
+              ))}
+            </datalist>
 
-        {unsavedRecovery && (
-          <section className={styles.unsavedRecovery} aria-labelledby="unsaved-recovery-title">
-            <div>
-              <p className={styles.sectionKicker}>Save before leaving</p>
-              <h2 id="unsaved-recovery-title">This browser blocked local saving.</h2>
-              <p>The new code is active for /{unsavedRecovery.slug}. Copy it now; older recovery codes no longer work.</p>
-            </div>
-            <code>{unsavedRecovery.code}</code>
-            <button type="button" onClick={() => void copyText(unsavedRecovery.code).then(() => setFeedback("Recovery code copied."))}>Copy recovery code</button>
-          </section>
-        )}
-
-        <section className={styles.auctionSection} aria-labelledby="auctions-title">
-          <div className={styles.sectionHeading}>
-            <div>
-              <p className={styles.sectionKicker}>Your workspace</p>
-              <h2 id="auctions-title">Auctions</h2>
-              <p>Everything you can manage from this browser or account.</p>
-            </div>
-            <Link href="/sell">New auction <span aria-hidden="true">+</span></Link>
-          </div>
-
-          {/* Only the country is collected up front; Stripe's hosted onboarding
-              collects the business, bank and capability details. */}
-          <datalist id="stripe-connect-countries">
-            {STRIPE_CONNECT_COUNTRIES.map((code) => (
-              <option key={code} value={code} />
-            ))}
-          </datalist>
-
-          {loading ? (
-            <div className={styles.loadingState} role="status">
-              <span aria-hidden="true" />
-              <p>Checking your auctions…</p>
-            </div>
-          ) : auctions.length ? (
-            <div className={styles.auctionList}>
-              {auctions.map((view, index) => (
-                <article className={styles.auctionRow} key={view.auction.id}>
-                  <div className={styles.auctionTopline}>
-                    <span className={styles.auctionIndex}>{String(index + 1).padStart(2, "0")}</span>
+            {loading ? (
+              <div className={styles.loadingState} role="status">
+                <span aria-hidden="true" />
+                <strong>Checking your auctions</strong>
+                <small>Reading this browser and your account.</small>
+              </div>
+            ) : auctions.length ? (
+              <div className={styles.auctionList} role="list">
+                <div className={styles.auctionListHeader} aria-hidden="true">
+                  <span>Auction</span><span>Status</span><span>Payouts</span><span>Action</span>
+                </div>
+                {auctions.map((view, index) => (
+                  <article className={styles.auctionRow} key={view.auction.id} role="listitem">
                     <div className={styles.auctionIdentity}>
-                      <div className={styles.statusLine}>
-                        <span className={view.auction.status === "closed" ? styles.closedStatus : styles.liveStatus}>
-                          {view.auction.status === "closed" ? "Closed" : "Live"}
-                        </span>
-                        {view.ownedByAccount && <span>Account</span>}
-                        {view.savedInBrowser && <span>This browser</span>}
+                      <span className="spot-number">{String(index + 1).padStart(2, "0")}</span>
+                      <div>
+                        <h3><Link href={auctionPath(view.auction.slug)}>{view.auction.title}</Link></h3>
+                        <p>/{view.auction.slug}</p>
+                        <div className={styles.ownershipLine}>
+                          {view.ownedByAccount && <span>Account</span>}
+                          {view.savedInBrowser && <span>This browser</span>}
+                        </div>
                       </div>
-                      <h3><Link href={auctionPath(view.auction.slug)}>{view.auction.title}</Link></h3>
-                      <p>/{view.auction.slug} <span aria-hidden="true">·</span> {view.auction.status === "closed" ? "Final results available" : `Closes ${formatDate(view.auction.closesAt)}`}</p>
                     </div>
-                    <div className={styles.primaryRowActions}>
-                      <Link href={auctionPath(view.auction.slug)}>Open auction <span aria-hidden="true">↗</span></Link>
+                    <div className={styles.stateCell}>
+                      <span className={view.auction.status === "closed" ? styles.closedStatus : styles.liveStatus}>
+                        <i aria-hidden="true" />{view.auction.status === "closed" ? "Closed" : "Live"}
+                      </span>
+                      <small>{view.auction.status === "closed" ? "Final results" : `Closes ${formatDate(view.auction.closesAt)}`}</small>
+                    </div>
+                    <div className={styles.paymentCell} data-ready={view.auction.paymentsEnabled} data-closed={view.auction.status === "closed"}>
+                      <i aria-hidden="true" />
+                      <div>
+                        <strong>{view.auction.status === "closed" ? "Bidding closed" : view.auction.paymentsEnabled ? "Payments ready" : view.auction.stripeConnected ? "Stripe pending" : "Not connected"}</strong>
+                        <small>{view.auction.status === "closed" ? "No new bids" : view.auction.paymentsEnabled ? "Accepting bids" : "Setup required"}</small>
+                      </div>
+                    </div>
+                    <div className={styles.rowActions}>
+                      <Link className="text-link" href={auctionPath(view.auction.slug)}>Open ↗</Link>
                       {!view.auction.paymentsEnabled && view.auction.status === "published" && (
-                        <button type="button" disabled={busySlug === view.auction.slug} onClick={() => void connectStripe(view)}>
-                          {view.auction.stripeConnected ? "Continue Stripe setup" : "Connect Stripe"}
+                        <button type="button" className="outbid-button" disabled={busySlug === view.auction.slug} onClick={() => void connectStripe(view)}>
+                          {view.auction.stripeConnected ? "Continue" : "Set up"}
                         </button>
                       )}
                     </div>
-                  </div>
 
-                  <div className={styles.paymentPanel} data-ready={view.auction.paymentsEnabled} data-closed={view.auction.status === "closed"}>
-                    <div className={styles.paymentState}>
-                      <i aria-hidden="true" />
-                      <div>
-                        <strong>{view.auction.status === "closed" ? "Bidding closed" : view.auction.paymentsEnabled ? "Payments ready" : view.auction.stripeConnected ? "Stripe setup pending" : "Payouts not connected"}</strong>
-                        <span>{view.auction.status === "closed" ? "This auction no longer accepts new bids." : view.auction.paymentsEnabled ? "This auction can accept paid bids." : "Connect Stripe before accepting paid bids."}</span>
-                      </div>
-                    </div>
-                    {!view.auction.stripeConnected && view.auction.status === "published" && (
-                      <label className={styles.countryField}>
-                        Business country code
-                        <input list="stripe-connect-countries" value={stripeCountry[view.auction.slug] ?? DEFAULT_CONNECT_COUNTRY}
-                          maxLength={2} disabled={busySlug === view.auction.slug}
-                          onChange={(event) => setStripeCountry((current) => ({ ...current, [view.auction.slug]: event.target.value.toUpperCase() }))} />
-                      </label>
-                    )}
-                    {view.auction.stripeConnected && (
-                      <button type="button" className={styles.textAction} disabled={Boolean(busySlug)} onClick={() => void connectStripe(view, "GET")}>Refresh status</button>
-                    )}
-                  </div>
-
-                  <details className={styles.managementDetails}>
-                    <summary>Access and auction settings <span aria-hidden="true">+</span></summary>
-                    <div className={styles.settingsGrid}>
+                    <details className={styles.managementDetails}>
+                      <summary><span>Access and auction settings</span><i aria-hidden="true">+</i></summary>
+                      <div className={styles.settingsGrid}>
                       <section>
-                        <p className={styles.settingsLabel}>Account access</p>
+                        <p className="eyebrow">Payouts</p>
+                        <h4>{view.auction.status === "closed" ? "Auction closed" : view.auction.paymentsEnabled ? "Ready to accept bids" : "Finish Stripe setup"}</h4>
+                        <p>{view.auction.status === "closed" ? "Payout settings are retained with the final results." : view.auction.paymentsEnabled ? "Stripe is connected and payments are enabled." : "Stripe collects business and bank details in its hosted onboarding."}</p>
+                        {!view.auction.stripeConnected && view.auction.status === "published" && (
+                          <label className={styles.countryField}>
+                            Business country code
+                            <input list="stripe-connect-countries" value={stripeCountry[view.auction.slug] ?? DEFAULT_CONNECT_COUNTRY}
+                              maxLength={2} disabled={busySlug === view.auction.slug}
+                              onChange={(event) => setStripeCountry((current) => ({ ...current, [view.auction.slug]: event.target.value.toUpperCase() }))} />
+                          </label>
+                        )}
+                        <div className={styles.settingsActions}>
+                          {!view.auction.paymentsEnabled && view.auction.status === "published" && (
+                            <button type="button" disabled={busySlug === view.auction.slug} onClick={() => void connectStripe(view)}>{view.auction.stripeConnected ? "Continue setup" : "Connect Stripe"}</button>
+                          )}
+                          {view.auction.stripeConnected && (
+                            <button type="button" disabled={Boolean(busySlug)} onClick={() => void connectStripe(view, "GET")}>Refresh status</button>
+                          )}
+                        </div>
+                      </section>
+
+                      <section>
+                        <p className="eyebrow">Account access</p>
                         <h4>{view.ownedByAccount ? "Attached to your account" : "Browser recovery only"}</h4>
                         <p>{view.ownedByAccount ? "Sign in to manage this auction on another device." : "Attach this auction to use it anywhere you sign in."}</p>
                         <div className={styles.settingsActions}>
@@ -617,7 +630,7 @@ export function ManageAuctions() {
 
                       {view.recoveryCode && (
                         <section className={styles.recoveryDetails}>
-                          <p className={styles.settingsLabel}>Recovery code</p>
+                          <p className="eyebrow">Recovery code</p>
                           <h4>Keep this private</h4>
                           <p>Anyone with this code can manage the auction.</p>
                           <code>{view.recoveryCode}</code>
@@ -630,7 +643,7 @@ export function ManageAuctions() {
 
                       {(view.auction.status === "published" || (accessToken && view.ownedByAccount && view.auction.browserRecoveryEnabled)) && (
                         <section className={styles.dangerZone}>
-                          <p className={styles.settingsLabel}>Sensitive actions</p>
+                          <p className="eyebrow">Sensitive actions</p>
                           <h4>Changes take effect immediately</h4>
                           <p>Closing stops new bids. Disabling recovery makes account sign-in the only way back in.</p>
                           <div className={styles.settingsActions}>
@@ -643,60 +656,61 @@ export function ManageAuctions() {
                           </div>
                         </section>
                       )}
-                    </div>
-                  </details>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className={styles.emptyState}>
-              <span aria-hidden="true">+</span>
-              <div>
-                <h3>No auctions here yet</h3>
-                <p>Create your first auction, import a recovery code below, or sign in with the owner account.</p>
+                      </div>
+                    </details>
+                  </article>
+                ))}
               </div>
-              <Link href="/sell">Create an auction</Link>
-            </div>
-          )}
+            ) : (
+              <div className={`history-empty ${styles.emptyState}`}>
+                <span aria-hidden="true">01</span>
+                <strong>No auctions here yet</strong>
+                <p>Create your first auction, import a recovery code below, or sign in with the owner account.</p>
+                <Link className="primary-button" href="/sell">Create an auction</Link>
+              </div>
+            )}
+
+            {invalidBrowserAuctions.length > 0 && (
+              <section className={styles.invalidSection} aria-labelledby="invalid-title">
+                <h3 id="invalid-title">Saved keys needing attention</h3>
+                {invalidBrowserAuctions.map((entry) => (
+                  <div key={entry.saved.slug}>
+                    <span>/{entry.saved.slug}</span>
+                    <p>{entry.error}</p>
+                    <button type="button" onClick={() => {
+                      try {
+                        const next = forgetManagedAuction(entry.saved.slug);
+                        void refreshBrowserAuctions(next);
+                      } catch { setError("This browser blocked changes to saved recovery codes."); }
+                    }}>Remove saved key</button>
+                  </div>
+                ))}
+              </section>
+            )}
+          </div>
         </section>
 
-        {invalidBrowserAuctions.length > 0 && (
-          <section className={styles.invalidSection} aria-labelledby="invalid-title">
-            <h2 id="invalid-title">Saved keys needing attention</h2>
-            {invalidBrowserAuctions.map((entry) => (
-              <div key={entry.saved.slug}>
-                <span>/{entry.saved.slug}</span>
-                <p>{entry.error}</p>
-                <button type="button" onClick={() => {
-                  try {
-                    const next = forgetManagedAuction(entry.saved.slug);
-                    void refreshBrowserAuctions(next);
-                  } catch { setError("This browser blocked changes to saved recovery codes."); }
-                }}>Remove saved key</button>
-              </div>
-            ))}
-          </section>
-        )}
-
-        <section className={styles.importSection} aria-labelledby="import-title">
-          <div>
-            <p className={styles.sectionKicker}>Have a recovery code?</p>
-            <h2 id="import-title">Bring an auction into this browser.</h2>
-            <p>Use the address and recovery code you received when the auction was created. We verify the code before saving it on this device.</p>
+        <section className={`how-section ${styles.recoverySection}`} aria-labelledby="import-title">
+          <div className="section-inner">
+            <p className="eyebrow">Recovery access</p>
+            <h2 id="import-title">Manage another auction.</h2>
+            <p className="section-lead">Bring an existing auction into this browser.</p>
+            <p className="section-copy">Use the address and recovery code shown when the auction was created. The code is verified before it is saved on this device.</p>
+            <form className={`form-grid ${styles.recoveryForm}`} onSubmit={importAuction}>
+              <label>
+                Auction address
+                <input value={importSlug} onChange={(event) => setImportSlug(event.target.value)} placeholder="brand-anything.vercel.app/your-auction" autoCapitalize="none" />
+              </label>
+              <label>
+                Recovery code
+                <input value={importCode} onChange={(event) => setImportCode(event.target.value)} placeholder="ba_mgr_…" autoCapitalize="none" autoComplete="off" spellCheck={false} />
+              </label>
+              <button className="primary-button" type="submit" disabled={Boolean(busySlug)}>Verify and add auction</button>
+            </form>
           </div>
-          <form onSubmit={importAuction}>
-            <label>
-              Auction address
-              <input value={importSlug} onChange={(event) => setImportSlug(event.target.value)} placeholder="brand-anything.vercel.app/your-auction" autoCapitalize="none" />
-            </label>
-            <label>
-              Recovery code
-              <input value={importCode} onChange={(event) => setImportCode(event.target.value)} placeholder="ba_mgr_…" autoCapitalize="none" autoComplete="off" spellCheck={false} />
-            </label>
-            <button type="submit" disabled={Boolean(busySlug)}>Verify and add auction</button>
-          </form>
         </section>
       </main>
+      <Link className="floating-cta" href="/sell">Create auction →</Link>
     </div>
   );
 }
