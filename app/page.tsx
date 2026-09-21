@@ -319,6 +319,7 @@ export function AuctionLandingPage({ campaign: initialCampaign, initialSnapshot 
   const bidEndpoint = campaign
     ? `/api/auctions/${encodeURIComponent(campaign.slug)}/bids/checkout`
     : `/api/auctions/${DEFAULT_AUCTION_SLUG}/bids/checkout`;
+  const showAuthorFooter = !campaign || campaign.slug === DEFAULT_AUCTION_SLUG;
   const isMac = !campaign || /^mac\b/i.test(campaign.objectName);
   const machineImage = campaign?.photoUrl ?? "/macbook.webp";
   const machineAssetKey = campaign && !campaign.photoUrl && !isMac
@@ -709,43 +710,49 @@ export function AuctionLandingPage({ campaign: initialCampaign, initialSnapshot 
       </main>
 
       <footer className="site-footer">
-        <div className="footer-inner">
-          <Image
-            className="footer-avatar"
-            src="/github-avatar.jpeg"
-            alt=""
-            width={72}
-            height={72}
-            sizes="72px"
-          />
+        <div className={showAuthorFooter ? "footer-inner" : "footer-inner footer-inner--legal-only"}>
+          {showAuthorFooter && (
+            <Image
+              className="footer-avatar"
+              src="/github-avatar.jpeg"
+              alt=""
+              width={72}
+              height={72}
+              sizes="72px"
+            />
+          )}
           <div>
-            <p className="footer-title">{t("home.footerTitle")}</p>
-            <p className="footer-connect-copy">{t("home.footerFollow")}</p>
-            <div className="footer-support-links" aria-label={t("home.footerSupportLabel")}>
-              <a className="footer-support-link" href={X_ACCOUNT_URL} target="_blank" rel="noreferrer">
-                <span className="footer-support-icon"><XIcon /></span>
-                {t("home.footerFollowX")}
-              </a>
-              <a className="footer-coffee-link" href={BUY_ME_A_COFFEE_URL} target="_blank" rel="noreferrer">
-                <Image
-                  className="footer-coffee-image"
-                  src="/buy-me-a-coffee.png"
-                  alt={t("home.footerCoffee")}
-                  width={170}
-                  height={37}
-                  sizes="170px"
-                />
-              </a>
-              <a className="footer-support-link" href={X_PAYMENT_URL} target="_blank" rel="noreferrer">
-                <span className="footer-support-icon footer-support-icon--payment">
-                  <XIcon />
-                  <span className="footer-support-badge">$</span>
-                </span>
-                {t("home.footerTipX")}
-              </a>
-            </div>
-            <p>{t("home.footerOpenSource")} <a href={SOURCE_URL} target="_blank" rel="noreferrer">Brand Anything ↗</a></p>
-            <p>{t("home.footerContribute")} <a href={`${SOURCE_URL}/issues`} target="_blank" rel="noreferrer">GitHub ↗</a></p>
+            {showAuthorFooter && (
+              <>
+                <p className="footer-title">{t("home.footerTitle")}</p>
+                <p className="footer-connect-copy">{t("home.footerFollow")}</p>
+                <div className="footer-support-links" aria-label={t("home.footerSupportLabel")}>
+                  <a className="footer-support-link" href={X_ACCOUNT_URL} target="_blank" rel="noreferrer">
+                    <span className="footer-support-icon"><XIcon /></span>
+                    {t("home.footerFollowX")}
+                  </a>
+                  <a className="footer-coffee-link" href={BUY_ME_A_COFFEE_URL} target="_blank" rel="noreferrer">
+                    <Image
+                      className="footer-coffee-image"
+                      src="/buy-me-a-coffee.png"
+                      alt={t("home.footerCoffee")}
+                      width={170}
+                      height={37}
+                      sizes="170px"
+                    />
+                  </a>
+                  <a className="footer-support-link" href={X_PAYMENT_URL} target="_blank" rel="noreferrer">
+                    <span className="footer-support-icon footer-support-icon--payment">
+                      <XIcon />
+                      <span className="footer-support-badge">$</span>
+                    </span>
+                    {t("home.footerTipX")}
+                  </a>
+                </div>
+                <p>{t("home.footerOpenSource")} <a href={SOURCE_URL} target="_blank" rel="noreferrer">Brand Anything ↗</a></p>
+                <p>{t("home.footerContribute")} <a href={`${SOURCE_URL}/issues`} target="_blank" rel="noreferrer">GitHub ↗</a></p>
+              </>
+            )}
             <div className="footer-meta">
               {hasManagedAuctions && <Link href="/manage">{t("common.manageAuctions")}</Link>}
               <Link href="/privacy">{t("common.privacy")}</Link>

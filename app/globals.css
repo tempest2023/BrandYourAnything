@@ -1743,6 +1743,16 @@ p {
   gap: 1.2rem;
 }
 
+.footer-inner--legal-only {
+  display: block;
+}
+
+.footer-inner--legal-only .footer-meta {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
 .footer-avatar {
   width: 4.5rem;
   height: 4.5rem;

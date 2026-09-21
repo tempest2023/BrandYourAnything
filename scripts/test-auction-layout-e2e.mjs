@@ -93,6 +93,12 @@ test("published layouts and exhausted bid actions in the real browser", { timeou
         stripe_charges_enabled: true, stripe_payouts_enabled: true }).eq("slug", slug)).error);
       await page.goto(app.baseUrl + "/" + slug);
       await page.locator(".lid-spot--logo-cover").waitFor();
+      const auctionFooter = page.locator(".site-footer");
+      assert.equal(await auctionFooter.locator(".footer-avatar, .footer-title, .footer-support-links").count(), 0);
+      await auctionFooter.getByRole("link", { name: "Privacy Policy", exact: true }).waitFor();
+      await auctionFooter.getByRole("link", { name: "Terms of Service", exact: true }).waitFor();
+      await auctionFooter.getByRole("link", { name: "Source on GitHub", exact: true }).waitFor();
+      await auctionFooter.getByText("Brand Anything is not affiliated with", { exact: false }).waitFor();
       assert.equal(await page.locator(".lid-spot").count(), baseCount + 1);
       assert.equal(await page.locator(".mac-lid .apple-mark").count(), 0);
       for (const width of [1280, 390]) {
