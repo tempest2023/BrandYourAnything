@@ -187,7 +187,7 @@ function surfaceSpotPricingIsSafe(value: unknown, profile: SurfacePlacementProfi
   const spot = value as Partial<SurfaceSpotPricing>;
   return Number.isInteger(spot.id)
     && typeof spot.region === "string"
-    && SURFACE_REGIONS_BY_PROFILE[profile].includes(spot.region)
+    && (SURFACE_REGIONS_BY_PROFILE[profile].includes(spot.region) || /^Surface \d+$/.test(spot.region) || ["Port aft hull", "Starboard aft hull"].includes(spot.region))
     && (spot.size === "S" || spot.size === "M" || spot.size === "L")
     && typeof spot.price === "string"
     && spot.price.length <= 24;
@@ -426,6 +426,7 @@ export function CreateAuctionForm() {
   const [surfaceAnalysis, setSurfaceAnalysis] = useState<SurfaceModelAnalysis | null>(null);
   const [surfaceSpots, setSurfaceSpots] = useState<SurfaceSpotPlacement[]>([]);
   const [surfaceSpotPricing, setSurfaceSpotPricing] = useState<SurfaceSpotPricing[]>([]);
+  const [lastSurfaceMove, setLastSurfaceMove] = useState<{ spots: SurfaceSpotPlacement[]; pricing: SurfaceSpotPricing[] } | null>(null);
   const [selectedSurfaceSpotId, setSelectedSurfaceSpotId] = useState(1);
   const [placementMessage, setPlacementMessage] = useState("");
   const [smallPrice, setSmallPrice] = useState("125");
@@ -762,20 +763,31 @@ export function CreateAuctionForm() {
   };
 
   const updateSurfaceSpotCount = (requestedCount: number) => {
+    setLastSurfaceMove(null);
     const count = clampSurfaceSpotCount(requestedCount);
     setLayoutCount(count);
-    setSurfaceSpots((current) => Array.from({ length: count }, (_, index) => (
-      current.find((spot) => spot.id === index + 1)
-      ?? surfaceAnalysis?.placements.find((spot) => spot.id === index + 1)
-      ?? current[index % Math.max(current.length, 1)]
-      ?? surfaceAnalysis?.placements[index % Math.max(surfaceAnalysis.placements.length, 1)]
-      ?? { id: index + 1, position: [0, 0, 0], normal: [0, 0, 1] }
-    )).map((spot, index) => ({ ...spot, id: index + 1 })));
+    const kept = surfaceSpots.filter(spot => spot.id <= count);
+    for (let id = 1; id <= count; id++) {
+      if (kept.some(spot => spot.id === id)) continue;
+      const suggestion = surfaceAnalysis?.placements.find(candidate => !kept.some(spot => spot.position.every((v, i) => Math.abs(v - candidate.position[i]) < 0.001)));
+      if (suggestion) kept.push({ ...suggestion, id });
+    }
+    setSurfaceSpots(kept.sort((a, b) => a.id - b.id));
+    setSurfaceSpotPricing(current => normalizeSurfaceSpotPricing(current, count, placementProfile).map(spot => surfaceSpots.some(saved => saved.id === spot.id) ? spot : { ...spot, region: kept.find(placed => placed.id === spot.id)?.region ?? "Other exterior surface" }));
     setSelectedSurfaceSpotId((current) => Math.min(current, count));
-    setPlacementMessage("");
+    setPlacementMessage(count > (surfaceAnalysis?.placements.length ?? 0) ? "Extra spots need manual placement. Select an unplaced spot, then click the model." : "");
   };
 
   const updateSurfaceSpotPricing = (spotId: number, update: Partial<Omit<SurfaceSpotPricing, "id">>) => {
+    if (update.region) {
+      const target = surfaceAnalysis?.placements.find(spot => spot.region === update.region);
+      if (target) {
+        const occupied = surfaceSpots.some(spot => spot.id !== spotId && spot.position.every((v, i) => Math.abs(v - target.position[i]) < 0.001));
+        if (occupied) { setPlacementMessage("That region already has a spot. Choose another region or move the existing spot first."); return; }
+        setLastSurfaceMove({ spots: surfaceSpots, pricing: resolvedSurfaceSpotPricing });
+        setSurfaceSpots(current => [...current.filter(spot => spot.id !== spotId), { ...target, id: spotId }].sort((a, b) => a.id - b.id));
+      }
+    }
     setSurfaceSpotPricing((current) => normalizeSurfaceSpotPricing(
       current,
       layoutCount,
@@ -788,34 +800,36 @@ export function CreateAuctionForm() {
     if (surfaceSpotsRef.current.length > 0) return;
     const count = clampSurfaceSpotCount(analysis.recommendedCount);
     setLayoutCount(count);
-    setSurfaceSpots(Array.from({ length: count }, (_, index) => ({
-      ...(analysis.placements[index] ?? analysis.placements[index % Math.max(analysis.placements.length, 1)]
-        ?? { position: [0, 0, 0] as const, normal: [0, 0, 1] as const }),
-      id: index + 1,
-    })));
+    setSurfaceSpots(analysis.placements.slice(0, count));
+    setSurfaceSpotPricing(normalizeSurfaceSpotPricing([], count, placementProfile).map((spot, index) => ({ ...spot, region: analysis.placements[index]?.region ?? "Other exterior surface" })));
+    setPlacementMessage(analysis.warning ?? "Recommended regions are ready. Adjust only if needed.");
     setSelectedSurfaceSpotId(1);
   };
 
   const resetSurfaceLayout = () => {
     if (!surfaceAnalysis) return;
+    setLastSurfaceMove(null);
     const count = clampSurfaceSpotCount(surfaceAnalysis.recommendedCount);
     setLayoutCount(count);
-    setSurfaceSpots(Array.from({ length: count }, (_, index) => ({
-      ...(surfaceAnalysis.placements[index]
-        ?? surfaceAnalysis.placements[index % Math.max(surfaceAnalysis.placements.length, 1)]
-        ?? { position: [0, 0, 0] as const, normal: [0, 0, 1] as const }),
-      id: index + 1,
-    })));
+    setSurfaceSpots(surfaceAnalysis.placements.slice(0, count));
+    setSurfaceSpotPricing(normalizeSurfaceSpotPricing(surfaceSpotPricing, count, placementProfile).map((spot, index) => ({ ...spot, region: surfaceAnalysis.placements[index]?.region ?? "Other exterior surface" })));
     setSelectedSurfaceSpotId(1);
     setPlacementMessage("Recommended layout restored.");
   };
 
   const placeSurfaceSpot = (nextSpot: SurfaceSpotPlacement) => {
-    setSurfaceSpots((current) => current.map((spot) => spot.id === nextSpot.id ? nextSpot : spot));
+    if (surfaceSpots.some(spot => spot.id !== nextSpot.id && spot.normal.reduce((sum, v, i) => sum + v * nextSpot.normal[i], 0) > 0.5 && Math.hypot(...spot.position.map((v, i) => v - nextSpot.position[i])) < 0.10)) {
+      setPlacementMessage("Move this spot farther from the existing spot.");
+      return;
+    }
+    setLastSurfaceMove({ spots: surfaceSpots, pricing: resolvedSurfaceSpotPricing });
+    setSurfaceSpots(current => [...current.filter(spot => spot.id !== nextSpot.id), nextSpot].sort((a, b) => a.id - b.id));
+    setSurfaceSpotPricing(current => normalizeSurfaceSpotPricing(current, layoutCount, placementProfile).map(spot => spot.id === nextSpot.id ? { ...spot, region: "Other exterior surface" } : spot));
     setPlacementMessage(`Spot ${nextSpot.id} moved to this surface.`);
   };
 
   const clearSurfaceLayout = () => {
+    setLastSurfaceMove(null);
     surfaceSpotsRef.current = [];
     setSurfaceAnalysis(null);
     setSurfaceSpots([]);
@@ -1368,7 +1382,7 @@ export function CreateAuctionForm() {
                     <div className={styles.surfaceRecommendation}>
                       <span>Suggested layout</span>
                       <strong>{surfaceAnalysis ? `${surfaceAnalysis.recommendedCount} spots recommended` : "Analysing your model…"}</strong>
-                      <p>{placementProfile === "car" ? "Cars start with the hood, both front doors and both rear doors." : placementProfile === "yacht" ? "Yachts start with both hull sides, both superstructure sides, the bow and the stern." : placementProfile === "jet" ? "Aircraft start with both fuselage sides, both engine areas and both sides of the tail." : "We spread the first layout across distinct outward-facing surfaces."}</p>
+                      <p>{!usingPresetModel ? "We find large connected surfaces. Review the suggestions, then drag spots wherever you need them." : placementProfile === "car" ? "Cars start with the hood, both front doors and both rear doors." : placementProfile === "yacht" ? "Yachts start with hull panels, superstructure panels and the transom." : placementProfile === "jet" ? "Aircraft start with both fuselage sides, both engine areas and both sides of the tail." : "We find large connected surfaces. Review the suggestions, then drag spots wherever you need them."}</p>
                     </div>
                     <label className={styles.spotCountControl}>
                       <span>Number of spots</span>
@@ -1385,9 +1399,9 @@ export function CreateAuctionForm() {
                         <button type="button" aria-label="Add one spot" disabled={layoutCount >= MAX_SURFACE_SPOTS} onClick={() => updateSurfaceSpotCount(layoutCount + 1)}>+</button>
                       </span>
                     </label>
-                    <p id="spot-count-note" className={styles.surfaceHint}>Choose 1–20 spots. Select a numbered spot, then click an eligible surface in the 3D preview to move it.</p>
+                    <p id="spot-count-note" className={styles.surfaceHint}>Choose 1–20 spots. Suggested regions are placed automatically. Drag a number to customize, or select a spot and click the model.</p>
                     <div className={styles.spotSelector} role="group" aria-label="Surface spots">
-                      {surfaceSpots.slice(0, layoutCount).map((spot) => (
+                      {Array.from({ length: layoutCount }, (_, index) => ({ id: index + 1 })).map((spot) => (
                         <button
                           type="button"
                           key={spot.id}
@@ -1395,16 +1409,29 @@ export function CreateAuctionForm() {
                           aria-pressed={selectedSurfaceSpotId === spot.id}
                           onClick={() => {
                             setSelectedSurfaceSpotId(spot.id);
-                            setPlacementMessage(`Spot ${spot.id} selected. Click its new side surface in the preview.`);
+                            setPlacementMessage(`Spot ${spot.id} selected. Click its new surface in the preview.`);
                           }}
                         >
                           <span>{String(spot.id).padStart(2, "0")}</span>
-                          Surface
+                          {surfaceSpots.some(placed => placed.id === spot.id) ? resolvedSurfaceSpotPricing[spot.id - 1]?.region : "Needs placement"}
                         </button>
                       ))}
                     </div>
+                    <label className={styles.surfaceRegionField}>
+                      <span>Region for spot {selectedSurfaceSpotId}</span>
+                      <select value={resolvedSurfaceSpotPricing[selectedSurfaceSpotId - 1]?.region ?? "Other exterior surface"} onChange={event => updateSurfaceSpotPricing(selectedSurfaceSpotId, { region: event.target.value })}>
+                        {[...new Set([...(surfaceAnalysis?.placements.map(spot => spot.region).filter((region): region is string => Boolean(region)) ?? []), resolvedSurfaceSpotPricing[selectedSurfaceSpotId - 1]?.region ?? "Other exterior surface", "Other exterior surface"])].map(region => <option key={region} value={region}>{region}</option>)}
+                      </select>
+                    </label>
                     <div className={styles.surfaceLayoutFooter}>
-                      <p role="status" aria-live="polite">{placementMessage || "Drag to orbit. Clicking without dragging places the selected spot."}</p>
+                      <p role="status" aria-live="polite">{placementMessage || "Drag a number to move it. Drag the model to orbit."}</p>
+                      <button type="button" disabled={!lastSurfaceMove} onClick={() => {
+                        if (!lastSurfaceMove) return;
+                        setSurfaceSpots(lastSurfaceMove.spots);
+                        setSurfaceSpotPricing(lastSurfaceMove.pricing);
+                        setLastSurfaceMove(null);
+                        setPlacementMessage("Last move undone.");
+                      }}>Undo move</button>
                       <button type="button" disabled={!surfaceAnalysis} onClick={resetSurfaceLayout}>Reset recommended layout</button>
                     </div>
                   </div>
@@ -1424,6 +1451,7 @@ export function CreateAuctionForm() {
                   <SurfacePriceEditor
                     spots={resolvedSurfaceSpotPricing}
                     placementProfile={placementProfile}
+                    regions={surfaceAnalysis?.placements.map(spot => spot.region).filter((region): region is string => Boolean(region))}
                     selectedSpotId={selectedSurfaceSpotId}
                     onSelectSpot={setSelectedSurfaceSpotId}
                     onChangeSpot={updateSurfaceSpotPricing}
@@ -1525,7 +1553,7 @@ export function CreateAuctionForm() {
               </fieldset>
             )}
 
-            {step < 7 && <div className={styles.actions}>{step > 0 && <button type="button" className={styles.backButton} onClick={backStep}>Back</button>}<button type="button" className={styles.continueButton} disabled={(step === 0 && !objectIsValid) || (step === 1 && !machineIsValid) || (step === 2 && !customShowcaseIsValid) || (step === 3 && !layoutIsValid) || (step === 4 && !surfacePricingIsValid)} onClick={continueStep}>{step === 0 && needsCustomModel && !brandModel ? "Upload a 3D model to continue" : step === 2 && !customShowcaseIsValid ? "Describe the other location" : step === 3 && !layoutIsValid ? "Analysing model surfaces…" : step === 4 && !surfacePricingIsValid ? "Price every spot to continue" : "Continue"}</button></div>}
+            {step < 7 && <div className={styles.actions}>{step > 0 && <button type="button" className={styles.backButton} onClick={backStep}>Back</button>}<button type="button" className={styles.continueButton} disabled={(step === 0 && !objectIsValid) || (step === 1 && !machineIsValid) || (step === 2 && !customShowcaseIsValid) || (step === 3 && !layoutIsValid) || (step === 4 && !surfacePricingIsValid)} onClick={continueStep}>{step === 0 && needsCustomModel && !brandModel ? "Upload a 3D model to continue" : step === 2 && !customShowcaseIsValid ? "Describe the other location" : step === 3 && !layoutIsValid ? (surfaceAnalysis ? "Place every spot to continue" : "Analysing model surfaces…") : step === 4 && !surfacePricingIsValid ? "Price every spot to continue" : "Continue"}</button></div>}
           </section>
 
           <aside className={styles.previewColumn} aria-label={`${objectName} auction preview`}>
@@ -1540,6 +1568,7 @@ export function CreateAuctionForm() {
                     className={styles.presetModelStage}
                     spots={previewSpots.map((spot) => ({
                       id: spot.id,
+                      size: spot.size,
                       ...(spot.position ? { position: spot.position, normal: spot.normal } : {}),
                     }))}
                     placementProfile={placementProfile}
@@ -1547,7 +1576,7 @@ export function CreateAuctionForm() {
                     selectedSpotId={step === 3 || step === 4 ? selectedSurfaceSpotId : undefined}
                     onSelectSpot={step === 3 || step === 4 ? (spotId) => {
                       setSelectedSurfaceSpotId(spotId);
-                      if (step === 3) setPlacementMessage(`Spot ${spotId} selected. Click its new side surface in the preview.`);
+                      if (step === 3) setPlacementMessage(`Spot ${spotId} selected. Click its new surface in the preview.`);
                     } : undefined}
                     onModelAnalysis={handleModelAnalysis}
                     onPlaceSpot={placeSurfaceSpot}
@@ -1600,12 +1629,14 @@ function PriceField({ label, dimensions, value, onChange }: { label: string; dim
 function SurfacePriceEditor({
   spots,
   placementProfile,
+  regions,
   selectedSpotId,
   onSelectSpot,
   onChangeSpot,
 }: {
   spots: SurfaceSpotPricing[];
   placementProfile: SurfacePlacementProfile;
+  regions?: string[];
   selectedSpotId: number;
   onSelectSpot: (spotId: number) => void;
   onChangeSpot: (spotId: number, update: Partial<Omit<SurfaceSpotPricing, "id">>) => void;
@@ -1655,7 +1686,7 @@ function SurfacePriceEditor({
         <label className={styles.surfaceRegionField}>
           <span>Region on the object</span>
           <select value={selectedSpot.region} onChange={(event) => onChangeSpot(selectedSpot.id, { region: event.target.value })}>
-            {SURFACE_REGIONS_BY_PROFILE[placementProfile].map((region) => (
+            {[...new Set([...(regions ?? SURFACE_REGIONS_BY_PROFILE[placementProfile]), selectedSpot.region, "Other exterior surface"])].map((region) => (
               <option key={region} value={region}>{region}</option>
             ))}
           </select>

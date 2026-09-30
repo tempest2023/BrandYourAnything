@@ -5,11 +5,13 @@ export type SurfaceVector = [number, number, number];
 
 export type SurfaceSpotPlacement = {
   id: number;
+  region?: string;
   position: SurfaceVector;
   normal: SurfaceVector;
 };
 
 export type SurfaceModelAnalysis = {
+  warning?: string;
   recommendedCount: number;
   usableSideArea: number;
   placements: SurfaceSpotPlacement[];
@@ -39,17 +41,17 @@ export const SURFACE_PLACEMENT_TYPES: SurfacePlacementType[] = [
   {
     size: "L",
     label: "Large panel",
-    coverage: "Up to 60% of the selected region",
+    coverage: "Large surface preview",
   },
   {
     size: "M",
     label: "Medium panel",
-    coverage: "Up to 35% of the selected region",
+    coverage: "Medium surface preview",
   },
   {
     size: "S",
     label: "Logo mark",
-    coverage: "Up to 15% of the selected region",
+    coverage: "Small surface preview",
   },
 ];
 
